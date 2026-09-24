@@ -272,6 +272,37 @@ installed; activity rows only during live work).
 _Avoid_: statusline (that is a different, host-owned surface), HUD (the widget
 renders the HUD payload; it is not the payload)
 
+**Hermes Desktop**:
+Hermes Agent's Electron app (`hermes desktop`). It loads no `tui-widgets/`
+file; its extension point is a desktop plugin, one uncompiled ESM file that
+default-exports a `HermesPlugin`. OMH's desktop half is `desktop/plugin.js`
+plus `dashboard/manifest.json` and `dashboard/plugin_api.py` inside the
+installed bundle (`$HERMES_HOME/plugins/omh/`). By its loader source, the app
+copies `desktop/` to `$HERMES_HOME/desktop-plugins/omh/` beside a
+`.hermes-package.json` marker, and the `hermes serve` process it spawns mounts
+the backend's `router` at `/api/plugins/omh/` while `omh` is in the host's
+`plugins.enabled` (the registration `omh setup` and `omh update` write, and
+`omh doctor` reports as `plugin_enabled`); `plugin.js` polls
+`GET /api/plugins/omh/hud` and renders `display.line` in the status bar and
+`display.widget_lines` plus `display.todo_lines` in a right-hand `omh` pane,
+the same HUD payload the status widget renders. The route reads the launch
+profile's home: the `profile` query the app appends when it routes a
+non-primary profile through a shared backend is not honoured, as the host's
+own bundled plugin backends do not honour it (a local non-primary profile has
+its own backend and is unaffected). The half ships OFF: the marker forces it
+disabled until the user switches it on under Capabilities -> Plugins, and that
+decision lives in the app's renderer storage, which OMH neither reads nor
+writes. The browser dashboard (`hermes dashboard`) reads the same
+`dashboard/manifest.json` and registers a tab for every manifest; OMH marks
+it `tab.hidden`, so that dashboard gets no `omh` tab (it still requests the
+manifest's default entry script and logs its absence at console level).
+_Avoid_: reading `desktop-plugins/` as install truth (it is the app's copy;
+the bundle under `plugins/omh/` is what `omh update` refreshes), claiming the
+half is enabled (not observable from OMH), claiming the app's own copy or the
+rendered pane was observed (the status-bar item was observed once, from a
+hand-placed standalone copy; the copy step and the pane are read from the
+app's source), OMH status widget (that is the Modern-TUI surface)
+
 ### Host surfaces OMH reads
 
 **Live TUI session row**:

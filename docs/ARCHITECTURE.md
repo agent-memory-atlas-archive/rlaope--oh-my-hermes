@@ -203,7 +203,12 @@ skill templates so `hermes skills tap add rlaope/oh-my-hermes` can expose
 OMH directly when Hermes taps are available.
 
 `plugin_bundle/omh/` is the Hermes plugin payload installed by `omh setup` to
-`~/.hermes/plugins/omh`. The v1 plugin registers deterministic
+`~/.hermes/plugins/omh`. The same bundle carries the Hermes Desktop half —
+`desktop/plugin.js`, written for the app's disk-plugin loader as a status-bar
+item and an `omh` pane, and `dashboard/plugin_api.py`, which the gateway
+mounts at `/api/plugins/omh/hud` while `omh` is registered in
+`plugins.enabled`, serving the HUD payload the TUI widget reads. The v1
+plugin registers deterministic
 `omh_interact` chat/session interaction, `omh_recommend` route hints,
 metadata-only `omh_probe` capability status/roadmap, compact metadata-only
 `omh_hud`, detailed metadata-only `omh_status`, `omh_todo` plan-todo

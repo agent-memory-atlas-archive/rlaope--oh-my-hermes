@@ -360,7 +360,12 @@ def _collect_resource_records(root: Any, rel: Path, records: list[PluginFileReco
         if item.is_dir():
             _collect_resource_records(item, item_rel, records)
         elif item.is_file():
-            records.append(PluginFileRecord(str(item_rel), sha256_text(item.read_text(encoding="utf-8"))))
+            # One spelling on every platform: the record is compared as a
+            # string against the packaged tree and read back through
+            # `plugin_dir / path`, which accepts a forward slash everywhere.
+            # `str(WindowsPath)` spells a nested record with a backslash, which
+            # the Windows smoke run compared against the posix form and lost.
+            records.append(PluginFileRecord(item_rel.as_posix(), sha256_text(item.read_text(encoding="utf-8"))))
 
 
 def _copy_plugin_bundle(target: Path, file_records: list[dict[str, str]]) -> None:

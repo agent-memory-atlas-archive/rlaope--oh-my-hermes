@@ -15,7 +15,7 @@ import unittest
 from types import ModuleType
 from typing import Any
 from unittest import mock
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
 
 from _cli_harness import run_cli
@@ -28,7 +28,7 @@ from omh.commands import setup as _setup_module
 from omh.paths import resolve_paths
 from omh.install.plugin_loader_observation import observe_real_loader_registration
 from omh.plugin_pack import inspect_plugin_bundle
-from omh.install.plugin_pack import _SmokeContext, install_plugin_bundle, validate_tool_definitions
+from omh.install.plugin_pack import _SmokeContext, _collect_resource_records, install_plugin_bundle, validate_tool_definitions
 from omh.plugin_bundle.omh.tools import evidence_tool
 from omh.plugin_bundle.omh.metadata import PROVIDED_HOOKS, PROVIDED_TOOLS, TOOL_FILE_STEMS
 from omh.release_smoke_core import CommandResult
@@ -333,6 +333,19 @@ class PluginHermesAdmissionTests(unittest.TestCase):
 
 
 class PluginDistributionTests(unittest.TestCase):
+    def test_manifest_records_spell_nested_paths_with_a_forward_slash_on_every_platform(self) -> None:
+        # The record is compared as a string against the packaged tree and
+        # read back through `plugin_dir / path`; a WindowsPath would spell the
+        # nested Desktop-half files with a backslash and fail both.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "desktop").mkdir()
+            (root / "desktop" / "plugin.js").write_text("export default {}\n", encoding="utf-8")
+            (root / "plugin.yaml").write_text("name: omh\n", encoding="utf-8")
+            records = []
+            _collect_resource_records(root, PureWindowsPath(), records)
+            self.assertEqual(sorted(record.path for record in records), ["desktop/plugin.js", "plugin.yaml"])
+
     def test_plugin_manifest_conformance_catches_missing_kind(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -637,6 +650,25 @@ class PluginDistributionTests(unittest.TestCase):
             "capability_families.json",
             pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.tools"],
         )
+        # The Hermes Desktop half. `dashboard` is a declared package so
+        # `plugin_api.py` ships as a module the standalone gate imports;
+        # `desktop/` is not one -- Hermes Desktop copies that whole folder
+        # into its app-owned `desktop-plugins/omh/`, so it carries no Python
+        # package marker and the renderer file ships as the parent's data.
+        self.assertIn("omh.plugin_bundle.omh.dashboard", packages)
+        self.assertNotIn("omh.plugin_bundle.omh.desktop", packages)
+        self.assertTrue((Path("src") / "plugin_bundle" / "omh" / "dashboard" / "__init__.py").is_file())
+        desktop_files = sorted(path.name for path in (Path("src") / "plugin_bundle" / "omh" / "desktop").iterdir() if path.is_file())
+        self.assertEqual(desktop_files, ["plugin.js"])
+        self.assertTrue(root.joinpath("desktop", "plugin.js").is_file())
+        self.assertTrue(root.joinpath("dashboard", "manifest.json").is_file())
+        self.assertTrue(root.joinpath("dashboard", "plugin_api.py").is_file())
+        self.assertIn("desktop/*.js", pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh"])
+        self.assertNotIn("omh.plugin_bundle.omh.desktop", pyproject["tool"]["setuptools"]["package-data"])
+        self.assertIn(
+            "manifest.json",
+            pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.dashboard"],
+        )
 
     def test_plugin_yaml_advertises_metadata_tools_and_hooks(self) -> None:
         root = resources.files("omh.plugin_bundle.omh")
@@ -891,6 +923,16 @@ print(json.dumps(observed, ensure_ascii=False))
             self.assertTrue(plugin["requires_hermes_plugin_enable"])
             self.assertTrue((plugin_dir / "plugin.yaml").exists())
             self.assertTrue((plugin_dir / ".omh-plugin-manifest.json").exists())
+            # The Hermes Desktop half is copied with the bundle and hashed
+            # into the manifest, which is what lets `omh update` refresh it.
+            desktop_half = ("desktop/plugin.js", "dashboard/manifest.json", "dashboard/plugin_api.py")
+            for relative in desktop_half:
+                self.assertTrue((plugin_dir / relative).is_file(), relative)
+            manifest_paths = {
+                record["path"]
+                for record in json.loads((plugin_dir / ".omh-plugin-manifest.json").read_text(encoding="utf-8"))["files"]
+            }
+            self.assertTrue(set(desktop_half).issubset(manifest_paths), sorted(manifest_paths))
             self.assertEqual(
                 plugin["registered_tools"],
                 [

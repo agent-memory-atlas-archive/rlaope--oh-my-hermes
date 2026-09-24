@@ -383,6 +383,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                     observed=bool(latest_plugin_observation and latest_plugin_observation.get("observed")),
                 ),
                 _plugin_enabled_check(paths),
+                _plugin_desktop_half_check(paths),
                 _awareness_delivery_check(paths),
             ]
         )
@@ -1930,6 +1931,40 @@ def _awareness_delivery_check(paths: OmhPaths, *, now: datetime | None = None) -
             f"{int(record.get('route_hint_count', 0) or 0)} with a route hint; "
             f"last at {record.get('last_delivered_at', 'unknown')}"
         ),
+    )
+
+
+DESKTOP_HALF_FILES = ("desktop/plugin.js", "dashboard/manifest.json", "dashboard/plugin_api.py")
+
+
+def _plugin_desktop_half_check(paths: OmhPaths) -> Check:
+    """Does the installed bundle carry its Hermes Desktop half?
+
+    Hermes Desktop copies ``desktop/plugin.js`` out of the installed bundle
+    into its own ``desktop-plugins/omh/``, and the gateway mounts the
+    ``dashboard/plugin_api.py`` that ``dashboard/manifest.json`` names. All
+    three files ship in the bundle, so a bundle installed before they existed
+    is the one condition OMH can observe from here. Whether the app made its
+    copy and whether the half is switched on live inside the app (its
+    renderer storage), so this check reports presence and never enablement.
+    """
+    plugin_dir = paths.hermes_plugin_dir
+    missing = [relative for relative in DESKTOP_HALF_FILES if not (plugin_dir / relative).is_file()]
+    if not missing:
+        return Check(
+            "plugin_desktop_half",
+            True,
+            (
+                f"Hermes Desktop half present in the installed bundle ({plugin_dir}); "
+                "it ships off; switch it on in Hermes Desktop under Capabilities -> Plugins"
+            ),
+        )
+    return Check(
+        "plugin_desktop_half",
+        True,
+        f"installed bundle predates the Hermes Desktop half (missing {', '.join(missing)})",
+        severity="warning",
+        next_action="run `omh update` to refresh the managed plugin bundle",
     )
 
 

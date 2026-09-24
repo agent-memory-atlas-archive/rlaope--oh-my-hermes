@@ -56,6 +56,7 @@ packages = [
   "omh.mcp",
   "omh.plugin_bundle",
   "omh.plugin_bundle.omh",
+  "omh.plugin_bundle.omh.dashboard",
   "omh.plugin_bundle.omh.hooks",
   "omh.plugin_bundle.omh.references",
   "omh.plugin_bundle.omh.tools",
@@ -104,7 +105,8 @@ packages = [
 "omh.tui_widgets" = ["*.mjs"]
 "omh.catalogs" = ["*.json"]
 "omh.routing.trigger_packs" = ["*.json"]
-"omh.plugin_bundle.omh" = ["plugin.yaml", "config.yaml"]
+"omh.plugin_bundle.omh" = ["plugin.yaml", "config.yaml", "desktop/*.js"]
+"omh.plugin_bundle.omh.dashboard" = ["manifest.json"]
 "omh.plugin_bundle.omh.references" = ["*.md"]
 "omh.plugin_bundle.omh.tools" = ["capability_families.json"]
 
