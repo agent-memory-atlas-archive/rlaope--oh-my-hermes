@@ -581,6 +581,40 @@ All notable changes will be documented here.
   existing bundle manifest, and `omh doctor` gains a non-blocking
   `plugin_desktop_half` check that warns an older bundle toward `omh update`
   and never claims the half is enabled.
+- **A Hermes home registered at the pre-pointer skills path is migrated to
+  the generation pointer instead of keeping both.** A bot profile registered
+  at `~/.omh/skills` before the command install moved to its shared
+  generation pointer was carried forward by `omh update`, which added the
+  pointer beside the older entry and retired nothing. Hermes refuses a bare
+  skill name that resolves to two different files across
+  `skills.external_dirs`, and every generation refresh made the two copies
+  differ, so after each update every OMH skill present in both failed to
+  load by name in that bot (#1857; on the owner machine `profiles/miku`
+  recorded `Ambiguous skill name 'omh-model-setup'`). `_apply_result` now
+  retires every other OMH-managed candidate in the same config write that
+  registers today's directory, through `remove_external_dir`, so the home
+  ends registered at exactly one managed path; a directory the person
+  registered themselves is never touched, and a home naming no managed
+  directory stays opted out. The apply step and every profile row carry
+  `registration` (`migrated`, `added`, `unchanged`) with the entries
+  retired, and update prints one line per home that moved. `omh doctor`
+  gains `external_dir_ambiguity` for the primary home and one row per
+  affected bot profile, a warning naming both paths and the consequence
+  with `run \`omh update\`` as the next action; update re-reads every home
+  after the write and warns in the same words for one it could not retire.
+  The pre-pointer copy on disk is not deleted: no manifest records it, so
+  the manifest-checked removal bar cannot be met, and doctor instead names
+  it with its frozen time as safe to delete once no home registers it
+  (`external_dir_unregistered_copy`). Update also says which running
+  gateways still serve pre-update code, from Hermes' own files: a
+  `gateway.pid` record for the home plus a `gateway-starts.log` start
+  earlier than the bundle manifest's `installed_at` prints
+  `Hermes gateway for <home> started <ISO> before this bundle was installed
+  (<ISO>); run \`hermes [--profile <name>] gateway restart\``. The pid
+  record's `start_time` is Hermes' PID-reuse fingerprint (psutil
+  `create_time() * 100` on macOS, `/proc/<pid>/stat` field 22 on Linux),
+  never a wall clock, and is pinned as not read. No signal, no process
+  listing, no subprocess.
 
 ## 2.0.5 - 2026-09-22
 

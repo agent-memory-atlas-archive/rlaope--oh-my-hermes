@@ -25,6 +25,7 @@ from _platform_support import requires_hermes_host, requires_symlinks
 load_local_package()
 
 from omh.commands import setup as _setup_module
+from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
 from omh.install.plugin_loader_observation import observe_real_loader_registration
 from omh.plugin_pack import inspect_plugin_bundle
@@ -2281,6 +2282,203 @@ class HermesProfileSyncTests(unittest.TestCase):
             self.assertIn("Bot profiles: politehelper (refreshed)", stdout)
             # Refreshed means artifacts, not just a label.
             self.assertTrue(widget.is_file())
+
+    def test_update_migrates_a_profile_off_the_pre_pointer_path(self) -> None:
+        # Carrying a pre-pointer profile forward used to ADD the generation
+        # pointer beside `<omh_home>/skills` and leave both registered.
+        # Hermes refuses a bare skill name that resolves to two different
+        # files, so after every refresh every OMH skill present in both
+        # directories failed to load by name in that profile (#1857). The
+        # registration is migrated in the same config write: exactly one
+        # managed path afterwards, and the update says the move happened.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "politehelper")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            old_path = (root / ".omh" / "skills").resolve().as_posix()
+            self.assertIn(old_path, (profile / "config.yaml").read_text(encoding="utf-8"))
+            generation = root / "generation" / "skills"
+            generation.mkdir(parents=True)
+
+            with self._managed_install(generation):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            config_after = (profile / "config.yaml").read_text(encoding="utf-8")
+            self.assertNotIn(old_path, config_after)
+            self.assertIn(generation.as_posix(), config_after)
+            self.assertEqual(
+                [entry for entry in external_dirs(config_after) if entry in {old_path, generation.as_posix()}],
+                [generation.as_posix()],
+            )
+            self.assertIn(
+                f"Bot profile politehelper: registration migrated from {old_path} to {generation.as_posix()}.",
+                stdout,
+            )
+            # The post-check re-reads the file and finds nothing to name.
+            self.assertNotIn("OMH-managed skills directories", stdout)
+
+    def test_setup_rows_report_the_migration_for_the_profile_and_the_primary(self) -> None:
+        # The JSON shape of the same move: the primary's apply step and each
+        # profile row carry `registration` and the entries retired, so a
+        # wrapper can tell a migration from a plain refresh.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._profile(root, "politehelper")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            old_path = (root / ".omh" / "skills").resolve().as_posix()
+            generation = root / "generation" / "skills"
+            generation.mkdir(parents=True)
+
+            with self._managed_install(generation):
+                status, stdout, stderr = run_cli(self._base(root) + ["setup", "--json"], output_json=False)
+
+            self.assertEqual((status, stderr), (0, ""))
+            payload = json.loads(stdout)
+            apply = payload["steps"]["apply"]
+            self.assertEqual(apply["registration"], "migrated")
+            self.assertEqual(apply["retired_external_dirs"], [old_path])
+            self.assertEqual(apply["registered_dir"], generation.as_posix())
+            row = payload["hermes_profiles"][0]
+            self.assertEqual(row["profile"], "politehelper")
+            self.assertEqual(row["status"], "refreshed")
+            self.assertEqual(row["registration"], "migrated")
+            self.assertEqual(row["retired_external_dirs"], [old_path])
+            self.assertEqual(row["registered_dir"], generation.as_posix())
+
+            # Idempotent: the second pass finds one managed path and moves nothing.
+            with self._managed_install(generation):
+                status, stdout, stderr = run_cli(self._base(root) + ["setup", "--json"], output_json=False)
+            payload = json.loads(stdout)
+            self.assertEqual(payload["steps"]["apply"]["registration"], "unchanged")
+            self.assertEqual(payload["hermes_profiles"][0]["registration"], "unchanged")
+
+    def test_update_migrates_the_primary_home_off_the_pre_pointer_path(self) -> None:
+        # The primary home takes the same path through `_apply_result`, so a
+        # primary registered before the pointer existed ends on the pointer
+        # alone, and the update prints the move for it too.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            hermes_config = root / ".hermes" / "config.yaml"
+            old_path = (root / ".omh" / "skills").resolve().as_posix()
+            self.assertIn(old_path, hermes_config.read_text(encoding="utf-8"))
+            generation = root / "generation" / "skills"
+            generation.mkdir(parents=True)
+
+            with self._managed_install(generation):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            config_after = hermes_config.read_text(encoding="utf-8")
+            self.assertNotIn(old_path, config_after)
+            self.assertIn(generation.as_posix(), config_after)
+            self.assertIn(
+                f"Hermes registration migrated from {old_path} to {generation.as_posix()}.",
+                stdout,
+            )
+
+    def test_a_deliberately_unregistered_profile_is_not_migrated_onto_the_pointer(self) -> None:
+        # The opt-out rule survives the migration: a profile naming NO
+        # managed directory is left as it is, so the move never re-registers
+        # a home that chose to be unregistered.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "politehelper")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            status, _, stderr = run_cli(
+                ["--omh-home", str(root / ".omh"), "--hermes-home", str(profile), "uninstall", "--registration-only"]
+            )
+            self.assertEqual(status, 0, stderr)
+            config_before = (profile / "config.yaml").read_text(encoding="utf-8")
+            generation = root / "generation" / "skills"
+            generation.mkdir(parents=True)
+
+            with self._managed_install(generation):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("Bot profiles: politehelper (left unregistered)", stdout)
+            # The primary home in this fixture was registered at the
+            # pre-pointer path and moves; the opted-out profile does not.
+            self.assertIn("Hermes registration migrated from", stdout)
+            self.assertNotIn("Bot profile politehelper: registration migrated", stdout)
+            self.assertEqual((profile / "config.yaml").read_text(encoding="utf-8"), config_before)
+            self.assertNotIn(generation.as_posix(), config_before)
+
+    def test_the_migration_keeps_a_directory_the_person_registered(self) -> None:
+        # Only OMH-managed candidates are retired. A foreign external dir the
+        # person added stays where it is, in its place, whichever side of the
+        # managed entries it was written on.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "politehelper")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            old_path = (root / ".omh" / "skills").resolve().as_posix()
+            own_dir = (root / "my-skills").resolve().as_posix()
+            config = profile / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    f"    - {old_path}\n", f"    - {own_dir}\n    - {old_path}\n"
+                ),
+                encoding="utf-8",
+                newline="",
+            )
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [own_dir, old_path])
+            generation = root / "generation" / "skills"
+            generation.mkdir(parents=True)
+
+            with self._managed_install(generation):
+                status, _, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(
+                external_dirs(config.read_text(encoding="utf-8")),
+                [own_dir, generation.as_posix()],
+            )
+
+    @requires_symlinks
+    def test_an_older_entry_spelled_through_a_link_is_named_by_the_post_check(self) -> None:
+        # Retirement matches the entry's text, the way registration wrote
+        # it. An older entry spelled through a symlink still resolves to the
+        # managed directory -- so the profile is read as registered and
+        # refreshed -- but is not the text the migration retires, and the
+        # home keeps two. The post-check re-reads the file and names that
+        # home in doctor's words rather than reporting a clean update.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "politehelper")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            old_path = (root / ".omh" / "skills").resolve().as_posix()
+            link = root / "store-link"
+            link.symlink_to((root / ".omh").resolve(), target_is_directory=True)
+            linked_path = (link / "skills").as_posix()
+            config = profile / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(f"    - {old_path}\n", f"    - {linked_path}\n"),
+                encoding="utf-8",
+                newline="",
+            )
+            generation = root / "generation" / "skills"
+            generation.mkdir(parents=True)
+
+            with self._managed_install(generation):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [linked_path, generation.as_posix()])
+            self.assertIn(
+                f"  warning: profile politehelper ({config.resolve()}) names 2 OMH-managed skills directories in "
+                f"skills.external_dirs ({linked_path} and {generation.as_posix()}); Hermes refuses a bare skill "
+                "name that resolves to two different files, so OMH skills fail to load by name",
+                stdout,
+            )
 
     def test_opting_out_removes_a_registration_at_the_older_managed_dir(self) -> None:
         # Reading "registered" across both managed paths only works if

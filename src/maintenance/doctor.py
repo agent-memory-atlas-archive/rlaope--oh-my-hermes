@@ -29,8 +29,17 @@ from ..install.identity_conflicts import build_identity_conflict_report
 from ..install.installer import installed_skill_directories
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
 from ..install.plugin_loader_observation import observe_real_loader_registration
+from ..install.skill_registration import (
+    AMBIGUOUS_REGISTRATION_NEXT_ACTION,
+    ambiguous_registration_message,
+    external_dir_key,
+    hermes_profile_dirs,
+    managed_skill_dir_candidates,
+    registered_managed_entries,
+    registration_home_label,
+)
 from ..manifest import local_modifications, read_manifest
-from ..paths import OmhPaths
+from ..paths import OmhPaths, managed_current_workflow_pack_dir
 from ..plugin_bundle.omh.memory_dreaming import read_dreaming_state, read_latest_consolidation
 from ..workflows.memory import (
     _OPEN_MAX_DAYS,
@@ -200,6 +209,10 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     # the running command knows its generation, and both name this directory.
     external_registered = external_dir_registered(dirs, paths.skills_dir)
     checks.append(Check("external_dir", external_registered, f"{paths.skills_dir} in skills.external_dirs"))
+    # Both named with the `external_dir` prefix so the summary groups them
+    # under Hermes registration beside the check above.
+    checks.extend(_external_dir_ambiguity_checks(paths, config_text))
+    checks.append(_external_dir_unregistered_copy_check(paths, config_text))
     # Named with the `hermes_config` prefix so the summary groups it under
     # Hermes registration. Setup refuses a `plugins.enabled` it cannot extend
     # before it installs the bundle, and the plugin checks below run only once
@@ -1081,6 +1094,120 @@ def _jev_skipped_fragment(skipped: list[dict[str, object]]) -> str:
     # exist.
     noun = "entry" if len(names) == 1 else "entries"
     return f"{len(names)} {noun} under plugins/ not fully read: {shown}"
+
+
+def _profile_paths(paths: OmhPaths, profile_dir: Path) -> OmhPaths:
+    """A bot profile's homes the way the setup sync resolves them.
+
+    The profile's own Hermes home, the primary's OMH store: every profile
+    shares the primary's store for the managed skills, widget and skin, and
+    the registration candidates the sync scores are the primary's too.
+    """
+    return OmhPaths(
+        omh_home=paths.omh_home,
+        hermes_home=profile_dir,
+        omh_home_named=paths.omh_home_named,
+        managed_skills_dir=paths.managed_skills_dir,
+    )
+
+
+def _external_dir_ambiguity_checks(paths: OmhPaths, config_text: str) -> list[Check]:
+    """A home naming two OMH-managed skills directories is a finding, per home.
+
+    Hermes refuses a bare skill name that resolves to two different files
+    across its skill directories, and every generation refresh makes the
+    pre-pointer copy and the pointer differ, so a home that names both loses
+    every OMH skill by name (#1857). `omh update` migrates such a home; this
+    names one it has not reached yet, in the same words update's post-check
+    uses. Doctor otherwise reads one Hermes home; bot profiles are walked for
+    this one question because the profile sync is where the older entry
+    survived, and each affected profile gets its own row so the name says
+    which home to look at. `severity="warning"` with `ok=True`: the finding
+    carries its own next action and must not flip the doctor exit code for
+    a profile the primary home does not share.
+    """
+    current = managed_current_workflow_pack_dir()
+    entries = registered_managed_entries(config_text, managed_skill_dir_candidates(paths, current=current))
+    checks = [_ambiguity_check("external_dir_ambiguity", registration_home_label(paths.hermes_config_path), entries)]
+    for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
+        profile_paths = _profile_paths(paths, profile_dir)
+        profile_entries = registered_managed_entries(
+            read_config(profile_paths.hermes_config_path),
+            managed_skill_dir_candidates(profile_paths, current=current),
+        )
+        if len(profile_entries) > 1:
+            checks.append(
+                _ambiguity_check(
+                    f"external_dir_ambiguity:{name}",
+                    registration_home_label(profile_paths.hermes_config_path, profile=name),
+                    profile_entries,
+                )
+            )
+    return checks
+
+
+def _ambiguity_check(name: str, label: str, entries: list[str]) -> Check:
+    if len(entries) > 1:
+        return Check(
+            name,
+            True,
+            ambiguous_registration_message(label, entries),
+            severity="warning",
+            next_action=AMBIGUOUS_REGISTRATION_NEXT_ACTION,
+        )
+    if entries:
+        return Check(name, True, f"{label} names one OMH-managed skills directory: {entries[0]}")
+    return Check(name, True, f"{label} names no OMH-managed skills directory")
+
+
+def _external_dir_unregistered_copy_check(paths: OmhPaths, config_text: str) -> Check:
+    """The pre-pointer skills copy left on disk after the registration moved off it.
+
+    `omh update` never deletes it: the OMH manifest records the generation
+    pack as its skills directory, and no manifest records that copy at the
+    catalog revision it froze at, so nothing proves it is unmodified OMH
+    output -- the same bar the manifest-checked removals hold every other
+    directory to. Read-only evidence instead: once neither this home nor any
+    of its profiles registers the copy, no Hermes home OMH manages loads it,
+    and the finding says so with the directory's frozen time. A copy a home
+    still registers is the migration's job, not a deletion candidate.
+    """
+    copy = paths.omh_home / "skills"
+    if external_dir_key(copy) == external_dir_key(paths.skills_dir):
+        return Check("external_dir_unregistered_copy", True, f"managed skills are served from {copy}")
+    if not copy.is_dir():
+        return Check("external_dir_unregistered_copy", True, f"no pre-pointer skills copy at {copy}")
+    registered_by: list[str] = []
+    if external_dir_registered(external_dirs(config_text), copy):
+        registered_by.append(registration_home_label(paths.hermes_config_path))
+    for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
+        profile_paths = _profile_paths(paths, profile_dir)
+        if external_dir_registered(external_dirs(read_config(profile_paths.hermes_config_path)), copy):
+            registered_by.append(registration_home_label(profile_paths.hermes_config_path, profile=name))
+    if registered_by:
+        return Check(
+            "external_dir_unregistered_copy",
+            True,
+            f"pre-pointer skills copy at {copy} is still registered by {', '.join(registered_by)}; "
+            f"`omh update` migrates that registration to {paths.skills_dir}",
+        )
+    try:
+        frozen_at = (
+            datetime.fromtimestamp(copy.stat().st_mtime, UTC)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except OSError:
+        frozen_at = "unknown"
+    return Check(
+        "external_dir_unregistered_copy",
+        True,
+        f"unregistered managed skills copy at {copy} (frozen at {frozen_at}); "
+        f"neither {paths.hermes_config_path} nor its profiles register it, safe to delete",
+        severity="warning",
+        next_action=f"remove {copy}; no manifest records that copy, so `omh update` never deletes it",
+    )
 
 
 def _retired_skill_install_check(paths: OmhPaths) -> Check:

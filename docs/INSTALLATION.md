@@ -1289,6 +1289,26 @@ pointer is still registered: it gets refreshed and carried forward, not read
 as an opt-out and frozen on the generation it was installed at. Only a
 profile naming none of them has opted out.
 
+Registered at one of them, never two. A profile registered at
+`~/.omh/skills` before the pointer existed used to keep that entry when the
+sync added the generation pointer beside it. Hermes refuses a bare skill
+name that resolves to two different files across `skills.external_dirs`,
+and every generation refresh makes the two copies differ, so every OMH
+skill present in both failed to load by name in that bot. `omh setup` and
+`omh update` migrate such a home in the same config write that registers
+the current directory: the older OMH-managed entry is retired, the home
+ends up naming exactly one managed directory, and the update prints the
+move (`Bot profile <name>: registration migrated from <old> to <new>.`;
+`Hermes registration migrated ...` for the primary home). Only OMH-managed
+directories are retired; a directory you registered yourself stays where
+it is. `omh doctor` reports a home that still names two as
+`external_dir_ambiguity` (one row per affected profile, next action
+`run \`omh update\``), and the update's own post-check re-reads every home
+after the write and warns in the same words. The pre-pointer copy left on
+disk at `~/.omh/skills` is never deleted by OMH, because no manifest
+records it; once no home registers it, doctor names it with the time it
+froze at as safe to delete (`external_dir_unregistered_copy`).
+
 `omh uninstall` is symmetric with the sync. A full uninstall (`omh uninstall`,
 `--all`, or `--purge`) clears every profile's registration, reverses the same
 `config.yaml` keys the primary home's reversal takes back, and removes its
@@ -1301,6 +1321,13 @@ registered — while keeping their plugin directories, which is exactly the
 deliberate opt-out state described below.
 
 After a sync, restart Hermes Desktop so bot chats reload their skills.
+A gateway that was running through the update keeps serving the bundle it
+loaded at start. When Hermes' own start records in a home (`gateway.pid`
+and `gateway-starts.log`) show a gateway that started before that home's
+bundle was installed, the update names it with the command that reloads
+it: `hermes gateway restart` for the primary home,
+`hermes --profile <name> gateway restart` for a profile. That is file
+evidence only; a gateway running without a pid record is not named.
 
 To keep OMH out of one bot, unregister that profile only:
 

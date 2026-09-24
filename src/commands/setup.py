@@ -46,7 +46,6 @@ from ..config_adapter import (
     display_interface_selection,
     display_sections_selection,
     display_skin_selection,
-    ensure_external_dir,
     ensure_omh_skin,
     ensure_plugin_enabled,
     ensure_tui_interface,
@@ -66,9 +65,19 @@ from ..install.config_reversal import (
     managed_config_writes,
     reverse_managed_config,
 )
+from ..install.skill_registration import (
+    ambiguous_registration_message,
+    external_dir_key,
+    hermes_profile_dirs,
+    managed_skill_dir_candidates,
+    migrate_managed_registration,
+    registered_managed_entries,
+    registration_home_label,
+)
 from ..doctor import DEFAULT_DOCTOR_NEXT_ACTION, doctor_ok, recommended_next_action, run_doctor
 from ..maintenance.build_identity import probe_build_identity
 from ..maintenance.doctor import run_doctor_advisories
+from ..maintenance.hermes_gateway import gateway_restart_hints
 from ..executors import CODING_EXECUTOR_TARGETS
 from ..hashutil import sha256_file
 from ..installer import (
@@ -87,7 +96,6 @@ from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninsta
 from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
 from ..paths import OmhPaths, managed_command_venv_dir, managed_current_workflow_pack_dir, managed_generation_for_executable
-from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
 from ..plugin_bundle.omh.provider_detection import (
     LINKED_SOURCE_CONFIG,
@@ -419,10 +427,11 @@ def cmd_update(args: argparse.Namespace) -> int:
         _ask_tui_identity_choice(args, _paths(args), _resolve_language(args))
     code = cmd_install(args)
     if code == 0:
+        primary_registration: dict[str, object] | None = None
         if not (args.from_skills_dir or args.source):
             if _paths(args).hermes_plugin_dir.is_dir():
                 _refresh_installed_plugin_bundle(args)
-                _refresh_hermes_registration(args)
+                primary_registration = _refresh_hermes_registration(args)
                 # Same carry-forward rule as registration: a surface only
                 # setup seeds never lands on machines that update forever.
                 # Seeding is create-only, so user edits are never touched.
@@ -435,7 +444,8 @@ def cmd_update(args: argparse.Namespace) -> int:
         # managed registration into each so a bot chat sees the same skills
         # the default chat does — including bots created after install.
         profile_results: list[dict[str, object]] = []
-        if not (args.from_skills_dir or args.source) and hasattr(args, "omh_home"):
+        synced_profiles = not (args.from_skills_dir or args.source) and hasattr(args, "omh_home")
+        if synced_profiles:
             profile_results = _sync_hermes_profiles(args)
         # The verdict prints LAST on purpose: a success summary followed by a
         # stock-Hermes terminal is what users kept reporting as a broken
@@ -446,7 +456,17 @@ def cmd_update(args: argparse.Namespace) -> int:
             and not bool(getattr(args, "dry_run", False))
             and hasattr(args, "omh_home")
         ):
+            _print_registration_migrations(primary_registration, profile_results)
             _print_hermes_profiles_line(profile_results, language=_resolve_language(args))
+            if synced_profiles:
+                # Post-check, re-read from disk after every home was written:
+                # the migration above is what makes this list empty, and a
+                # home it could not retire is named here in doctor's words
+                # rather than left for the next bot chat to discover.
+                for line in _registration_ambiguity_lines(args):
+                    print(f"  warning: {line}")
+                for hint in gateway_restart_hints(_paths(args)):
+                    print(f"  {hint}")
             _print_tui_verdict_block(_tui_verdict_payload(args), language=_resolve_language(args))
     return code
 
@@ -517,21 +537,8 @@ def _bootstrap_tui_surface(args: argparse.Namespace) -> dict[str, object] | None
 
 
 def _hermes_profile_dirs(paths) -> list[tuple[str, "Path"]]:
-    """List the Hermes bot-profile homes under ``<hermes_home>/profiles/``.
-
-    Hermes profiles (``hermes profile create``, Desktop bot chats) are fully
-    independent HERMES_HOME directories with their own config.yaml, skills,
-    and skins — a registration written to the primary home never reaches
-    them, which is why bot chats showed zero OMH skills while the default
-    chat had the full set. Sorted for deterministic output; hidden entries
-    are Hermes-internal, never profiles.
-    """
-    root = paths.hermes_home / "profiles"
-    try:
-        entries = sorted(entry for entry in root.iterdir() if entry.is_dir() and not entry.name.startswith("."))
-    except OSError:
-        return []
-    return [(entry.name, entry) for entry in entries]
+    """The bot-profile homes under the primary; doctor walks the same list."""
+    return hermes_profile_dirs(paths.hermes_home)
 
 
 def _profile_clone(args: argparse.Namespace, primary: OmhPaths, profile_dir: Path) -> argparse.Namespace:
@@ -578,17 +585,25 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             for candidate in _managed_workflow_dir_candidates(profile_paths)
         )
         if profile_paths.hermes_plugin_dir.is_dir() and not registered:
-            results.append({"profile": name, "status": "unregistered_kept"})
+            results.append({"profile": name, "status": "unregistered_kept", "registration": "unchanged"})
             continue
         entry: dict[str, object] = {
             "profile": name,
             "status": "refreshed" if profile_paths.hermes_plugin_dir.is_dir() else "bootstrapped",
+            # What the registration pass did to this home's config, so the
+            # update output can say a profile MOVED off the pre-pointer path
+            # (#1857) rather than folding that into "refreshed".
+            "registration": "unchanged",
+            "retired_external_dirs": [],
         }
         try:
             install_plugin_bundle(profile_paths, force=bool(getattr(args, "force", False)), dry_run=bool(args.dry_run))
             install_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
             install_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-            _apply_result(clone)
+            applied = _apply_result(clone)
+            entry["registration"] = applied["registration"]
+            entry["retired_external_dirs"] = applied["retired_external_dirs"]
+            entry["registered_dir"] = applied["registered_dir"]
         # A profile's widget or skin the manifest cannot vouch for refuses,
         # exactly as the primary home's does. That refusal is one profile's
         # row, never the end of the update: the primary home and every other
@@ -696,6 +711,48 @@ def _print_hermes_profiles_line(results: list[dict[str, object]], *, language: s
     print(f"  {tr(language, 'hermes_profiles_synced', summary=summary)}")
 
 
+def _print_registration_migrations(
+    primary: dict[str, object] | None, profile_results: list[dict[str, object]]
+) -> None:
+    """One line per home whose registration moved off an older managed path.
+
+    A person reads "refreshed" as nothing changed; a home that just stopped
+    naming `<omh_home>/skills` beside the generation pointer (#1857) changed
+    which files Hermes loads by name, and that is said in its own line.
+    """
+    for label, entry in [("Hermes registration", primary), *(
+        (f"Bot profile {row.get('profile')}: registration", row) for row in profile_results
+    )]:
+        if not entry or entry.get("registration") != "migrated":
+            continue
+        retired = entry.get("retired_external_dirs")
+        listed = ", ".join(str(item) for item in retired) if isinstance(retired, list) else ""
+        print(f"  {label} migrated from {listed} to {entry.get('registered_dir')}.")
+
+
+def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
+    """Doctor's ambiguity finding, re-read from disk after every home was written.
+
+    Empty after a migration that took; a home whose older entry was spelled
+    in a way `remove_external_dir` does not match keeps both, and this names
+    it in the same words `omh doctor` uses instead of leaving the next bot
+    chat to report an ambiguous skill name.
+    """
+    paths = _paths(args)
+    homes: list[tuple[str, OmhPaths]] = [(registration_home_label(paths.hermes_config_path), paths)]
+    for name, profile_dir in _hermes_profile_dirs(paths):
+        profile_paths = _paths(_profile_clone(args, paths, profile_dir))
+        homes.append((registration_home_label(profile_paths.hermes_config_path, profile=name), profile_paths))
+    lines: list[str] = []
+    for label, home_paths in homes:
+        entries = registered_managed_entries(
+            read_config(home_paths.hermes_config_path), _managed_workflow_dir_candidates(home_paths)
+        )
+        if len(entries) > 1:
+            lines.append(ambiguous_registration_message(label, entries))
+    return lines
+
+
 def _registered_workflow_dir(paths: OmhPaths) -> Path:
     """Keep installer consumers under the non-resolved shared pointer."""
     current = managed_current_workflow_pack_dir()
@@ -729,20 +786,14 @@ def _managed_workflow_dir_candidates(paths: OmhPaths) -> list[Path]:
     `paths.skills_dir` and passed its tests from an unmanaged interpreter).
     """
     candidates = [_registered_workflow_dir(paths)]
-    for candidate in (
-        paths.omh_home / "skills",
-        paths.skills_dir,
-        managed_current_workflow_pack_dir(),
-        # A profile that later selected its own store (`plugins.entries.omh.
-        # settings.omh_home`) was registered by the sync at the primary's
-        # store, which for a default install is this one. Named by the
-        # standalone default rather than through `paths`, because a direct
-        # `omh --hermes-home <profile> uninstall --registration-only` now
-        # resolves `paths.omh_home` to the profile's store (#1679) and would
-        # otherwise leave the registration it came to remove.
-        runtime_paths.standalone_default_omh_home(paths.hermes_home) / "skills",
-    ):
-        if candidate is not None and candidate not in candidates:
+    # The set itself lives beside doctor's reading of it
+    # (`install.skill_registration`): the writer and the two readers of "how
+    # many managed directories does this home name" must agree on the list,
+    # and this function only adds the ordering -- today's path first.
+    # `managed_current_workflow_pack_dir` is passed from this module's own
+    # binding so the managed-install fixtures keep stubbing one name.
+    for candidate in managed_skill_dir_candidates(paths, current=managed_current_workflow_pack_dir()):
+        if candidate not in candidates:
             candidates.append(candidate)
     return candidates
 
@@ -850,7 +901,7 @@ def _external_dir_registered(config: str, path: Path) -> bool:
 
 
 def _external_dir_key(path: str | Path) -> str:
-    return os.path.normcase(os.path.normpath(str(path))).replace("\\", "/")
+    return external_dir_key(path)
 
 
 def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] | None:
@@ -1851,12 +1902,23 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
     applied: dict[str, ConfigChange] = {}
     current = ""
     display_sections_before: dict[str, str] = {}
+    registered_dir = _registered_workflow_dir(paths)
+    retired_external_dirs: list[str] = []
 
     def _apply(config_text: str) -> ConfigChange:
-        nonlocal current, display_sections_before
+        nonlocal current, display_sections_before, retired_external_dirs
         current = config_text
-        change = ensure_external_dir(current, _registered_workflow_dir(paths))
-        compression = ensure_compression_defaults(change.text)
+        # Register today's path and retire every other managed candidate in
+        # the same text: a home carried forward from the pre-pointer path
+        # used to keep `<omh_home>/skills` beside the generation pointer, and
+        # Hermes refuses a bare skill name that resolves to two different
+        # files (#1857). Re-derived on every pass of the mutation, so a retry
+        # reads the other writer's file. The opt-out rule sits in the two
+        # callers that decide whether this home is registered at all.
+        migration = migrate_managed_registration(current, registered_dir, _managed_workflow_dir_candidates(paths))
+        change = ConfigChange(migration.added, migration.message, migration.text)
+        retired_external_dirs = list(migration.retired)
+        compression = ensure_compression_defaults(migration.text)
         # Installing the bridge and switching it on are separate steps in
         # Hermes. Doing only the first leaves an install that passes every
         # structural check while no OMH tool is reachable in chat.
@@ -1939,7 +2001,7 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
             }
         )
         return ConfigChange(
-            any(step.changed for step in applied.values()),
+            any(step.changed for step in applied.values()) or bool(retired_external_dirs),
             change.message,
             memory_provider.text,
         )
@@ -1951,6 +2013,7 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
     change = applied["external_dir"]
+    registration = "migrated" if retired_external_dirs else "added" if change.changed else "unchanged"
     compression = applied["compression"]
     plugin_enable = applied["plugin_enable"]
     tui_interface = applied["tui_interface"]
@@ -1974,10 +2037,10 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
             paths,
             {
                 "hermes_config_path": str(paths.hermes_config_path),
-                "last_applied_skills_dir": str(_registered_workflow_dir(paths)),
+                "last_applied_skills_dir": str(registered_dir),
                 "external_dir_registered": _external_dir_registered(
                     read_config(paths.hermes_config_path),
-                    _registered_workflow_dir(paths),
+                    registered_dir,
                 ),
                 MANAGED_CONFIG_WRITES_STATE_KEY: config_writes,
             },
@@ -1985,6 +2048,7 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
     return {
         "changed": (
             change.changed
+            or bool(retired_external_dirs)
             or compression.changed
             or plugin_enable.changed
             or tui_interface.changed
@@ -1995,6 +2059,11 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
         "message": change.message,
         "config": str(paths.hermes_config_path),
         "skills_dir": str(paths.skills_dir),
+        # "migrated" when an older managed entry was retired in the same
+        # write, "added" when only today's path went in, else "unchanged".
+        "registration": registration,
+        "registered_dir": registered_dir.expanduser().as_posix(),
+        "retired_external_dirs": list(retired_external_dirs),
         "dry_run": args.dry_run,
         "compression_defaults": {"changed": compression.changed, "message": compression.message},
         "plugin_enabled": {"changed": plugin_enable.changed, "message": plugin_enable.message},
