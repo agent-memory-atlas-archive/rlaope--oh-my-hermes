@@ -904,6 +904,7 @@
       "changed_lines": 122,
       "issue": 907,
       "kind": "fix",
+      "known_defect": "The validator calls resolve_record_expiry_deadline, a name the task text never states, so a correct fix under any other name fails it. Kept in the run and reported; excluded from decisions that name it.",
       "leak_class": "names_changed_file",
       "merge_base": "d85ca9db7a1694e458abd7012ac6a8cca3007a94",
       "merge_commit": "a0c68f236ddceca302084d15b45b54a2b86705bc",

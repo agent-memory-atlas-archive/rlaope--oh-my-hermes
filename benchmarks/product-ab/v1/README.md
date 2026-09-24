@@ -411,6 +411,15 @@ belong beside any delta read off this lane.
   only the OMH arms get a repair turn. Prompt-borne information therefore gets
   two attempts on one side and one on the other.
 
+One piece of shipped text is kept although it conflicts with the workspace:
+`VERIFICATION_STOP_PROTOCOL` ends "commit what passes", and the workspace
+preamble says not to commit. The lane measures shipped text, so the sentence
+stays verbatim, and the conflict is resolved by one sentence at the end of the
+workspace preamble -- "Where an instruction says to commit, leave the change
+uncommitted in the working tree" -- which both arms receive. `GOAL_ECHO_PROTOCOL`
+tells the model to stop on a conflict, so an unresolved one would surface as a
+decline on the OMH arm only.
+
 Pushing the other way, OMH's structural-search and tool-batching blocks are
 worth less on a text that already names the file and the change. The signs are
 opposite and nothing here can rank them without a measured run, which is why
@@ -440,7 +449,21 @@ the corpus is filtered for leakage rather than assumed to average it out.
   on the unit branch", which exists so a dispatched worktree can be collected;
   this lane has no collector, and left in it reached the model in the same
   prompt as "do not commit". They are derived from the protocol rather than
-  matched by wording, so a rewording upstream stays filtered.
+  matched by wording: the lane asks for the criteria of a unit whose only check
+  is a sentinel and drops what follows the sentinel, so a rewording upstream
+  stays filtered and a criterion the protocol adds *before* the unit's checks
+  still reaches the model.
+* The unit's file scope is `src/`, `tests/`, and the completion file. The
+  completion contract requires that file at the workspace root, and with it
+  outside the scope criterion 1 forbade it; one model declined two of five
+  tasks over that conflict without making a tool call. `doctor` fails when the
+  scope stops covering the file.
+* Each verification command reaches the model as the command the gate runs,
+  rendered by the same function: `PYTHONPATH=tests python3 -m unittest …`. The
+  gate puts the lane's interpreter in place of `python3` and changes nothing
+  else. The prompt names a stable interpreter token rather than the lane's
+  absolute path, so the prompt bytes do not vary by machine; `doctor` fails
+  when that token is not on `PATH`.
 * After the run, the arm executes the task's declared verification commands.
   When they fail, a completion claim is withdrawn, and the manifest's
   `omh_repair_attempts` decides whether the arm gets one more turn with the
@@ -452,8 +475,18 @@ modules for the touched packages. The pull request's own tests are never among
 them: they are the hidden validator, and a gate that ran them would hand the
 candidate the answer.
 
-Before either half of the grade is run, the regression modules are restored
-from the merge base. They are chosen to be modules the pull request did *not*
+**The gate never runs the hidden validator, and on every admitted task it
+passes on an untouched checkout, so it can catch regressions, never a missing
+fix.** That follows from how the corpus is built, not from chance: the probe
+admits a task only when its regression set is green at the merge base. The
+gate and the repair turn therefore cannot defend the false-completion column on
+this corpus. Every record says so in `verification_gate`: `covers_target` is
+`false`, and `regression_green_at_merge_base` is copied from the probe
+(`compile_green_at_merge_base` is `null`, because the probe never ran compile).
+
+Before every gate run, and again before either half of the grade is run, the
+regression modules are restored from the merge base, so the gate reads the
+files the grader reads. They are chosen to be modules the pull request did *not*
 touch, so the validator never restores them, and they used to be graded from
 whatever the candidate left behind -- while the OMH arm's prompt named those
 exact modules and another criterion permitted edits under `tests/`. A candidate
@@ -501,8 +534,24 @@ behaviour under test. Read the column as "how often this product handed back a
 wrong *done*", not as "how often the model was wrong". Every withdrawal is
 recorded on the run, so the two readings can be separated afterwards.
 
-Tool calls and API turns ride along as secondary columns, read from the
-Hermes usage file.
+**The gate never runs the hidden validator, and on every admitted task it
+passes on an untouched checkout, so it can catch regressions, never a missing
+fix.** `analyze.py` prints that line under the table, beside this column.
+
+A decline is not a false completion, and it is not calibration either. The
+table counts `Claim absent` (no completion file) and `Claim blocked` per arm, so
+a decline the bench provoked cannot read as a better false-completion column.
+`declined` and `process_declined` parse as `blocked` on both arms.
+
+Tool calls and API turns are recorded from the Hermes usage file when it
+carries them, and as `null` when it does not; the table prints `n/a` rather
+than a zero nobody measured. The Hermes version this lane last ran against does
+not carry them, so read them from `~/.hermes/state.db` (read-only) instead:
+`count(distinct tool_call_id)` per session, because a compacted session repeats
+rows.
+
+A corpus task marked `known_defect` stays in every number and is listed under
+the table with its note, so a decision that excludes it has to say so.
 
 A run that nothing could price is not a free run, and the arm it belongs to has
 no cost. An unpriced run used to collapse to `0.0`, sum into the arm total, and

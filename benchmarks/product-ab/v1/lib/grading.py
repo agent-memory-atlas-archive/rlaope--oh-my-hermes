@@ -252,7 +252,10 @@ def completion_claim(workspace: Path) -> dict[str, Any]:
     raw = str(payload.get("status") or payload.get("claim") or "").strip().casefold()
     if raw in {"complete", "completed", "done"}:
         return {"claim": "complete", "reason": ""}
-    if raw in {"blocked", "incomplete", "failed", "open_question"}:
+    # `declined` and `process_declined` are the vocabulary `FAILURE_KIND_PROTOCOL`
+    # hands the OMH arm; parsed here for both arms so a decline is never
+    # scored as an unreadable file on one side only.
+    if raw in {"blocked", "incomplete", "failed", "open_question", "declined", "process_declined"}:
         return {"claim": "blocked", "reason": raw}
     return {"claim": "unreadable", "reason": "completion file named no known status"}
 
