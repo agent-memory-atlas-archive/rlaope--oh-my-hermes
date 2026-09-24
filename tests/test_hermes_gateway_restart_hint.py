@@ -69,8 +69,8 @@ class GatewayRestartHintTests(unittest.TestCase):
 
             self.assertEqual(
                 hint,
-                "Hermes gateway for profile miku started 2026-09-19T09:35:55Z before this bundle was installed "
-                "(2026-09-24T02:05:26Z); run `hermes --profile miku gateway restart`",
+                "Hermes gateway for profile miku: last recorded start 2026-09-19T09:35:55Z precedes this bundle's "
+                "install (2026-09-24T02:05:26Z); run `hermes --profile miku gateway restart`",
             )
 
     def test_a_gateway_started_after_the_install_needs_no_restart(self) -> None:
@@ -129,6 +129,51 @@ class GatewayRestartHintTests(unittest.TestCase):
             _write_home(bad_stamp, starts=[_INSTALLED_EPOCH - 3600], pid_record=_record(bad_stamp), installed_at="yesterday")
             self.assertIsNone(gateway_restart_hint(bad_stamp, label="x", restart_command="y"))
 
+    def test_a_ledger_hermes_did_not_write_never_raises_out_of_update(self) -> None:
+        # `omh update` prints the hint after a successful install and `main`
+        # catches only OmhError, so a line that parses as a float but is not
+        # a timestamp, or bytes that are not UTF-8, must yield no hint rather
+        # than a traceback. A finite positive start on another line still
+        # counts.
+        cases: dict[str, bytes] = {
+            "nan": b"nan\n",
+            "negative": b"-1e12\n",
+            "negative-inf": b"-1e400\n",
+            "inf": b"1e400\n",
+            "not-utf8": b"\xff\xfe1790000000.0\n",
+            "empty": b"",
+        }
+        with TemporaryDirectory() as tmp:
+            for label, payload in cases.items():
+                with self.subTest(label):
+                    home = Path(tmp) / label
+                    _write_home(home, starts=None, pid_record=_record(home))
+                    (home / "gateway-starts.log").write_bytes(payload)
+                    self.assertIsNone(gateway_restart_hint(home, label="x", restart_command="y"))
+            mixed = Path(tmp) / "mixed"
+            _write_home(mixed, starts=None, pid_record=_record(mixed))
+            (mixed / "gateway-starts.log").write_text(f"nan\n-5\n{_INSTALLED_EPOCH - 3600!r}\ninf\n", encoding="utf-8")
+            self.assertIsNotNone(gateway_restart_hint(mixed, label="x", restart_command="y"))
+            huge = Path(tmp) / "huge-stamp"
+            _write_home(huge, starts=[_INSTALLED_EPOCH - 3600], pid_record=_record(huge), installed_at="9999-12-31T23:59:59Z")
+            # Whether a year-9999 stamp converts back is the platform's
+            # time_t range (POSIX yes, Windows no); either way nothing raises.
+            far = datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC).timestamp()
+            try:
+                datetime.fromtimestamp(far, UTC)
+                convertible = True
+            except (ValueError, OverflowError, OSError):
+                convertible = False
+            hint = gateway_restart_hint(huge, label="x", restart_command="y")
+            if convertible:
+                self.assertEqual(
+                    hint,
+                    "Hermes gateway for x: last recorded start 2026-09-24T01:05:26Z precedes this bundle's "
+                    "install (9999-12-31T23:59:59Z); run `y`",
+                )
+            else:
+                self.assertIsNone(hint)
+
     def test_hints_cover_the_primary_home_and_every_profile_with_their_commands(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -145,10 +190,10 @@ class GatewayRestartHintTests(unittest.TestCase):
             self.assertEqual(
                 hints,
                 [
-                    f"Hermes gateway for {hermes_home} started 2026-09-24T01:05:26Z before this bundle was installed "
-                    "(2026-09-24T02:05:26Z); run `hermes gateway restart`",
-                    "Hermes gateway for profile miku started 2026-09-24T02:04:26Z before this bundle was installed "
-                    "(2026-09-24T02:05:26Z); run `hermes --profile miku gateway restart`",
+                    f"Hermes gateway for {hermes_home}: last recorded start 2026-09-24T01:05:26Z precedes this "
+                    "bundle's install (2026-09-24T02:05:26Z); run `hermes gateway restart`",
+                    "Hermes gateway for profile miku: last recorded start 2026-09-24T02:04:26Z precedes this "
+                    "bundle's install (2026-09-24T02:05:26Z); run `hermes --profile miku gateway restart`",
                 ],
             )
 
@@ -175,7 +220,7 @@ class UpdatePrintsRestartHintsTests(unittest.TestCase):
             status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
-            self.assertIn(f"  Hermes gateway for {hermes_home.resolve()} started ", stdout)
+            self.assertIn(f"  Hermes gateway for {hermes_home.resolve()}: last recorded start ", stdout)
             self.assertIn("; run `hermes gateway restart`", stdout)
             self.assertNotIn("hermes --profile miku gateway restart", stdout)
             # The existing restart line is kept beside the named hint.

@@ -761,6 +761,25 @@ def _registered_workflow_dir(paths: OmhPaths) -> Path:
     return paths.skills_dir
 
 
+def _registration_retires_older_entries(registered_dir: Path) -> bool:
+    """Only the installer-managed command moves a home off its older entries.
+
+    `_registered_workflow_dir` returns the shared generation pointer when the
+    running command is the installer-managed one and `<omh_home>/skills`
+    otherwise -- a checkout run through `python -P -m omh.cli`, a pip or uv
+    tool install. From such a command the pointer is still a candidate, so
+    retiring "every other candidate" would unregister the pointer and move
+    the machine backwards onto that command's own pack, which is the
+    opposite of the migration #1857 asks for. An unmanaged command therefore
+    keeps the additive registration it always had and reports `added` or
+    `unchanged`; only the command that writes the pointer retires the older
+    entries. Decided by what this command writes, not by a runtime probe, so
+    the fixtures that stub the pointer and the managed verdict keep one seam.
+    """
+    current = managed_current_workflow_pack_dir()
+    return current is not None and _external_dir_key(registered_dir) == _external_dir_key(current)
+
+
 def _managed_workflow_dir_candidates(paths: OmhPaths) -> list[Path]:
     """Every managed skills directory a registration may legitimately name.
 
@@ -1904,18 +1923,24 @@ def _apply_result(args: argparse.Namespace) -> dict[str, object]:
     display_sections_before: dict[str, str] = {}
     registered_dir = _registered_workflow_dir(paths)
     retired_external_dirs: list[str] = []
+    # Register today's path and retire every other managed candidate in the
+    # same text: a home carried forward from the pre-pointer path used to
+    # keep `<omh_home>/skills` beside the generation pointer, and Hermes
+    # refuses a bare skill name that resolves to two different files (#1857).
+    # Only the command that writes the pointer retires anything; an unmanaged
+    # command stays additive (see `_registration_retires_older_entries`). The
+    # opt-out rule sits in the two callers that decide whether this home is
+    # registered at all.
+    retire_candidates = (
+        _managed_workflow_dir_candidates(paths) if _registration_retires_older_entries(registered_dir) else []
+    )
 
     def _apply(config_text: str) -> ConfigChange:
         nonlocal current, display_sections_before, retired_external_dirs
         current = config_text
-        # Register today's path and retire every other managed candidate in
-        # the same text: a home carried forward from the pre-pointer path
-        # used to keep `<omh_home>/skills` beside the generation pointer, and
-        # Hermes refuses a bare skill name that resolves to two different
-        # files (#1857). Re-derived on every pass of the mutation, so a retry
-        # reads the other writer's file. The opt-out rule sits in the two
-        # callers that decide whether this home is registered at all.
-        migration = migrate_managed_registration(current, registered_dir, _managed_workflow_dir_candidates(paths))
+        # Re-derived on every pass of the mutation, so a retry reads the
+        # other writer's file.
+        migration = migrate_managed_registration(current, registered_dir, retire_candidates)
         change = ConfigChange(migration.added, migration.message, migration.text)
         retired_external_dirs = list(migration.retired)
         compression = ensure_compression_defaults(migration.text)

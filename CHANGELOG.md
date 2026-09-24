@@ -590,30 +590,43 @@ All notable changes will be documented here.
   `skills.external_dirs`, and every generation refresh made the two copies
   differ, so after each update every OMH skill present in both failed to
   load by name in that bot (#1857; on the owner machine `profiles/miku`
-  recorded `Ambiguous skill name 'omh-model-setup'`). `_apply_result` now
-  retires every other OMH-managed candidate in the same config write that
-  registers today's directory, through `remove_external_dir`, so the home
-  ends registered at exactly one managed path; a directory the person
-  registered themselves is never touched, and a home naming no managed
-  directory stays opted out. The apply step and every profile row carry
+  recorded `Ambiguous skill name 'omh-model-setup'`). `_apply_result` run
+  from the installer-managed command now retires every other OMH-managed
+  entry in the same config write that registers the pointer, so the home
+  ends registered at exactly one managed path. Entries are matched by real
+  path, the rule Hermes resolves them by and the one the readers below
+  count by, so an older entry spelled through `~`, a trailing slash or a
+  symlink is retired too rather than reported as an ambiguity `omh update`
+  could never clear. A directory the person registered themselves is never
+  touched, a home naming no managed directory stays opted out, and a
+  command that is not the installer-managed one (a checkout, a pip or uv
+  tool install) stays additive and never retires the pointer, so it cannot
+  move a machine backwards. The apply step and every profile row carry
   `registration` (`migrated`, `added`, `unchanged`) with the entries
   retired, and update prints one line per home that moved. `omh doctor`
   gains `external_dir_ambiguity` for the primary home and one row per
-  affected bot profile, a warning naming both paths and the consequence
-  with `run \`omh update\`` as the next action; update re-reads every home
-  after the write and warns in the same words for one it could not retire.
-  The pre-pointer copy on disk is not deleted: no manifest records it, so
-  the manifest-checked removal bar cannot be met, and doctor instead names
-  it with its frozen time as safe to delete once no home registers it
-  (`external_dir_unregistered_copy`). Update also says which running
-  gateways still serve pre-update code, from Hermes' own files: a
-  `gateway.pid` record for the home plus a `gateway-starts.log` start
-  earlier than the bundle manifest's `installed_at` prints
-  `Hermes gateway for <home> started <ISO> before this bundle was installed
-  (<ISO>); run \`hermes [--profile <name>] gateway restart\``. The pid
-  record's `start_time` is Hermes' PID-reuse fingerprint (psutil
-  `create_time() * 100` on macOS, `/proc/<pid>/stat` field 22 on Linux),
-  never a wall clock, and is pinned as not read. No signal, no process
+  affected bot profile: a warning naming both paths and the consequence,
+  counting only directories present on disk (Hermes skips a missing one),
+  with `run \`omh update\`` promoted to doctor's headline next action.
+  Update re-reads every home after the write and prints the same sentence
+  as a warning line for one it could not retire; that residual state does
+  not move the update's exit code. The pre-pointer copy on disk is not
+  deleted: no manifest records it, and on a managed install it backs the
+  always-retained `bootstrap-legacy` generation (the self-update rollback
+  target), which only `omh uninstall` collects. Doctor reports it as
+  unregistered but retained (`external_dir_unregistered_copy`) and calls
+  it safe to delete, with its directory mtime, only when no home registers
+  it and no generation links it. Update also names the gateways whose last
+  recorded start precedes this update, from Hermes' own files: a
+  `gateway.pid` record for the home plus a `gateway-starts.log` last start
+  earlier than the bundle manifest's `installed_at` (rewritten by every
+  update) prints `Hermes gateway for <home>: last recorded start <ISO>
+  precedes this bundle's install (<ISO>); run \`hermes [--profile <name>]
+  gateway restart\``. The pid record's `start_time` is Hermes' PID-reuse
+  fingerprint (psutil `create_time() * 100` on macOS, `/proc/<pid>/stat`
+  field 22 on Linux), never a wall clock, and is pinned as not read; a
+  ledger line that is not a finite positive number, or bytes that are not
+  UTF-8, yield no hint rather than a traceback. No signal, no process
   listing, no subprocess.
 
 ## 2.0.5 - 2026-09-22

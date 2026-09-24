@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
+import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -30,7 +31,7 @@ from omh.install.skill_registration import (
     registration_home_label,
 )
 from omh.maintenance import doctor as _doctor_module
-from omh.maintenance.doctor import run_doctor
+from omh.maintenance.doctor import recommended_next_action, run_doctor
 from omh.paths import OmhPaths
 
 
@@ -53,6 +54,7 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             pointer = root / "current" / "skills"
             paths = _managed_paths(root, root / "gen" / "skills")
             old = paths.omh_home / "skills"
+            pointer.mkdir(parents=True)
             candidates = managed_skill_dir_candidates(paths, current=pointer)
 
             migration = migrate_managed_registration(_config_naming(root / "mine", old), pointer, candidates)
@@ -61,6 +63,70 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             self.assertEqual((migration.added, migration.retired), (True, [old.as_posix()]))
             self.assertEqual(migration.registration, "migrated")
             self.assertEqual(registered_managed_entries(migration.text, candidates), [pointer.as_posix()])
+
+    def test_an_older_entry_is_retired_however_the_file_spells_it(self) -> None:
+        # Hermes expands `~` and resolves every entry, so a spelling through
+        # `~`, a trailing slash or a symlink is the same directory to it. The
+        # migration matches by real path too -- the rule the ambiguity reader
+        # and `external_dir_registered` use -- so no spelling is left for
+        # `omh update` to report as an ambiguity it can never clear.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            pointer.mkdir(parents=True)
+            paths = _managed_paths(root, root / "gen" / "skills")
+            old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            candidates = managed_skill_dir_candidates(paths, current=pointer)
+            spellings = {"trailing slash": old.as_posix() + "/"}
+            with mock.patch.dict(os.environ, {"HOME": str(root)}):
+                spellings["tilde"] = "~/.omh/skills"
+                self.assertEqual(Path(spellings["tilde"]).expanduser(), old)
+                for label, spelled in spellings.items():
+                    with self.subTest(label):
+                        # Written raw: `_config_naming` would normalize the
+                        # spelling away through `Path`, which is the point.
+                        before = f"skills:\n  external_dirs:\n    - {spelled}\n    - {pointer.as_posix()}\n"
+                        self.assertEqual(external_dirs(before), [spelled, pointer.as_posix()])
+                        migration = migrate_managed_registration(before, pointer, candidates)
+                        self.assertEqual(migration.retired, [spelled])
+                        self.assertEqual(external_dirs(migration.text), [pointer.as_posix()])
+                        self.assertEqual(registered_managed_entries(migration.text, candidates), [pointer.as_posix()])
+
+    @requires_symlinks
+    def test_an_older_entry_spelled_through_a_link_is_retired(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            pointer.mkdir(parents=True)
+            paths = _managed_paths(root, root / "gen" / "skills")
+            old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            link = root / "store-link"
+            link.symlink_to(paths.omh_home, target_is_directory=True)
+            linked = (link / "skills").as_posix()
+
+            migration = migrate_managed_registration(
+                _config_naming(linked, pointer), pointer, managed_skill_dir_candidates(paths, current=pointer)
+            )
+
+            self.assertEqual((migration.retired, migration.registration), ([linked], "migrated"))
+            self.assertEqual(external_dirs(migration.text), [pointer.as_posix()])
+
+    def test_no_candidates_means_additive_only(self) -> None:
+        # The caller that must stay additive (an unmanaged command) passes no
+        # candidates: today's path goes in and nothing is retired, whatever
+        # else the home names.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            own = paths.omh_home / "skills"
+
+            migration = migrate_managed_registration(_config_naming(pointer), own, [])
+
+            self.assertEqual(external_dirs(migration.text), [pointer.as_posix(), own.as_posix()])
+            self.assertEqual((migration.retired, migration.registration), ([], "added"))
 
     def test_a_home_already_on_the_pointer_alone_is_unchanged(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -98,6 +164,8 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             pointer = root / "current" / "skills"
             paths = _managed_paths(root, generation)
             old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
             entries = registered_managed_entries(
                 _config_naming(old, root / "mine", pointer),
                 managed_skill_dir_candidates(paths, current=pointer),
@@ -120,6 +188,20 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
                 managed_skill_dir_candidates(paths, current=pointer / "skills"),
             )
             self.assertEqual(entries, [(pointer / "skills").as_posix()])
+
+    def test_an_entry_whose_directory_is_missing_is_not_counted(self) -> None:
+        # Hermes skips an external directory that is not on disk, so nothing
+        # can be ambiguous through it: a stale entry alone is not a finding.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            pointer.mkdir(parents=True)
+            paths = _managed_paths(root, root / "gen" / "skills")
+            gone = paths.omh_home / "skills"
+            entries = registered_managed_entries(
+                _config_naming(gone, pointer), managed_skill_dir_candidates(paths, current=pointer)
+            )
+            self.assertEqual(entries, [pointer.as_posix()])
 
     def test_a_foreign_directory_is_never_a_managed_entry(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -154,6 +236,8 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             pointer = root / "current" / "skills"
             paths = _managed_paths(root, generation)
             old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
             paths.hermes_home.mkdir()
             write_config(paths.hermes_config_path, _config_naming(old, pointer))
 
@@ -174,6 +258,7 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             generation = root / "gen" / "skills"
             pointer = root / "current" / "skills"
             paths = _managed_paths(root, generation)
+            pointer.mkdir(parents=True)
             paths.hermes_home.mkdir()
             write_config(paths.hermes_config_path, _config_naming(pointer))
 
@@ -189,6 +274,8 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             pointer = root / "current" / "skills"
             paths = _managed_paths(root, generation)
             old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
             paths.hermes_home.mkdir()
             write_config(paths.hermes_config_path, _config_naming(pointer))
             for name, config in (("miku", _config_naming(old, pointer)), ("clean", _config_naming(pointer))):
@@ -213,6 +300,8 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             generation = root / "gen" / "skills"
             pointer = root / "current" / "skills"
             paths = _managed_paths(root, generation)
+            (paths.omh_home / "skills").mkdir(parents=True)
+            pointer.mkdir(parents=True)
             paths.hermes_home.mkdir()
             write_config(paths.hermes_config_path, _config_naming(paths.omh_home / "skills", pointer))
             with mock.patch.object(_doctor_module, "managed_current_workflow_pack_dir", return_value=pointer):
@@ -225,6 +314,24 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             # A warning row never counts as failed: it carries its own next action.
             self.assertNotIn("external_dir_ambiguity", group["failed"])
 
+    def test_the_ambiguity_next_action_is_promoted_to_doctor_s_headline(self) -> None:
+        # A home that has lost every OMH skill by name gets the row's action
+        # as the summary "Next" line, for the primary home and for a profile
+        # row named `external_dir_ambiguity:<profile>` alike -- a blocking
+        # failure still outranks it, as it does every warning.
+        label = registration_home_label(Path("/h/config.yaml"))
+        ambiguous = _doctor_module._ambiguity_check("external_dir_ambiguity", label, ["/a", "/b"])
+        profile_row = _doctor_module._ambiguity_check(
+            "external_dir_ambiguity:miku", registration_home_label(Path("/p/config.yaml"), profile="miku"), ["/a", "/b"]
+        )
+        clean = _doctor_module._ambiguity_check("external_dir_ambiguity", label, ["/a"])
+        passing = _doctor_module.Check("external_dir", True, "ok")
+        self.assertEqual(recommended_next_action([passing, ambiguous]), "run `omh update`")
+        self.assertEqual(recommended_next_action([passing, clean, profile_row]), "run `omh update`")
+        self.assertNotEqual(recommended_next_action([passing, clean]), "run `omh update`")
+        blocking = _doctor_module.Check("external_dir", False, "missing", next_action="Run `omh setup`")
+        self.assertEqual(recommended_next_action([blocking, ambiguous]), "Run `omh setup`")
+
 
 class UpdatePostCheckTests(unittest.TestCase):
     def test_the_post_check_names_every_home_that_still_names_two(self) -> None:
@@ -235,6 +342,8 @@ class UpdatePostCheckTests(unittest.TestCase):
             hermes_home = root / ".hermes"
             hermes_home.mkdir()
             old = omh_home / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
             write_config(hermes_home / "config.yaml", _config_naming(old, pointer))
             profile = hermes_home / "profiles" / "miku"
             profile.mkdir(parents=True)
@@ -269,8 +378,15 @@ class UpdatePostCheckTests(unittest.TestCase):
 
 
 class DoctorUnregisteredCopyCheckTests(unittest.TestCase):
-    def _check(self, paths: OmhPaths, pointer: Path | None):
-        with mock.patch.object(_doctor_module, "managed_current_workflow_pack_dir", return_value=pointer):
+    def _check(self, paths: OmhPaths, pointer: Path | None, *, managed_root: Path | None = None):
+        # The managed command root is read through `OMH_VENV_DIR` (root =
+        # its parent), so each case sees its own generations directory and
+        # never the machine's.
+        root = managed_root if managed_root is not None else paths.omh_home.parent / "no-managed-root"
+        with (
+            mock.patch.dict(os.environ, {"OMH_VENV_DIR": str(root / "venv")}),
+            mock.patch.object(_doctor_module, "managed_current_workflow_pack_dir", return_value=pointer),
+        ):
             return next(check for check in run_doctor(paths) if check.name == "external_dir_unregistered_copy")
 
     def _frozen_copy(self, paths: OmhPaths) -> Path:
@@ -299,13 +415,52 @@ class DoctorUnregisteredCopyCheckTests(unittest.TestCase):
             self.assertEqual((check.ok, check.severity), (True, "warning"))
             self.assertEqual(
                 check.message,
-                f"unregistered managed skills copy at {copy} (frozen at 2026-09-02T10:55:11Z); "
-                f"neither {paths.hermes_config_path} nor its profiles register it, safe to delete",
+                f"unregistered managed skills copy at {copy} (directory mtime 2026-09-02T10:55:11Z); "
+                f"neither {paths.hermes_config_path} nor its profiles register it and no retained generation "
+                "links it, safe to delete",
             )
             self.assertEqual(
                 check.next_action,
                 f"remove {copy}; no manifest records that copy, so `omh update` never deletes it",
             )
+
+    @requires_symlinks
+    def test_a_copy_backing_a_retained_generation_is_never_called_deletable(self) -> None:
+        # The lazy self-update migration links `generations/bootstrap-legacy/
+        # skills` to `<omh_home>/skills`, and that generation is always
+        # retained as the rollback target: the copy is a live fallback pack
+        # for as long as the generations exist, and only `omh uninstall`
+        # collects them. An unregistered copy in that state is reported as
+        # retained, with no remove action.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generation = root / "gen" / "skills"
+            pointer = root / "current" / "skills"
+            paths = _managed_paths(root, generation)
+            paths.hermes_home.mkdir()
+            write_config(paths.hermes_config_path, _config_naming(pointer))
+            copy = self._frozen_copy(paths)
+            managed_root = root / "share" / "omh"
+            bootstrap = managed_root / "generations" / "bootstrap-legacy"
+            bootstrap.mkdir(parents=True)
+            (bootstrap / "skills").symlink_to(copy, target_is_directory=True)
+            other = managed_root / "generations" / "20260924020459433021-edfca25300"
+            (other / "skills").mkdir(parents=True)
+            (managed_root / "self-update.json").write_text(
+                json.dumps({"retained_generations": ["bootstrap-legacy", other.name], "previous_known_good": {"id": other.name}}),
+                encoding="utf-8",
+            )
+
+            check = self._check(paths, pointer, managed_root=managed_root)
+
+            self.assertEqual((check.ok, check.severity, check.next_action), (True, "ok", ""))
+            self.assertEqual(
+                check.message,
+                f"unregistered managed skills copy at {copy} (directory mtime 2026-09-02T10:55:11Z); "
+                f"neither {paths.hermes_config_path} nor its profiles register it, and it is retained as the "
+                f"bootstrap-legacy fallback pack under {(managed_root / 'generations').resolve()}, collected only by `omh uninstall`",
+            )
+            self.assertNotIn("safe to delete", check.message)
 
     def test_a_copy_a_profile_still_registers_is_the_migration_s_job(self) -> None:
         with TemporaryDirectory() as tmp:

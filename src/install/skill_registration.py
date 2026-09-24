@@ -16,7 +16,10 @@ home naming both loses every OMH skill by name (#1857). Setup and update
 migrate such a home to the one path the running command writes; `omh doctor`
 and the update post-check report a home that still names two, in the same
 words. This module is the one place both sides read the candidate set and
-spell the finding, so the writer and the readers cannot drift.
+spell the finding, so the writer and the readers cannot drift: both match an
+entry by its real path, the way Hermes reads it, so a spelling through `~`,
+a trailing slash or a symlink is the same directory to the migration that it
+is to the finding.
 
 Pure path and text work: no config write, no subprocess, no network.
 """
@@ -28,7 +31,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-from .config_adapter import ConfigChange, ensure_external_dir, external_dirs, remove_external_dir
+from .config_adapter import ensure_external_dir, external_dirs, remove_external_dir_entries
 from ..paths import OmhPaths
 from ..plugin_bundle.omh import runtime_paths
 
@@ -96,29 +99,32 @@ def migrate_managed_registration(
     to keep `<omh_home>/skills` beside the generation pointer, and Hermes
     refuses a bare skill name that resolves to two different files -- so
     every generation refresh made every OMH skill fail to load by name in
-    that home (#1857). Only the candidates given are retired; a directory the
-    person registered themselves is not OMH's to touch. Retirement matches
-    the entry's text the way registration wrote it (`remove_external_dir`),
-    so an older entry spelled some other way stays, and the readers of
-    `registered_managed_entries` name that home afterwards. Whether a home
-    should be registered at all is the caller's question: this function
-    always writes today's path, and the opt-out rule (a home naming no
-    managed directory is left alone) is applied before it is called.
+    that home (#1857). Only entries that resolve to one of `candidates` are
+    retired; a directory the person registered themselves is not OMH's to
+    touch. An entry is matched by real path, the same rule
+    `registered_managed_entries` and `external_dir_registered` read by, so an
+    older entry spelled through `~`, a trailing slash or a symlink is
+    retired too -- Hermes expands and resolves every entry, and a spelling
+    the migration could not match would be reported as an ambiguity that
+    `omh update` can never clear. An entry resolving to `registered_dir`
+    itself is one directory to Hermes and stays. Whether a home should be
+    registered at all, and whether this command may retire anything, are the
+    caller's questions: this function always writes today's path, the
+    opt-out rule (a home naming no managed directory is left alone) is
+    applied before it is called, and a caller that must stay additive passes
+    no candidates. The retired entries are reported as `external_dirs` reads
+    them from the file.
 
     Pure text work, so it can be run against a copy of a live config.
     """
     change = ensure_external_dir(config_text, registered_dir)
-    text = change.text
-    retired: list[str] = []
-    registered_key = external_dir_key(registered_dir)
-    for candidate in candidates:
-        if external_dir_key(candidate) == registered_key:
-            continue
-        removal: ConfigChange = remove_external_dir(text, candidate)
-        if removal.changed:
-            retired.append(candidate.expanduser().as_posix())
-            text = removal.text
-    return RegistrationMigration(text=text, added=change.changed, message=change.message, retired=retired)
+    registered_real = _real_key(registered_dir)
+    candidate_reals = {_real_key(candidate) for candidate in candidates}
+    candidate_reals.discard(registered_real)
+    to_retire = [entry for entry in external_dirs(change.text) if _real_key(entry) in candidate_reals]
+    removal = remove_external_dir_entries(change.text, to_retire)
+    retired = list(to_retire) if removal.changed else []
+    return RegistrationMigration(text=removal.text, added=change.changed, message=change.message, retired=retired)
 
 
 def _real_key(path: str | Path) -> str:
@@ -130,13 +136,16 @@ def _real_key(path: str | Path) -> str:
 
 
 def registered_managed_entries(config_text: str, candidates: Iterable[Path]) -> list[str]:
-    """The registered entries that name a managed directory, one per real directory.
+    """The registered entries that name a managed directory present on disk, one per real directory.
 
     By text or by real path, the way `external_dir_registered` reads a single
     candidate. Two entries that resolve to the same directory -- the pointer
     and the generation it points at -- are one SKILL.md to Hermes and count
-    once; two that resolve to different directories are the ambiguity. Config
-    order is kept so a message names them the way the file does.
+    once; two that resolve to different directories are the ambiguity. An
+    entry whose directory is not on disk is not counted at all: Hermes skips
+    a missing external directory when it collects skills, so nothing can be
+    ambiguous through it. Config order is kept so a message names them the
+    way the file does.
     """
     keys = {external_dir_key(candidate) for candidate in candidates}
     reals = {_real_key(candidate) for candidate in candidates}
@@ -145,6 +154,8 @@ def registered_managed_entries(config_text: str, candidates: Iterable[Path]) -> 
     for entry in external_dirs(config_text):
         real = _real_key(entry)
         if external_dir_key(entry) not in keys and real not in reals:
+            continue
+        if not os.path.isdir(os.path.expanduser(entry)):
             continue
         if real in seen:
             continue

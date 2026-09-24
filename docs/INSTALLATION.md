@@ -1295,19 +1295,30 @@ sync added the generation pointer beside it. Hermes refuses a bare skill
 name that resolves to two different files across `skills.external_dirs`,
 and every generation refresh makes the two copies differ, so every OMH
 skill present in both failed to load by name in that bot. `omh setup` and
-`omh update` migrate such a home in the same config write that registers
-the current directory: the older OMH-managed entry is retired, the home
-ends up naming exactly one managed directory, and the update prints the
-move (`Bot profile <name>: registration migrated from <old> to <new>.`;
-`Hermes registration migrated ...` for the primary home). Only OMH-managed
-directories are retired; a directory you registered yourself stays where
-it is. `omh doctor` reports a home that still names two as
-`external_dir_ambiguity` (one row per affected profile, next action
-`run \`omh update\``), and the update's own post-check re-reads every home
-after the write and warns in the same words. The pre-pointer copy left on
-disk at `~/.omh/skills` is never deleted by OMH, because no manifest
-records it; once no home registers it, doctor names it with the time it
-froze at as safe to delete (`external_dir_unregistered_copy`).
+`omh update` run from the installer-managed command migrate such a home in
+the same config write that registers the pointer: the older OMH-managed
+entry is retired, matched by real path the way Hermes resolves entries (a
+spelling through `~`, a trailing slash or a symlink is the same directory),
+the home ends up naming exactly one managed directory, and the update
+prints the move (`Bot profile <name>: registration migrated from <old> to
+<new>.`; `Hermes registration migrated ...` for the primary home). Only
+OMH-managed directories are retired; a directory you registered yourself
+stays where it is. A command that is not the installer-managed one (a
+checkout, a pip or uv tool install) registers its own `~/.omh/skills` and
+never retires the pointer, so it cannot move a machine backwards.
+`omh doctor` reports a home that still names two managed directories on
+disk as `external_dir_ambiguity` (one row per affected profile) and
+promotes the row's `run \`omh update\`` to its headline next action; the
+update's own post-check re-reads every home after the write and warns in
+the same words, as a warning line only -- the update's exit code does not
+move. The pre-pointer copy left on disk at `~/.omh/skills` is never
+deleted by OMH: no manifest records it, and on a managed install it backs
+the always-retained `bootstrap-legacy` generation (the self-update rollback
+target, see [Staged installer updates and recovery](#staged-installer-updates-and-recovery))
+until `omh uninstall` collects the generations. Doctor reports it as
+unregistered but retained (`external_dir_unregistered_copy`), and only a
+copy that no home registers and no generation links is named, with its
+directory mtime, as safe to delete.
 
 `omh uninstall` is symmetric with the sync. A full uninstall (`omh uninstall`,
 `--all`, or `--purge`) clears every profile's registration, reverses the same
@@ -1322,12 +1333,14 @@ deliberate opt-out state described below.
 
 After a sync, restart Hermes Desktop so bot chats reload their skills.
 A gateway that was running through the update keeps serving the bundle it
-loaded at start. When Hermes' own start records in a home (`gateway.pid`
-and `gateway-starts.log`) show a gateway that started before that home's
-bundle was installed, the update names it with the command that reloads
+loaded at start. When Hermes' own records in a home (`gateway.pid` and the
+`gateway-starts.log` ledger) show a last recorded start earlier than that
+home's bundle install, the update names it with the command that reloads
 it: `hermes gateway restart` for the primary home,
 `hermes --profile <name> gateway restart` for a profile. That is file
-evidence only; a gateway running without a pid record is not named.
+evidence only: the bundle stamp is rewritten by every update, so the hint
+covers gateways whose last recorded start precedes this update, and a
+gateway running without a pid record is not named.
 
 To keep OMH out of one bot, unregister that profile only:
 

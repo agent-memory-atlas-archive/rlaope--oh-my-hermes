@@ -2443,13 +2443,12 @@ class HermesProfileSyncTests(unittest.TestCase):
             )
 
     @requires_symlinks
-    def test_an_older_entry_spelled_through_a_link_is_named_by_the_post_check(self) -> None:
-        # Retirement matches the entry's text, the way registration wrote
-        # it. An older entry spelled through a symlink still resolves to the
-        # managed directory -- so the profile is read as registered and
-        # refreshed -- but is not the text the migration retires, and the
-        # home keeps two. The post-check re-reads the file and names that
-        # home in doctor's words rather than reporting a clean update.
+    def test_an_older_entry_spelled_through_a_link_is_retired_too(self) -> None:
+        # Retirement matches by real path, the way Hermes resolves entries
+        # and the way the ambiguity reader counts them. An older entry
+        # spelled through a symlink is the same directory, so it is retired
+        # and the post-check has nothing to name -- otherwise doctor would
+        # send the person to an `omh update` that could never clear it.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             profile = self._profile(root, "politehelper")
@@ -2472,13 +2471,45 @@ class HermesProfileSyncTests(unittest.TestCase):
                 status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
-            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [linked_path, generation.as_posix()])
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [generation.as_posix()])
             self.assertIn(
-                f"  warning: profile politehelper ({config.resolve()}) names 2 OMH-managed skills directories in "
-                f"skills.external_dirs ({linked_path} and {generation.as_posix()}); Hermes refuses a bare skill "
-                "name that resolves to two different files, so OMH skills fail to load by name",
+                f"Bot profile politehelper: registration migrated from {linked_path} to {generation.as_posix()}.",
                 stdout,
             )
+            self.assertNotIn("OMH-managed skills directories", stdout)
+
+    def test_an_unmanaged_command_never_retires_the_generation_pointer(self) -> None:
+        # From a checkout or a pip/uv tool install `_registered_workflow_dir`
+        # is `<omh_home>/skills` while the pointer is still a candidate, so
+        # "retire every other candidate" would unregister the pointer and
+        # move the machine backwards. Such a command keeps the additive
+        # registration it always had: the pointer survives, nothing is
+        # printed as migrated.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "politehelper")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            own_path = (root / ".omh" / "skills").resolve().as_posix()
+            pointer = root / "current" / "skills"
+            pointer.mkdir(parents=True)
+            config = profile / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(f"    - {own_path}\n", f"    - {pointer.as_posix()}\n"),
+                encoding="utf-8",
+                newline="",
+            )
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix()])
+
+            # Only the pointer is stubbed; the managed-runtime verdict stays
+            # the test process's own, which is not the installer's venv.
+            with mock.patch.object(_setup_module, "managed_current_workflow_pack_dir", return_value=pointer):
+                self.assertFalse(_setup_module._managed_command_runtime()["managed"])
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix(), own_path])
+            self.assertNotIn("registration migrated", stdout)
 
     def test_opting_out_removes_a_registration_at_the_older_managed_dir(self) -> None:
         # Reading "registered" across both managed paths only works if
