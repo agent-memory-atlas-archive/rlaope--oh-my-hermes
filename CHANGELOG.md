@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Runs on the GLM 5.3 and DeepSeek V4.1 Flash Ultrafast tiers now report a
+  cost.** `glm-5.3-ultrafast` and `deepseek-v4.1-flash-ultrafast` are served
+  by an OpenAI-compatible gateway next to the base ids the shipped chains
+  name, but neither appeared in the plugin's price table, so a machine-level
+  chain override naming one reported no cost at all. Neither vendor publishes
+  a separate rate for the tier, so each row carries its base model's
+  documented list price rather than an invented discount: GLM 5.3 at 1.4 / 4.4
+  per million tokens (docs.z.ai), V4.1 Flash at the peak 0.30 / 1.20 with its
+  0.02 cache-hit ratio (api-docs.deepseek.com). `docs/MODEL-ONBOARDING.md` §5
+  now states that rule. Neither tier gains a provider-family row, a contract
+  row, or a shipped-chain slot, so provider verdicts stay unknown. Because the
+  interview offers a member's `-ultrafast` variant only when that id is
+  priced, `omh model-chains interview` now also offers `glm-5.3-ultrafast` for
+  chains that name `glm-5.3`.
+
 - **Adding an ordinary skill no longer forces a raise of the skill-body
   budget.** `full_profile_skill_body_chars`, the install footprint of every
   `full` `SKILL.md` body, was a zero-slack ratchet that each new skill had to

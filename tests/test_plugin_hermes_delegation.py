@@ -337,7 +337,7 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 # chains' pointer slot (`deepseek-flash`) is not borrowed: the
                 # tier stays bare instead of claiming a category it was not
                 # routed to.
-                self.assertEqual(mixture_category_for(spelling, "high", parent_model="claude-opus-5"), "")
+                self.assertEqual(mixture_category_for(spelling, "high", parent_model="kimi-k3"), "")
         for spelling in ("z-ai/glm-5.3-ultrafast", "glm-5.3-ultrafast"):
             with self.subTest(spelling=spelling):
                 self.assertNotIn(
@@ -349,8 +349,8 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 self.assertEqual(cost(spelling, 1_000_000, 1_000_000, 0), 5.8)
                 # And the shipped chains name only the base model, so the tier
                 # projects onto the category its base sits in.
-                self.assertEqual(mixture_category_for(spelling, "low", parent_model="claude-opus-5"), "unspecified-low")
-                self.assertEqual(mixture_category_for(spelling, "xhigh", parent_model="claude-opus-5"), "")
+                self.assertEqual(mixture_category_for(spelling, "low", parent_model="kimi-k3"), "unspecified-low")
+                self.assertEqual(mixture_category_for(spelling, "xhigh", parent_model="kimi-k3"), "")
 
     def test_a_routed_architect_child_is_labeled_architect(self):
         self.assertEqual(
