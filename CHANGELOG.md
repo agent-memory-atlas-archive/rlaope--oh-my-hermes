@@ -508,15 +508,17 @@ All notable changes will be documented here.
   count is over distinct `tool_call_id` per session, because a compaction
   re-persists tool rows under new ids; the OMH-skill signal is the catalog's
   `[omh] ` description prefix in the `skill_view` result rather than the
-  `omh-` display name, since the `ulw-*` skills are OMH skills too. Archived
-  and hidden sessions are included, `--since` takes an ISO-8601 timestamp or
-  epoch seconds, `--source` keeps one surface, and an empty window exits 0 as
-  an observation while a missing database exits 2. The `session_usage/v1`
+  `omh-` display name, since the `ulw-*` skills are OMH skills too, and a
+  name-only result (a reference-file load, a compaction placeholder) counts
+  when it names a catalog skill. Archived and hidden sessions are included,
+  `--since` takes an ISO-8601 timestamp or epoch seconds, `--source` keeps
+  one surface (`(none)` the untagged sessions), and an empty window exits 0
+  as an observation while a missing database exits 2. The `session_usage/v1`
   payload carries its own claim boundary: it is not execution, review, CI, or
   merge evidence. `reply-lint --hermes-session` gains the same `--source`
   filter: `latest` resolves to the most recent session with that tag, an
-  explicit id whose tag differs is an error rather than a silently ignored
-  flag, and the payload records `source_filter`.
+  explicit id whose tag differs or cannot be checked is an error rather than
+  a silently ignored flag, and the payload records `source_filter`.
 
 ## 2.0.5 - 2026-09-22
 

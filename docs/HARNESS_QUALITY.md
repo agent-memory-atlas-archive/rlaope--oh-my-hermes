@@ -257,8 +257,9 @@ result shows that the text carries none of these shapes. It does not show that
 the reply was correct, complete, or in the host's own voice, and it is not
 execution, review, CI, or merge evidence. `--source` scopes `latest` to the
 most recent session that Hermes tagged with that surface (`tui`, `cli`,
-`desktop`, ...); an explicit id whose tag differs is an error, so a filter
-never looks applied when it was not.
+`desktop`, ...; `(none)` selects untagged sessions); an explicit id whose tag
+differs, or that has no session row to check the tag on, is an error, so a
+filter never looks applied when it was not.
 
 ## Session Usage
 
@@ -270,16 +271,16 @@ surfaces the tools and skills actually reached until a person opened
 not one `omh_*` call.
 
 `omh quality-evidence session-usage` reads Hermes' own session store and
-reports, per `sessions.source` tag, what reached the model:
+reports, per `sessions.source` tag, what Hermes recorded for its sessions:
 
 | Column | What it counts |
 | --- | --- |
-| `sessions` | session rows with that source tag (`(none)` groups rows without one) |
+| `sessions` | session rows with that source tag (`(none)` groups rows without one, and `--source "(none)"` selects them) |
 | `tool_calls` | distinct tool results the session persisted (`messages` with `role = 'tool'`) |
 | `omh_tool_calls` | those whose `tool_name` starts with `omh_`, plus `omh_tool_names` per name |
 | `sessions_with_omh_tool` | sessions with at least one such call |
 | `skill_views` | distinct `skill_view` results |
-| `omh_skill_views` | those whose result description starts with `[omh] `, plus `omh_skill_names` per name |
+| `omh_skill_views` | those whose result description starts with `[omh] `, or whose name-only result (a reference-file load, a compaction placeholder) names a catalog skill, plus `omh_skill_names` per name |
 | `sessions_with_omh_skill_view` | sessions with at least one such load |
 | `sessions_with_any_omh` | sessions with either signal |
 
@@ -290,23 +291,27 @@ omh quality-evidence session-usage [--since 2026-09-01T00:00:00Z] [--source tui]
 The database opens `mode=ro` and nothing is written. Every count is over
 distinct `tool_call_id` per session, because a compaction re-persists tool
 rows under new ids and a raw row count would inflate every surface that ran
-long enough to compact; a row without a `tool_call_id` counts once by its own
-id. The OMH-skill signal is the catalog's own `[omh] ` description prefix
-carried back in the `skill_view` result, not the `omh-` display name, because
-the `ulw-*` skills are OMH skills too; a result that is not a JSON object
-falls back to the marker substring. The window field is
+long enough to compact; the first row by id decides what a call was, and a
+row without a `tool_call_id` counts once by its own id. The OMH-skill signal
+is the catalog's own `[omh] ` description prefix carried back in the
+`skill_view` result, not the `omh-` display name, because the `ulw-*` skills
+are OMH skills too. A reference-file load and the `[skill_view] name=...`
+placeholder a compaction leaves carry only a name, which counts when it is a
+catalog skill's display name, current or historical; any other result that is
+not a JSON object falls back to the marker substring. The window field is
 `COALESCE(last_activity_at, started_at)`, and `--since` takes an ISO-8601
 timestamp or epoch seconds. Archived and hidden sessions are included: a
 session that used OMH and was archived later still used it. An empty window
 exits 0 with `session_count: 0` and `observed: true`, because an empty
 observation is not failed work; a missing or unreadable database exits 2. A
-loop that wants to gate on utilisation reads `totals`, not the exit status.
+loop that wants to gate on utilization reads `totals`, not the exit status.
 
 The payload is `session_usage/v1` and carries its own claim boundary: it is a
 read-only observation of Hermes' session store grouped by the host's own tag.
-It counts tool results and skill loads that reached the model; it does not
-show that a call succeeded, that a skill's guidance was followed, or that a
-reply was correct, and it is not execution, review, CI, or merge evidence.
+It counts tool results and skill loads Hermes persisted to a session; it does
+not show that the model consumed them, that a call succeeded, that a skill's
+guidance was followed, or that a reply was correct, and it is not execution,
+review, CI, or merge evidence.
 
 ## Golden Examples
 

@@ -1,10 +1,11 @@
-"""Session usage: OMH utilisation per Hermes host surface, read from state.db.
+"""Session usage: OMH utilization per Hermes host surface, read from state.db.
 
-The fixture in ``test_reply_lint`` holds four sessions (tui, cli, desktop and
-one with no source tag) and the tool rows Hermes persists: an ``omh_*`` call
-re-persisted by a compaction, a tool row without a ``tool_call_id``, and
-``skill_view`` results in the JSON, file and plain-text shapes. Every count
-below is a hand count of those rows.
+The fixture in ``test_reply_lint`` holds five sessions (tui, cli, desktop,
+one with no source tag, and an archived, hidden cli session) and the tool
+rows Hermes persists: an ``omh_*`` call re-persisted by a compaction, tool
+rows without a ``tool_call_id`` and with an empty one, and ``skill_view``
+results in the JSON, reference-file, compaction-placeholder and plain-text
+shapes. Every count below is a hand count of those rows.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from omh.quality.session_usage import (
     build_session_usage,
     format_session_usage_summary,
 )
-from test_reply_lint import _write_state_db
+from test_reply_lint import OTHER_SKILL_VIEW, _write_state_db
 
 
 TUI_ROW = {
@@ -32,38 +33,38 @@ TUI_ROW = {
     "tool_calls": 7,  # read_file (no id), c1 once, c2, c3, c4, c5, c10
     "omh_tool_calls": 2,
     "sessions_with_omh_tool": 1,
-    "skill_views": 4,
-    "omh_skill_views": 2,  # omh-plan and ulw-work; the file shape and the reviewer skill are not
+    "skill_views": 4,  # omh-plan SKILL.md, reviewer, omh-plan reference file, ulw-work
+    "omh_skill_views": 3,  # the reviewer skill is not; the reference file names a catalog skill
     "sessions_with_omh_skill_view": 1,
     "sessions_with_any_omh": 1,
     "omh_tool_names": {"omh_recommend": 1, "omh_status": 1},
-    "omh_skill_names": {"omh-plan": 1, "ulw-work": 1},
+    "omh_skill_names": {"omh-plan": 2, "ulw-work": 1},
 }
 CLI_ROW = {
     "source": "cli",
-    "sessions": 1,
-    "tool_calls": 1,
-    "omh_tool_calls": 1,
-    "sessions_with_omh_tool": 1,
+    "sessions": 2,  # `older`, and `archived` (archived = 1, hidden = 1)
+    "tool_calls": 2,
+    "omh_tool_calls": 2,
+    "sessions_with_omh_tool": 2,
     "skill_views": 0,
     "omh_skill_views": 0,
     "sessions_with_omh_skill_view": 0,
-    "sessions_with_any_omh": 1,
-    "omh_tool_names": {"omh_todo": 1},
+    "sessions_with_any_omh": 2,
+    "omh_tool_names": {"omh_status": 1, "omh_todo": 1},
     "omh_skill_names": {},
 }
 DESKTOP_ROW = {
     "source": "desktop",
     "sessions": 1,
-    "tool_calls": 2,
-    "omh_tool_calls": 0,
-    "sessions_with_omh_tool": 0,
-    "skill_views": 2,
-    "omh_skill_views": 1,  # the plain-text result that names the marker
+    "tool_calls": 5,  # c7, c8, c12, and two rows whose tool_call_id is ''
+    "omh_tool_calls": 2,
+    "sessions_with_omh_tool": 1,
+    "skill_views": 3,
+    "omh_skill_views": 2,  # the plain-text result naming the marker, and the placeholder naming omh-routing
     "sessions_with_omh_skill_view": 1,
     "sessions_with_any_omh": 1,
-    "omh_tool_names": {},
-    "omh_skill_names": {"(unparsed)": 1},
+    "omh_tool_names": {"omh_hud": 1, "omh_todo": 1},
+    "omh_skill_names": {"(unparsed)": 1, "omh-routing": 1},
 }
 UNTAGGED_ROW = {
     "source": "(none)",
@@ -79,14 +80,14 @@ UNTAGGED_ROW = {
     "omh_skill_names": {},
 }
 TOTALS = {
-    "sessions": 4,
-    "tool_calls": 11,
-    "omh_tool_calls": 3,
-    "sessions_with_omh_tool": 2,
-    "skill_views": 6,
-    "omh_skill_views": 3,
+    "sessions": 5,
+    "tool_calls": 15,
+    "omh_tool_calls": 6,
+    "sessions_with_omh_tool": 4,
+    "skill_views": 7,
+    "omh_skill_views": 5,
     "sessions_with_omh_skill_view": 2,
-    "sessions_with_any_omh": 3,
+    "sessions_with_any_omh": 4,
 }
 
 
@@ -111,9 +112,27 @@ class SessionUsageCountTests(unittest.TestCase):
 
         self.assertEqual(payload["rows"], [UNTAGGED_ROW, CLI_ROW, DESKTOP_ROW, TUI_ROW])
         self.assertEqual(payload["totals"], TOTALS)
-        self.assertEqual(payload["session_count"], 4)
+        self.assertEqual(payload["session_count"], 5)
         self.assertTrue(payload["observed"])
         self.assertEqual(set(TOTALS), set(COUNT_KEYS))
+
+    def test_an_archived_hidden_session_counts_in_its_source_row(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            path = _write_state_db(home)
+            connection = sqlite3.connect(path)
+            flags = connection.execute(
+                "SELECT archived, hidden, ended_at FROM sessions WHERE id = 'archived'"
+            ).fetchone()
+            connection.close()
+
+            cli = build_session_usage(home, source="cli")["rows"][0]
+
+        # The fixture really carries the host's columns and flags; a reader that
+        # added `WHERE archived = 0 AND hidden = 0` would report one cli session.
+        self.assertEqual(flags, (1, 1, 0.3))
+        self.assertEqual(cli["sessions"], 2)
+        self.assertEqual(cli["omh_tool_names"], {"omh_status": 1, "omh_todo": 1})
 
     def test_a_re_persisted_tool_call_id_counts_once(self) -> None:
         # Rows 9 and 10 share tool_call_id c1 (a compaction re-persists the row).
@@ -132,12 +151,33 @@ class SessionUsageCountTests(unittest.TestCase):
             path = _write_state_db(home)
             before = build_session_usage(home, source="tui")["rows"][0]["tool_calls"]
 
-            _append_tool_row(path, (20, "20260923_150513_4286a5", '{"ok": true}', "read_file", None))
+            _append_tool_row(path, (30, "20260923_150513_4286a5", '{"ok": true}', "read_file", None))
+            after_null = build_session_usage(home, source="tui")["rows"][0]["tool_calls"]
+            _append_tool_row(path, (31, "20260923_150513_4286a5", '{"ok": true}', "read_file", ""))
+            after_empty = build_session_usage(home, source="tui")["rows"][0]["tool_calls"]
 
-            after = build_session_usage(home, source="tui")["rows"][0]["tool_calls"]
+        # Two rows with no tool_call_id are two calls, not one shared NULL key,
+        # and an empty string is no id either, not a key every such row shares.
+        self.assertEqual((before, after_null, after_empty), (7, 8, 9))
 
-        # Two rows with no tool_call_id are two calls, not one shared NULL key.
-        self.assertEqual((before, after), (7, 8))
+    def test_the_first_row_by_id_decides_a_re_persisted_skill_view(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            path = _write_state_db(home)
+            _append_tool_row(path, (30, "20260923_150513_4286a5", OTHER_SKILL_VIEW, "skill_view", "c20"))
+            _append_tool_row(path, (31, "20260923_150513_4286a5", "[skill_view] name=omh-plan (1 chars)", "skill_view", "c20"))
+            connection = sqlite3.connect(path)
+            with connection:
+                # An index the planner prefers returns the higher id first; the
+                # reader's ORDER BY id is what makes the original row decide.
+                connection.execute("CREATE INDEX messages_by_tool_name_desc ON messages(tool_name, id DESC)")
+            connection.close()
+
+            tui = build_session_usage(home, source="tui")["rows"][0]
+
+        self.assertEqual(tui["skill_views"], 5)
+        self.assertEqual(tui["omh_skill_views"], 3)
+        self.assertEqual(tui["omh_skill_names"], {"omh-plan": 2, "ulw-work": 1})
 
     def test_omh_skill_signal_is_the_description_prefix_with_a_marker_fallback(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -146,24 +186,44 @@ class SessionUsageCountTests(unittest.TestCase):
             _append_tool_row(
                 path,
                 (
-                    20,
+                    30,
                     "desk",
                     json.dumps({"name": "omh-review", "description": "Review, [omh] mentioned later."}),
                     "skill_view",
-                    "c11",
+                    "c20",
                 ),
             )
 
             desktop = build_session_usage(home, source="desktop")["rows"][0]
+            tui = build_session_usage(home, source="tui")["rows"][0]
 
-        # The JSON shape is decided by its description alone: a marker in the
-        # body of a non-OMH description does not count. Plain text falls back
-        # to the marker, and the ulw-* display name in the tui row shows the
-        # `omh-` name prefix is not required.
-        self.assertEqual(desktop["skill_views"], 3)
-        self.assertEqual(desktop["omh_skill_views"], 1)
-        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 1})
-        self.assertEqual(TUI_ROW["omh_skill_names"], {"omh-plan": 1, "ulw-work": 1})
+        # The JSON shape with a description is decided by the description alone:
+        # a marker in the body of a non-OMH description does not count, whatever
+        # the name. Plain text falls back to the marker, and the ulw-* display
+        # name in the tui row shows the `omh-` name prefix is not required.
+        self.assertEqual(desktop["skill_views"], 4)
+        self.assertEqual(desktop["omh_skill_views"], 2)
+        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 1, "omh-routing": 1})
+        self.assertEqual(tui["omh_skill_names"], {"omh-plan": 2, "ulw-work": 1})
+
+    def test_a_name_only_result_counts_when_the_name_is_a_catalog_skill(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            path = _write_state_db(home)
+            _append_tool_row(path, (30, "desk", json.dumps({"name": "reviewer", "file": "references/x.md"}), "skill_view", "c20"))
+            _append_tool_row(path, (31, "desk", "[skill_view] name=reviewer (5 chars)", "skill_view", "c21"))
+            _append_tool_row(path, (32, "desk", "[skill_view] name=", "skill_view", "c22"))
+            _append_tool_row(path, (33, "desk", json.dumps({"name": "omh-ultrawork", "file": "SKILL.md"}), "skill_view", "c23"))
+
+            desktop = build_session_usage(home, source="desktop")["rows"][0]
+
+        # A reference-file load and a placeholder carry only a name: a name that
+        # is not a catalog skill's does not count, a historical label (the
+        # `omh-ultrawork` era of `ulw-work`) does, and the fixture's own
+        # `omh-plan` reference file and `omh-routing` placeholder are in the hand counts.
+        self.assertEqual(desktop["skill_views"], 7)
+        self.assertEqual(desktop["omh_skill_views"], 3)
+        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 1, "omh-routing": 1, "omh-ultrawork": 1})
 
     def test_since_accepts_iso_or_epoch_and_drops_older_sessions(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -189,10 +249,14 @@ class SessionUsageCountTests(unittest.TestCase):
             _write_state_db(home)
 
             only_cli = build_session_usage(home, source="cli")
+            untagged = build_session_usage(home, source="(none)")
             unknown = build_session_usage(home, source="slack")
 
         self.assertEqual(only_cli["rows"], [CLI_ROW])
         self.assertEqual(only_cli["source"]["source_filter"], "cli")
+        # The label the payload prints for untagged rows selects them as a filter.
+        self.assertEqual(untagged["rows"], [UNTAGGED_ROW])
+        self.assertEqual(untagged["source"]["source_filter"], "(none)")
         self.assertEqual(unknown["rows"], [])
         self.assertEqual(unknown["session_count"], 0)
         self.assertTrue(unknown["observed"])
@@ -204,8 +268,11 @@ class SessionUsageCountTests(unittest.TestCase):
             with self.assertRaisesRegex(SessionUsageError, "no Hermes state database"):
                 build_session_usage(home)
             _write_state_db(home)
-            with self.assertRaisesRegex(SessionUsageError, "--since must be an ISO-8601 timestamp or epoch seconds: nope"):
-                build_session_usage(home, since="nope")
+            # `nan` parses as a float and would silently disable the window; `inf`
+            # would keep or drop everything. None of them is a stamp.
+            for bad in ("nope", "nan", "inf", "-inf"):
+                with self.assertRaisesRegex(SessionUsageError, f"--since must be an ISO-8601 timestamp or epoch seconds: {bad}"):
+                    build_session_usage(home, since=bad)
             older = Path(tmp) / "older"
             older.mkdir()
             connection = sqlite3.connect(older / "state.db")
@@ -233,6 +300,7 @@ class SessionUsageCountTests(unittest.TestCase):
         self.assertEqual(first["source"]["path"], str(path))
         self.assertEqual(first["counting"]["archived_hidden"], "included")
         self.assertIn("[omh] ", first["counting"]["omh_skill_view"])
+        self.assertIn("persisted to a session", first["claim_boundary"])
         self.assertIn("not execution, review, CI, or merge evidence", first["claim_boundary"])
 
     def test_summary_lists_each_source_the_totals_and_the_boundary(self) -> None:
@@ -281,7 +349,7 @@ class SessionUsageCliTests(unittest.TestCase):
         self.assertEqual(payload["totals"], TOTALS)
         self.assertEqual(json.loads(flag_stdout), payload)
         self.assertFalse(text_stdout.lstrip().startswith("{"))
-        self.assertIn("OMH session usage: 4 sessions across 4 sources", text_stdout)
+        self.assertIn("OMH session usage: 5 sessions across 4 sources", text_stdout)
         self.assertIn("Boundary", text_stdout)
 
     def test_filters_reach_the_payload_and_an_empty_window_exits_zero(self) -> None:
@@ -294,6 +362,9 @@ class SessionUsageCliTests(unittest.TestCase):
                     "quality-evidence", "session-usage", "--since", "1970-01-01T00:00:03Z", "--source", "slack",
                 ]
             )
+            none_status, none_stdout, none_stderr = run_cli(
+                [*self._common(tmp), "quality-evidence", "session-usage", "--source", "(none)"]
+            )
 
         self.assertEqual(status, 0, stderr)
         payload = json.loads(stdout)
@@ -302,6 +373,8 @@ class SessionUsageCliTests(unittest.TestCase):
         self.assertTrue(payload["observed"])
         self.assertEqual(payload["source"]["since"], "1970-01-01T00:00:03Z")
         self.assertEqual(payload["source"]["source_filter"], "slack")
+        self.assertEqual(none_status, 0, none_stderr)
+        self.assertEqual(json.loads(none_stdout)["rows"], [UNTAGGED_ROW])
 
     def test_a_missing_database_and_a_bad_since_exit_two(self) -> None:
         with TemporaryDirectory() as tmp:

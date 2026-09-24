@@ -248,30 +248,38 @@ ULW_WORK_SKILL_VIEW = json.dumps(
 )
 OTHER_SKILL_VIEW = json.dumps({"name": "reviewer", "description": "Review code for defects.", "success": True})
 OMH_FILE_SKILL_VIEW = json.dumps({"name": "omh-plan", "file": "references/plan.md", "content": "notes", "success": True})
+# What a compaction leaves in place of a skill_view result: the name, no description.
+OMH_PLACEHOLDER_SKILL_VIEW = "[skill_view] name=omh-routing (12,243 chars) [SKILL_PRUNED]"
 
 
 def _write_state_db(home: Path, *, session_id: str = "20260923_150513_4286a5") -> Path:
-    """A four-session store shaped like Hermes' own: the reply-lint rows (ids 1-8)
-    plus the tool rows the session-usage reader counts (ids 9 and up)."""
+    """A five-session store shaped like Hermes' own: the reply-lint rows (ids 1-8)
+    plus the tool rows the session-usage reader counts (ids 9 and up). The
+    sessions table carries the host's `ended_at`, `archived` and `hidden`
+    columns so an archived, hidden session can be shown to count."""
     home.mkdir(parents=True, exist_ok=True)
     path = home / "state.db"
     connection = sqlite3.connect(path)
     with connection:
         connection.execute(
-            "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, last_activity_at REAL)"
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, last_activity_at REAL, "
+            "ended_at REAL, archived INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0)"
         )
         connection.execute(
             "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, "
             "tool_name TEXT, tool_call_id TEXT, timestamp REAL)"
         )
         sessions = [
-            (session_id, "tui", 1.0, 5.0),
-            ("older", "cli", 0.5, 2.0),
-            ("desk", "desktop", 3.0, 4.0),
-            ("untagged", None, 1.5, None),
+            (session_id, "tui", 1.0, 5.0, None, 0, 0),
+            ("older", "cli", 0.5, 2.0, None, 0, 0),
+            ("desk", "desktop", 3.0, 4.0, None, 0, 0),
+            ("untagged", None, 1.5, None, None, 0, 0),
+            ("archived", "cli", 0.2, 0.3, 0.3, 1, 1),  # archived and hidden after using OMH
         ]
         connection.executemany(
-            "INSERT INTO sessions (id, source, started_at, last_activity_at) VALUES (?, ?, ?, ?)", sessions
+            "INSERT INTO sessions (id, source, started_at, last_activity_at, ended_at, archived, hidden) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            sessions,
         )
         rows = [
             (1, session_id, "user", "what does prepared_not_observed mean?", None, None),
@@ -293,6 +301,11 @@ def _write_state_db(home: Path, *, session_id: str = "20260923_150513_4286a5") -
             (17, "desk", "tool", "plain text", "skill_view", "c8"),
             (18, "untagged", "tool", '{"ok": true}', "terminal", "c9"),
             (19, session_id, "tool", ULW_WORK_SKILL_VIEW, "skill_view", "c10"),
+            (20, "archived", "tool", '{"ok": true}', "omh_status", "c11"),
+            (21, "desk", "tool", '{"ok": true}', "omh_todo", ""),  # empty tool_call_id: counts by row, like NULL
+            (22, "desk", "tool", '{"ok": true}', "omh_hud", ""),
+            (23, "desk", "tool", OMH_PLACEHOLDER_SKILL_VIEW, "skill_view", "c12"),  # name-only: catalog decides
+            (24, "untagged", "assistant", "untagged reply", None, None),
         ]
         connection.executemany(
             "INSERT INTO messages (id, session_id, role, content, tool_name, tool_call_id, timestamp) "
@@ -363,6 +376,33 @@ class HermesSessionSourceTests(unittest.TestCase):
         self.assertEqual(scoped["session_id"], "older")
         self.assertEqual([item["message_id"] for item in scoped["replies"]], [8])
         self.assertEqual(explicit["session_id"], "20260923_150513_4286a5")
+
+    def test_source_none_selects_untagged_sessions_and_an_orphan_id_cannot_be_checked(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            path = _write_state_db(home)
+            connection = sqlite3.connect(path)
+            with connection:
+                # Messages whose session row is gone (a deleted session) are readable
+                # without a filter and refused with one: there is no tag to check.
+                connection.execute(
+                    "INSERT INTO messages (id, session_id, role, content, timestamp) "
+                    "VALUES (40, 'orphan', 'assistant', 'orphan reply', 0.0)"
+                )
+            connection.close()
+
+            latest_untagged = hermes_session_replies(home, "latest", source="(none)")
+            explicit_untagged = hermes_session_replies(home, "untagged", source="(none)")
+            orphan = hermes_session_replies(home, "orphan")
+            with self.assertRaisesRegex(ReplySourceError, r"session untagged has source \(none\), not cli"):
+                hermes_session_replies(home, "untagged", source="cli")
+            with self.assertRaisesRegex(ReplySourceError, "no Hermes session orphan to check --source cli against"):
+                hermes_session_replies(home, "orphan", source="cli")
+
+        self.assertEqual(latest_untagged["session_id"], "untagged")
+        self.assertEqual([item["message_id"] for item in latest_untagged["replies"]], [24])
+        self.assertEqual(explicit_untagged["session_id"], "untagged")
+        self.assertEqual([item["message_id"] for item in orphan["replies"]], [40])
 
 
 class ReplyLintCliTests(unittest.TestCase):

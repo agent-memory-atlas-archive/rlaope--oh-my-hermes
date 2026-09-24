@@ -1,47 +1,59 @@
-"""OMH utilisation per Hermes host surface, read from ``state.db`` read-only.
+"""OMH utilization per Hermes host surface, read from ``state.db`` read-only.
 
-Hermes tags every session row with the surface that opened it
-(``sessions.source``: ``tui``, ``cli``, ``desktop``, ``oneshot``, ...) and
-persists every tool result as a ``messages`` row with ``role = 'tool'``,
-``tool_name`` and ``tool_call_id``. OMH's plugin registers its tools as
-``omh_<name>``, and every OMH skill's ``SKILL.md`` description starts with
-``OMH_DESCRIPTION_PREFIX``, which a ``skill_view`` result carries back to the
-model. Nothing observed which host surfaces those signals reached until a
-person opened the database by hand; this reader groups them per source.
+Hermes tags a session row with the surface that opened it
+(``sessions.source``: ``tui``, ``cli``, ``desktop``, ``oneshot``, ...); a row
+without a tag groups as ``(none)``. It persists every tool result as a
+``messages`` row with ``role = 'tool'``, ``tool_name`` and ``tool_call_id``.
+OMH's plugin registers its tools as ``omh_<name>``, and every OMH skill's
+``SKILL.md`` description starts with ``OMH_DESCRIPTION_PREFIX``, which a
+``skill_view`` result carries back. Nothing observed which host surfaces
+those signals reached until a person opened the database by hand; this
+reader groups them per source.
 
 The database is opened ``mode=ro``; nothing is written. A compaction
 re-persists tool rows under new ids, so every count is over distinct
-``tool_call_id`` (a row without one counts once through its own id).
-Archived and hidden sessions are included: a session that used OMH and was
-archived later still used it. An empty window is an observation, not a
-failure; a missing or unreadable database is an error.
+``tool_call_id`` per session, the first row by id deciding what a call was
+(a row without one counts once through its own id). Archived and hidden
+sessions are included: a session that used OMH and was archived later still
+used it. An empty window is an observation, not a failure; a missing or
+unreadable database is an error.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from functools import lru_cache
 import json
 from pathlib import Path
 import sqlite3
 from typing import Any, Mapping
 
-from ..skills.catalog_types import OMH_DESCRIPTION_PREFIX
-from .reply_lint_source import open_state_db_readonly
+from ..skills.catalog import installable_skill_names
+from ..skills.catalog_types import (
+    OMH_DESCRIPTION_PREFIX,
+    historical_skill_display_names,
+    omh_skill_display_name,
+)
+from .hermes_state import NO_SOURCE_LABEL, hermes_epoch, open_state_db_readonly, session_source_clause
 
 
 SESSION_USAGE_SCHEMA_VERSION = "session_usage/v1"
 OMH_TOOL_NAME_PREFIX = "omh_"
 SKILL_VIEW_TOOL_NAME = "skill_view"
-NO_SOURCE_LABEL = "(none)"
 _UNPARSED_SKILL_LABEL = "(unparsed)"
 _OMH_MARKER = OMH_DESCRIPTION_PREFIX.strip()
+# A compaction replaces a skill_view result with `[skill_view] name=<x> (N chars) ...`.
+_PLACEHOLDER_PREFIX = f"[{SKILL_VIEW_TOOL_NAME}] name="
+# An empty tool_call_id is not NULL, so without NULLIF every such row in a
+# session would share one key and distinct calls would collapse into one.
+_CALL_KEY = "COALESCE(NULLIF(tool_call_id, ''), 'row:' || id)"
 
 SESSION_USAGE_CLAIM_BOUNDARY = (
     "Session usage is a read-only observation of Hermes' own session store, grouped by the "
-    "host's own sessions.source tag. It counts tool-result rows and skill loads that reached "
-    "the model; it does not show that a call succeeded, that a skill's guidance was followed, "
-    "or that a reply was correct, and it is not execution, review, CI, or merge evidence."
+    "host's own sessions.source tag. It counts tool-result rows and skill_view results Hermes "
+    "persisted to a session; it does not show that the model consumed them, that a call "
+    "succeeded, that a skill's guidance was followed, or that a reply was correct, and it is "
+    "not execution, review, CI, or merge evidence."
 )
 
 COUNT_KEYS: tuple[str, ...] = (
@@ -56,15 +68,17 @@ COUNT_KEYS: tuple[str, ...] = (
 )
 
 _COUNTING_RULES: dict[str, str] = {
-    "tool_calls": "distinct tool_call_id per session over messages with role = 'tool' "
-    "(a compaction re-persists rows; a row without a tool_call_id counts once by its own id)",
+    "tool_calls": "distinct tool_call_id per session over messages with role = 'tool', the first row "
+    "by id deciding (a compaction re-persists rows; a row without a tool_call_id counts once by its own id)",
     "omh_tool": f"tool_name starts with {OMH_TOOL_NAME_PREFIX!r}",
-    "omh_skill_view": f"skill_view result whose JSON description starts with {OMH_DESCRIPTION_PREFIX!r} "
-    f"(fallback for non-JSON content: contains {_OMH_MARKER!r})",
+    "omh_skill_view": f"skill_view result whose JSON description starts with {OMH_DESCRIPTION_PREFIX!r}; "
+    f"a result carrying only a name (a reference-file load, or the {_PLACEHOLDER_PREFIX!r} placeholder a "
+    "compaction leaves) counts when the name is a catalog skill's display name; other non-JSON content "
+    f"counts when it contains {_OMH_MARKER!r}",
     "window_field": "COALESCE(last_activity_at, started_at); with --since, a session without a "
     "parseable stamp is excluded",
     "archived_hidden": "included",
-    "null_source": f"grouped as {NO_SOURCE_LABEL}",
+    "null_source": f"grouped as {NO_SOURCE_LABEL}, which --source accepts to select those sessions",
 }
 
 
@@ -82,30 +96,28 @@ def build_session_usage(
 
     ``since`` is an ISO-8601 timestamp or epoch seconds; sessions whose last
     activity is older are left out. ``source`` keeps only sessions whose tag
-    equals it; an unknown tag yields no rows, which is still an observation.
+    equals it (``NO_SOURCE_LABEL`` keeps the untagged ones); an unknown tag
+    yields no rows, which is still an observation.
     """
     since_epoch = None
     if since is not None:
-        since_epoch = _epoch(since)
+        since_epoch = hermes_epoch(since)
         if since_epoch is None:
             raise SessionUsageError(f"--since must be an ISO-8601 timestamp or epoch seconds: {since}")
     path, connection = open_state_db_readonly(hermes_home, error=SessionUsageError)
     try:
+        sessions_select = "SELECT id, source, COALESCE(last_activity_at, started_at) FROM sessions"
         if source is None:
-            session_rows = connection.execute(
-                "SELECT id, source, COALESCE(last_activity_at, started_at) FROM sessions"
-            ).fetchall()
+            session_rows = connection.execute(sessions_select).fetchall()
         else:
-            session_rows = connection.execute(
-                "SELECT id, source, COALESCE(last_activity_at, started_at) FROM sessions WHERE source = ?",
-                (source,),
-            ).fetchall()
+            clause, params = session_source_clause(source)
+            session_rows = connection.execute(f"{sessions_select} WHERE {clause}", params).fetchall()
         tool_rows = connection.execute(
-            "SELECT session_id, tool_name, COALESCE(tool_call_id, 'row:' || id) FROM messages WHERE role = 'tool'"
+            f"SELECT session_id, tool_name, {_CALL_KEY} FROM messages WHERE role = 'tool' ORDER BY id"
         ).fetchall()
         skill_rows = connection.execute(
-            "SELECT session_id, COALESCE(tool_call_id, 'row:' || id), content "
-            "FROM messages WHERE role = 'tool' AND tool_name = ?",
+            f"SELECT session_id, {_CALL_KEY}, content "
+            "FROM messages WHERE role = 'tool' AND tool_name = ? ORDER BY id",
             (SKILL_VIEW_TOOL_NAME,),
         ).fetchall()
     except sqlite3.Error as exc:
@@ -116,7 +128,7 @@ def build_session_usage(
     source_of: dict[str, str] = {}
     for session_id, tag, stamp in session_rows:
         if since_epoch is not None:
-            activity = _epoch(stamp)
+            activity = hermes_epoch(stamp)
             if activity is None or activity < since_epoch:
                 continue
         source_of[str(session_id)] = str(tag) if tag else NO_SOURCE_LABEL
@@ -231,42 +243,40 @@ def _finish_row(row: dict[str, Any]) -> dict[str, Any]:
 def _omh_skill_name(content: str) -> str | None:
     """The skill name when a ``skill_view`` result is an OMH skill, else ``None``.
 
-    The primary signal is the result's ``description`` field, which carries
-    the SKILL.md frontmatter and therefore the catalog's own ``[omh] ``
-    prefix; the display name is not used because ``ulw-*`` skills are OMH
-    skills too. Content that is not a JSON object falls back to the marker
-    substring so a host that changes the result shape still counts.
+    A SKILL.md load is a JSON object whose ``description`` carries the
+    frontmatter, so the catalog's own ``[omh] `` prefix decides it; the
+    display name is not consulted there because ``ulw-*`` skills are OMH
+    skills too. A reference-file load (``file`` present, no ``description``)
+    and the ``[skill_view] name=<x> ...`` placeholder a compaction leaves
+    carry only the name, which is resolved against the catalog's installed
+    display names, current and historical. Any other non-JSON content falls
+    back to the marker substring so a host that changes the result shape
+    still counts.
     """
     try:
         result = json.loads(content)
     except ValueError:
-        return _UNPARSED_SKILL_LABEL if _OMH_MARKER in content else None
-    if not isinstance(result, dict):
-        return _UNPARSED_SKILL_LABEL if _OMH_MARKER in content else None
-    description = result.get("description")
-    if not isinstance(description, str) or not description.startswith(OMH_DESCRIPTION_PREFIX):
-        return None
-    name = result.get("name")
-    return str(name) if isinstance(name, str) and name.strip() else _UNPARSED_SKILL_LABEL
+        result = None
+    if isinstance(result, dict):
+        description = result.get("description")
+        name = result.get("name")
+        if isinstance(description, str):
+            if not description.startswith(OMH_DESCRIPTION_PREFIX):
+                return None
+            return str(name) if isinstance(name, str) and name.strip() else _UNPARSED_SKILL_LABEL
+        return name if isinstance(name, str) and name in _catalog_display_names() else None
+    if content.startswith(_PLACEHOLDER_PREFIX):
+        words = content[len(_PLACEHOLDER_PREFIX):].split(None, 1)
+        name = words[0] if words else ""
+        return name if name in _catalog_display_names() else None
+    return _UNPARSED_SKILL_LABEL if _OMH_MARKER in content else None
 
 
-def _epoch(value: Any) -> float | None:
-    """Hermes stores REAL epoch seconds; older rows and fixtures carry ISO text."""
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value) if value == value else None
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
+@lru_cache(maxsize=1)
+def _catalog_display_names() -> frozenset[str]:
+    """Every display name an installed OMH skill has been loaded under."""
+    names: set[str] = set()
+    for name in installable_skill_names():
+        names.add(omh_skill_display_name(name))
+        names.update(historical_skill_display_names(name))
+    return frozenset(names)

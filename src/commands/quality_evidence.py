@@ -19,6 +19,7 @@ from ..quality.language_diagnostic_evidence import (
     language_diagnostic_claim_support,
 )
 from ..quality.reply_lint import build_reply_lint, format_reply_lint_summary, summarize_reply_lints
+from ..quality.hermes_state import NO_SOURCE_LABEL
 from ..quality.reply_lint_source import HERMES_LATEST_SESSION, ReplySourceError, hermes_session_replies
 from ..quality.session_usage import SessionUsageError, build_session_usage, format_session_usage_summary
 from .common import _paths, _print_json, _wants_json
@@ -144,14 +145,14 @@ def cmd_quality_evidence_reply_lint(args: argparse.Namespace) -> int:
 
 
 def cmd_quality_evidence_session_usage(args: argparse.Namespace) -> int:
-    """Report OMH utilisation per Hermes host surface; reads state.db only.
+    """Report OMH utilization per Hermes host surface; reads state.db only.
 
     OMH's tools and skills reach a Hermes session through whichever surface
     opened it, and nothing observed which surfaces they reached. This reads
     Hermes' own session store read-only and counts, per ``sessions.source``,
     sessions, tool calls, ``omh_*`` calls and OMH skill loads. An empty window
     exits 0: it is an observation, and a wrapper that wants to gate on
-    utilisation reads ``totals``. A missing or unreadable database is an error.
+    utilization reads ``totals``. A missing or unreadable database is an error.
     """
     try:
         payload = build_session_usage(_paths(args).hermes_home, since=args.since, source=args.source)
@@ -274,8 +275,8 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
         "--source",
         default=None,
         help=(
-            "Only consider Hermes sessions whose source tag equals this value (tui, cli, desktop, ...); "
-            f"with `{HERMES_LATEST_SESSION}`, the most recent such session."
+            "Only consider Hermes sessions whose source tag equals this value (tui, cli, desktop, ...; "
+            f"`{NO_SOURCE_LABEL}` for untagged sessions); with `{HERMES_LATEST_SESSION}`, the most recent such session."
         ),
     )
     reply_lint.add_argument(
@@ -287,7 +288,7 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
 
     usage = commands.add_parser(
         "session-usage",
-        help="Report OMH utilisation per Hermes host surface from state.db, read-only.",
+        help="Report OMH utilization per Hermes host surface from state.db, read-only.",
         description=(
             "Read Hermes' own session store (mode=ro) and count, per sessions.source (tui, cli, "
             "desktop, oneshot, ...), sessions, tool calls, omh_* tool calls, sessions with at least "
@@ -303,7 +304,10 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     usage.add_argument(
         "--source",
         default=None,
-        help="Only sessions whose Hermes source tag equals this value, such as tui, cli, desktop, oneshot.",
+        help=(
+            "Only sessions whose Hermes source tag equals this value, such as tui, cli, desktop, oneshot; "
+            f"`{NO_SOURCE_LABEL}` keeps the untagged ones."
+        ),
     )
     usage.add_argument("--json", action="store_true", help="Print the machine-readable session_usage/v1 payload.")
     usage.set_defaults(func=cmd_quality_evidence_session_usage)

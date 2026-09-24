@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..paths import OmhPaths
+from ..quality.hermes_state import hermes_epoch
 
 
 HERMES_SESSION_SCHEMA_VERSION = "hermes_session_observation/v1"
@@ -68,7 +69,7 @@ def observe_hermes_sessions(paths: OmhPaths, *, now: datetime | str | None = Non
     reference = _coerce_now(now)
     live_rows: list[tuple[float, Any, Any]] = []
     for row in open_rows:
-        seen_at = _epoch(row[2])
+        seen_at = hermes_epoch(row[2])
         if seen_at is None or reference - seen_at > LIVE_WINDOW_SECONDS:
             continue
         live_rows.append((seen_at, row[0], row[1]))
@@ -94,30 +95,10 @@ def _coerce_now(now: datetime | str | None) -> float:
     if isinstance(now, datetime):
         return _aware(now).timestamp()
     if isinstance(now, str) and now.strip():
-        parsed = _epoch(now)
+        parsed = hermes_epoch(now)
         if parsed is not None:
             return parsed
     return datetime.now(timezone.utc).timestamp()
-
-
-def _epoch(value: Any) -> float | None:
-    """Hermes stores REAL epoch seconds; older rows and fixtures carry ISO text."""
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value) if value == value else None
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return _aware(parsed).timestamp()
 
 
 def _aware(value: datetime) -> datetime:
