@@ -195,11 +195,31 @@ def expand_path(value: str | Path, *, hermes_home: Path | None = None, relative_
     return _canonical_path(expanded, relative_to=relative_to)
 
 
+def _unattributed_launch_read(host, secrets) -> bool:
+    """Whether a multiplexed read of the launch home belongs to no profile at all.
+
+    The launch profile is a profile: Hermes binds its secret scope for every
+    launch-profile body and installs no HERMES_HOME override, because the launch
+    home IS ``get_hermes_home()`` (``tui_gateway/model_switch.py::
+    _profile_runtime_scope_tokens`` reports no override for "already the launch
+    profile"; ``gateway/run_turn.py::launch_profile_runtime_scope`` does the same
+    for the messaging gateway). A missing override alone therefore does not make
+    a read unattributed — only a missing override AND no bound secret scope does,
+    which is the witness ``_profile_variable`` reads. Without the second half,
+    every launch-profile turn in a process that also hosts a second profile home
+    was refused as unowned while the secondary profile's own sessions bound
+    normally.
+    """
+    return (secrets.is_multiplex_active()
+            and host.get_hermes_home_override() is None
+            and secrets.current_secret_scope() is None)
+
+
 def default_hermes_home() -> Path:
     host = _host()
     if host is not None:
         secrets = import_module("agent.secret_scope")
-        if secrets.is_multiplex_active() and host.get_hermes_home_override() is None:
+        if _unattributed_launch_read(host, secrets):
             raise UnattributableSessionError("OMH requires an active Hermes profile scope")
     value = host.get_hermes_home() if host is not None else (os.environ.get("HERMES_HOME") or "~/.hermes")
     # Hermes already resolves its profile home. Do not expand it through an
@@ -448,7 +468,7 @@ def resolve_homes(omh_home: str | Path | None = None, hermes_home: str | Path | 
         raise RuntimeBindingError("OMH requires an explicit home pair for an offline profile")
     secrets = import_module("agent.secret_scope")
     multiplex = secrets.is_multiplex_active()
-    if multiplex and host.get_hermes_home_override() is None:
+    if _unattributed_launch_read(host, secrets):
         raise UnattributableSessionError("OMH requires an active Hermes profile scope")
     configured = _configured_home(home)
     if configured is not _MISSING:

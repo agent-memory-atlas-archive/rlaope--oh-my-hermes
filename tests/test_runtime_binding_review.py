@@ -16,14 +16,15 @@ from omh.plugin_bundle.omh import runtime_paths as paths
 from omh.plugin_bundle.omh.hooks import llm_hooks, tool_hooks, session_hooks
 
 
-def native_modules(home, store, *, active=True, multiplex=False):
+def native_modules(home, store, *, active=True, multiplex=False, scope_active=False):
     def config(value):
         return {"plugins": {"entries": {"omh": {"settings": {"omh_home": str(value)}}}}}
     return {
         "hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: home,
             get_hermes_home_override=lambda: str(home) if active else None),
         "agent.secret_scope": types.SimpleNamespace(is_multiplex_active=lambda: multiplex,
-            current_secret_scope=lambda: None, get_secret=Mock(return_value=str(store)),
+            current_secret_scope=lambda: {"OMH_HOME": str(store)} if scope_active else None,
+            get_secret=Mock(return_value=str(store)),
             build_profile_secret_scope=lambda home: {"OMH_HOME": str(store)}),
         "hermes_cli.config": types.SimpleNamespace(require_readable_config_before_write=Mock(return_value=config(store)),
             load_config_readonly=Mock(return_value=config(store))),
@@ -299,6 +300,32 @@ class RuntimeBindingReviewTests(unittest.TestCase):
                         call()
         self.assertTrue(issubclass(paths.UnattributableSessionError, paths.RuntimeBindingError))
         modules['hermes_cli.config'].load_config_readonly.assert_not_called()
+
+    def test_launch_profile_body_under_multiplex_keeps_the_launch_home(self):
+        # Hermes multiplexes one process over several profile homes, and the
+        # launch profile is a profile too: its bodies run under a bound secret
+        # scope with NO HERMES_HOME override, because the launch home IS
+        # `get_hermes_home()` (`tui_gateway/model_switch.py::
+        # _profile_runtime_scope_tokens` answers no override for "already the
+        # launch profile"). Reading "no override" alone as unowned refused
+        # every launch-profile turn in a backend that also hosts a second
+        # profile home: the desktop session showed a `runtime_status_read`
+        # degradation on every turn while the second profile's own sessions
+        # bound normally. "No override AND no bound scope" is the unattributed
+        # pair, which is the witness `_profile_variable` already reads.
+        for scope_active, expected in ((True, self.home), (False, None)):
+            with self.subTest(scope_active=scope_active):
+                modules = native_modules(self.home, self.store, active=False,
+                                         multiplex=True, scope_active=scope_active)
+                with patch.dict(sys.modules, modules):
+                    if expected is None:
+                        with self.assertRaises(paths.UnattributableSessionError):
+                            paths.default_hermes_home()
+                        with self.assertRaises(paths.UnattributableSessionError):
+                            paths.resolve_homes()
+                        continue
+                    self.assertEqual(paths.default_hermes_home(), expected)
+                    self.assertEqual(paths.resolve_homes(), (self.store, expected))
 
     def test_named_store_that_fails_validation_is_not_an_unowned_session(self):
         # A store the profile named and OMH then rejected is the shape where a
