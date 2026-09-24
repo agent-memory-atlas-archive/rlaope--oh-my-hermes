@@ -1,4 +1,4 @@
-"""The Hermes Desktop half of the bundle: backend route and renderer file.
+"""The Hermes Desktop half of the bundle: backend route, renderer file, doctor.
 
 Hermes Desktop loads `desktop/plugin.js` uncompiled through its disk-plugin
 door and imports `dashboard/plugin_api.py` by path inside the gateway process,
@@ -23,6 +23,9 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from _standalone_bundle import bundle_dir
+from omh.install.plugin_pack import install_plugin_bundle
+from omh.maintenance.doctor import DESKTOP_HALF_FILES, doctor_ok, run_doctor
+from omh.paths import resolve_paths
 from omh.plugin_bundle.omh.dashboard import plugin_api
 
 NODE = shutil.which("node")
@@ -39,6 +42,14 @@ ALLOWED_IMPORTS = frozenset({"@hermes/plugin-sdk", "react/jsx-runtime"})
 # The loader's own specifier pattern (`runtime-loader.ts::importSpecifierRe`),
 # so the fence is measured with the host's reading of the file, not another.
 IMPORT_SPECIFIER = re.compile(r"""(from\s*|import\s*\(\s*|import\s+)(['"])([^'"]+)\2""")
+
+LOADER_NOT_OBSERVED = {
+    "observed": False,
+    "ok": False,
+    "reason": "hermes_not_installed",
+    "registered_tools": [],
+    "registered_hooks": [],
+}
 
 # Stands in for `@hermes/plugin-sdk`: the seven names the plugin imports,
 # each answering from `globalThis.__omh` so a scenario sets the state and a
@@ -396,6 +407,58 @@ class DesktopPluginNodeTests(unittest.TestCase):
         self.assertFalse(render["enabled"])
         self.assertEqual(render["byId"]["status"], ["omh: gateway connecting"])
         self.assertIn("gateway connecting", render["byId"]["hud"])
+
+
+class DoctorDesktopHalfTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.paths = resolve_paths(root / ".omh", root / ".hermes")
+
+    def _checks(self) -> dict[str, object]:
+        with mock.patch(
+            "omh.maintenance.doctor.observe_real_loader_registration",
+            return_value=dict(LOADER_NOT_OBSERVED),
+        ):
+            checks = run_doctor(self.paths)
+        return {check.name: check for check in checks}
+
+    def test_a_fresh_install_carries_the_desktop_half(self) -> None:
+        install_plugin_bundle(self.paths)
+        for relative in DESKTOP_HALF_FILES:
+            self.assertTrue((self.paths.hermes_plugin_dir / relative).is_file(), relative)
+        check = self._checks()["plugin_desktop_half"]
+        self.assertTrue(check.ok)
+        self.assertEqual(check.severity, "ok")
+        self.assertIn("Capabilities -> Plugins", check.message)
+        # Enablement lives in the app's renderer storage and is not readable
+        # from here, so the message never claims the half is on.
+        self.assertNotIn("enabled", check.message.split("switched on")[0])
+
+    def test_an_older_bundle_warns_toward_omh_update_without_flipping_the_exit_code(self) -> None:
+        install_plugin_bundle(self.paths)
+        blocking = lambda checks: {  # noqa: E731 - a two-use predicate
+            name for name, check in checks.items() if not check.ok and check.severity == "blocking"
+        }
+        before = blocking(self._checks())
+        shutil.rmtree(self.paths.hermes_plugin_dir / "desktop")
+        (self.paths.hermes_plugin_dir / "dashboard" / "manifest.json").unlink()
+        stale = self._checks()
+        check = stale["plugin_desktop_half"]
+        self.assertTrue(check.ok)
+        self.assertEqual(check.severity, "warning")
+        self.assertIn("missing desktop/plugin.js, dashboard/manifest.json", check.message)
+        self.assertIn("omh update", check.next_action)
+        self.assertTrue(doctor_ok([check]))
+        # An installed bundle without the files is also one whose manifest
+        # names files that are gone and no longer matches the current package;
+        # both are the manifest checks' findings. The removal adds exactly
+        # those two blocking checks, never this one.
+        self.assertEqual(blocking(stale) - before, {"plugin_bundle_current", "plugin_manifest"})
+
+    def test_the_check_is_absent_when_no_bundle_is_installed(self) -> None:
+        self.assertNotIn("plugin_desktop_half", self._checks())
 
 
 if __name__ == "__main__":
