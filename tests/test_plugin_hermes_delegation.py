@@ -306,6 +306,52 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
             "",
         )
 
+    def test_the_served_ultrafast_tiers_are_priced_without_a_provider_claim(self):
+        # Observed 2026-09-24 on the OpenGateway route: the V4.1 Flash and GLM
+        # 5.3 generations are served through Ultrafast tiers next to the base ids
+        # the shipped chains already name. Neither tier is in a shipped chain,
+        # so what a machine-level override naming one needs from the tables is a
+        # price -- not a category label, and not a provider claim: no vendor
+        # catalog lists either tier id (OpenRouter serves no `-ultrafast` id at
+        # all), so the tables stay silent and the provider verdict stays unknown
+        # rather than refusing a provider on a guess.
+        cost = hermes_delegation_module._approximate_cost_usd
+        for spelling in ("deepseek/deepseek-v4.1-flash-ultrafast", "deepseek-v4.1-flash-ultrafast"):
+            with self.subTest(spelling=spelling):
+                self.assertNotIn(
+                    "deepseek-v4.1-flash-ultrafast",
+                    hermes_delegation_module.HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES,
+                )
+                self.assertIsNone(provider_serves_alias(spelling, "deepseek"))
+                self.assertIsNone(provider_serves_alias(spelling, "openrouter"))
+                # The row mirrors the contract's documented rate, so a run on
+                # the tier costs what a run on the contract costs -- cache reads
+                # included, at the model's own 0.02 ratio rather than the
+                # generic tenth.
+                self.assertEqual(cost(spelling, 1_000_000, 1_000_000, 0), 1.5)
+                self.assertEqual(
+                    cost(spelling, 1_000, 1_000, 1_000_000),
+                    cost("deepseek-v4.1-flash", 1_000, 1_000, 1_000_000),
+                )
+                # A serving tier is not the contract's second spelling, so the
+                # chains' pointer slot (`deepseek-flash`) is not borrowed: the
+                # tier stays bare instead of claiming a category it was not
+                # routed to.
+                self.assertEqual(mixture_category_for(spelling, "high", parent_model="claude-opus-5"), "")
+        for spelling in ("z-ai/glm-5.3-ultrafast", "glm-5.3-ultrafast"):
+            with self.subTest(spelling=spelling):
+                self.assertNotIn(
+                    "glm-5.3-ultrafast",
+                    hermes_delegation_module.HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES,
+                )
+                self.assertIsNone(provider_serves_alias(spelling, "zai"))
+                # The row carries the generation's own documented list price.
+                self.assertEqual(cost(spelling, 1_000_000, 1_000_000, 0), 5.8)
+                # And the shipped chains name only the base model, so the tier
+                # projects onto the category its base sits in.
+                self.assertEqual(mixture_category_for(spelling, "low", parent_model="claude-opus-5"), "unspecified-low")
+                self.assertEqual(mixture_category_for(spelling, "xhigh", parent_model="claude-opus-5"), "")
+
     def test_a_routed_architect_child_is_labeled_architect(self):
         self.assertEqual(
             mixture_category_for("claude-fable-5-1", "xhigh", parent_model="kimi-k3"),
