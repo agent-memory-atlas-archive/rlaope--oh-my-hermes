@@ -26,7 +26,12 @@ SHARED_LIB = REPO_ROOT / "benchmarks" / "live-model-tools" / "v1" / "lib"
 
 MANIFEST_SCHEMA = "omh_product_ab_benchmark/v1"
 CORPUS_SCHEMA = "omh_product_ab_corpus/v1"
-RUN_SCHEMA = "omh_product_ab_run/v1"
+#: v2 adds the gate disclosure fields inside `verification_gate`
+#: (`covers_target`, `regression_green_at_merge_base`,
+#: `compile_green_at_merge_base`) and records an unreported usage key as
+#: `null` instead of `0.0`. v1 records stay readable; they lack both.
+RUN_SCHEMA = "omh_product_ab_run/v2"
+READABLE_RUN_SCHEMAS = ("omh_product_ab_run/v1", RUN_SCHEMA)
 RECEIPT_SCHEMA = "omh_product_ab_run_receipt/v1"
 DOCTOR_SCHEMA = "omh_product_ab_doctor/v1"
 REPORT_SCHEMA = "omh_product_ab_report/v1"

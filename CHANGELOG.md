@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The product A/B lane measures honestly where it contradicted itself.**
+  `benchmarks/product-ab/v1` gave the OMH arm a file scope (`src/`, `tests/`)
+  that forbade the completion file its own contract required, and one model
+  declined two of five tasks over that conflict without a tool call; the scope
+  now names the file and `doctor` fails when it stops doing so. Each
+  verification criterion is rendered by the function that builds the gate's
+  argv, so the model reads `PYTHONPATH=tests python3 -m unittest …` rather
+  than a command that failed as written. The transport filter is derived from
+  a sentinel check, so a criterion the protocol adds before the unit's checks
+  is no longer dropped silently. Records (`omh_product_ab_run/v2`) say the gate
+  never runs the hidden validator and passes on an untouched checkout; the
+  gate reads the restored regression modules the grader reads; the report
+  counts absent and blocked claims per arm, prints the gate disclosure under
+  the table, lists PR-914 as a known corpus defect, and records unreported
+  usage as `null` rather than `0.0`. Both arms now read one sentence resolving
+  "commit what passes" against "do not commit". No `src/` change.
+
 - **Cached-input calls on GLM 5.3 (and its Ultrafast tier) now price at the
   vendor's own cache-hit ratio instead of the generic tenth.** `glm-5.3` and
   `glm-5.3-ultrafast` were priced in `APPROX_PRICE_PER_MTOK` but absent from

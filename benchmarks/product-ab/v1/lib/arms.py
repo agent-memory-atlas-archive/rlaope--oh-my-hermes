@@ -41,7 +41,8 @@ COMPLETION_CONTRACT = (
 WORKSPACE_PREAMBLE = (
     "You are working in a checkout of the oh-my-hermes repository at an "
     "earlier commit. Make the change the task describes in this checkout. "
-    "Do not create a branch, do not commit, and do not push."
+    "Do not create a branch, do not commit, and do not push. Where an "
+    "instruction says to commit, leave the change uncommitted in the working tree."
 )
 
 #: The delegation prompt this lane composes, and what it deliberately leaves
@@ -50,6 +51,15 @@ WORKSPACE_PREAMBLE = (
 #: merged. There is no fanout collector here, so including them would make the
 #: OMH arm spend tokens on an artifact nothing reads. Everything else in the
 #: product's unit prompt is included verbatim from the shipped constants.
+#:
+#: One transport clause stays in, because it sits inside a shipped sentence
+#: rather than in a criterion of its own: `VERIFICATION_STOP_PROTOCOL` ends
+#: "commit what passes". Cutting it would mean editing shipped text, and this
+#: lane measures shipped text. The contradiction with "do not commit" is
+#: resolved instead by the last sentence of `WORKSPACE_PREAMBLE`, which both
+#: arms receive, so the resolution cannot move with the arm. `GOAL_ECHO_PROTOCOL`
+#: tells the model to stop on a conflict, so an unresolved one surfaces as a
+#: decline, and a decline is scored like any other missing claim.
 PROMPT_PROFILE = "delegation_without_fanout_transport"
 
 #: The one execution path this lane implements, recorded on every record.
@@ -99,14 +109,26 @@ def base_prompt(task_text: str) -> str:
     return f"{WORKSPACE_PREAMBLE}\n\nTASK:\n{task_text.strip()}\n\n{COMPLETION_CONTRACT}"
 
 
-def fanout_transport_criteria() -> tuple[str, ...]:
-    """The criteria the shipped protocol appends whatever the unit says.
+#: A check no protocol could write. It marks where the unit's own integration
+#: checks sit in the criteria list, so the transport criteria can be read off
+#: as everything after it.
+TRANSPORT_SENTINEL = "Product-ab transport sentinel check."
 
-    Derived, not copied. `completion_criteria_for_unit` builds one line from
-    the unit's file scope, one per integration check, and then appends the
-    fanout-transport criterion unconditionally -- so asking it for the
-    criteria of an empty unit and dropping the leading file-scope line leaves
-    exactly the criteria the unit data cannot influence.
+
+def fanout_transport_criteria() -> tuple[str, ...]:
+    """The criteria the shipped protocol appends after the unit's own checks.
+
+    Derived, not copied. `completion_criteria_for_unit` builds the criteria
+    from the unit data and then appends the fanout-transport criterion
+    unconditionally, so asking it for the criteria of a unit whose only check
+    is a sentinel, and keeping what comes after the sentinel, leaves exactly
+    the criteria that follow the unit's own checks.
+
+    Everything before the sentinel is kept. Dropping "all but the first line of
+    an empty unit" instead would also drop any criterion the protocol inserts
+    ahead of the integration checks -- a product criterion would then vanish
+    from this lane's prompt without anything failing, and the lane would
+    measure a product that does not exist.
 
     They have to be dropped here because they are transport: they exist so a
     dispatched worktree can be collected and merged, and this lane has no
@@ -117,8 +139,13 @@ def fanout_transport_criteria() -> tuple[str, ...]:
     """
 
     protocol = prompt_protocol()
-    empty = protocol.completion_criteria_for_unit({"boundary": {}, "integration_checks": []})
-    return tuple(str(criterion) for criterion in list(empty)[1:])
+    criteria = [
+        str(criterion)
+        for criterion in protocol.completion_criteria_for_unit(
+            {"boundary": {}, "integration_checks": [TRANSPORT_SENTINEL]}
+        )
+    ]
+    return tuple(criteria[criteria.index(TRANSPORT_SENTINEL) + 1 :])
 
 
 def delegation_prompt(task_text: str, unit: Mapping[str, Any]) -> str:
@@ -154,18 +181,70 @@ def delegation_prompt(task_text: str, unit: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def criterion_for_command(command: str) -> str:
-    """A shell command stated as a criterion the model can read literally.
+#: The interpreter name a criterion shows the model. A stable token, never the
+#: lane's absolute interpreter path: that path differs per machine, so it would
+#: change the prompt bytes between machines and hand one arm a convenience the
+#: other never sees. `python3` rather than `python`, because a bare `python`
+#: is absent on the machines the lane has run on and a model that cannot run
+#: the criterion as written ends up judging it by its own authority. The gate
+#: puts the lane's interpreter in this token's place.
+PROMPT_INTERPRETER = "python3"
 
-    `completion_criteria_for_unit` capitalizes the first character of each
-    integration check, so a bare `python -m compileall -q src` reaches the
-    model as `Python -m compileall -q src`. The lane's own gate lowercases the
-    interpreter before running it and never noticed; a model copying the line
-    verbatim on a case-sensitive filesystem would. Wrapping the command puts a
-    word in the position that gets capitalized and leaves the command alone.
+#: The corpus spells every verification command with this interpreter name.
+CORPUS_INTERPRETER = "python"
+
+
+#: What `lane.unittest_environment` sets `PYTHONPATH` to. Named here so the
+#: criterion prefix and the gate environment are compared by a test rather than
+#: kept equal by hand.
+GATE_PYTHONPATH = "tests"
+
+
+def gate_invocation(command: str) -> tuple[tuple[str, ...], list[str]]:
+    """The environment prefix and argv for one verification command.
+
+    The single source for both the criterion the model reads and the command
+    the gate runs, so the two cannot drift apart. The prefix states the one
+    variable the gate's environment sets that decides whether the command
+    works at all: the repository's tests import helpers from the `tests`
+    directory itself. The argv carries `PROMPT_INTERPRETER`; `run_verification`
+    swaps in the lane's interpreter and nothing else.
     """
 
-    return f"Run `{command.strip()}` and make it pass."
+    argv = shlex.split(command)
+    if argv and argv[0] == CORPUS_INTERPRETER:
+        argv = [PROMPT_INTERPRETER, *argv[1:]]
+    return (f"PYTHONPATH={GATE_PYTHONPATH}",), argv
+
+
+def criterion_for_command(command: str) -> str:
+    """A shell command stated as a criterion the model can run literally.
+
+    Rendered from `gate_invocation`, so the command in the criterion is the
+    command the gate runs, with the interpreter named by a stable token.
+
+    `completion_criteria_for_unit` capitalizes the first character of each
+    integration check, so a bare `python -m compileall -q src` reached the
+    model as `Python -m compileall -q src`. Wrapping the command puts a word in
+    the position that gets capitalized and leaves the command alone.
+    """
+
+    prefix, argv = gate_invocation(command.strip())
+    return f"Run `{shlex.join([*prefix, *argv])}` and make it pass."
+
+
+def unit_file_scope() -> list[str]:
+    """The benchmark unit's file scope: the source tree plus the completion file.
+
+    The completion contract requires `lane.COMPLETION_FILE` at the workspace
+    root, and criterion 1 says every edit stays inside the file scope. With the
+    file outside the scope, `GOAL_ECHO_PROTOCOL` ("if they conflict with your
+    brief, stop and report the conflict") made one model decline two of five
+    tasks without a tool call. Naming the file here tells neither arm anything
+    about the hidden validator.
+    """
+
+    return ["src/", "tests/", lane.COMPLETION_FILE]
 
 
 def benchmark_unit(
@@ -298,6 +377,14 @@ USAGE_KEYS = (
 
 
 def _read_usage(path: Path) -> dict[str, Any]:
+    """Every usage key, `None` where the usage file does not carry it.
+
+    An absent key is recorded as `None`, never dropped: a dropped key summed to
+    `0.0` downstream, and on the Hermes version the lane ran against the file
+    carries no `turns` or `tool_calls`, so two secondary columns read zero on
+    every row of both arms -- a measurement nobody took.
+    """
+
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -305,10 +392,15 @@ def _read_usage(path: Path) -> dict[str, Any]:
     if not isinstance(raw, Mapping):
         return {}
     return {
-        key: raw[key]
+        key: raw[key] if isinstance(raw.get(key), (str, int, float, bool)) else None
         for key in USAGE_KEYS
-        if key in raw and isinstance(raw[key], (str, int, float, bool))
     }
+
+
+def usage_observed(usage: Mapping[str, Any]) -> bool:
+    """Whether a usage reading carries any value at all."""
+
+    return any(value is not None for value in usage.values())
 
 
 def run_hermes(
@@ -368,7 +460,7 @@ def run_hermes(
                 "exit_code": completed.returncode,
             },
         )
-    if not usage:
+    if not usage_observed(usage):
         # The process finished, so whatever it did to the tree stands and the
         # validator is still the ground truth. Only the metrics are missing:
         # the attempt counts as run, the receipt says so, and the cost columns
@@ -416,11 +508,11 @@ def run_verification(
     started = time.monotonic()
     for command in commands:
         try:
-            argv = shlex.split(command)
+            _prefix, argv = gate_invocation(command)
         except ValueError:
             rows.append({"command": command, "status": "failed", "classification": "unparseable"})
             continue
-        if argv and argv[0] == "python":
+        if argv and argv[0] == PROMPT_INTERPRETER:
             argv = [python_executable, *argv[1:]]
         if not argv:
             rows.append({"command": command, "status": "failed", "classification": "unparseable"})

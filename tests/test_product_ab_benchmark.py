@@ -14,12 +14,14 @@ from contextlib import contextmanager
 import json
 from pathlib import Path
 import platform
+import shlex
 import statistics as standard_statistics
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from types import ModuleType
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 
@@ -971,6 +973,21 @@ class GradingTests(unittest.TestCase):
             (workspace / lane.COMPLETION_FILE).write_text("done!", encoding="utf-8")
             self.assertEqual(grading.completion_claim(workspace)["claim"], "unreadable")
 
+    def test_the_decline_vocabulary_parses_as_blocked_on_both_arms(self) -> None:
+        """`FAILURE_KIND_PROTOCOL` offers `process_declined`; it read as unreadable."""
+
+        with TemporaryDirectory() as root:
+            workspace = Path(root)
+            for status in ("declined", "process_declined"):
+                with self.subTest(status=status):
+                    (workspace / lane.COMPLETION_FILE).write_text(
+                        json.dumps({"status": status}), encoding="utf-8"
+                    )
+                    self.assertEqual(
+                        grading.completion_claim(workspace),
+                        {"claim": "blocked", "reason": status},
+                    )
+
     def test_a_weakened_regression_module_is_restored_before_it_is_graded(self) -> None:
         """The other half of the grade was gradeable from the candidate's own tree.
 
@@ -1163,17 +1180,137 @@ class ArmTests(unittest.TestCase):
             file_scope=["src/"], checks=["python -m compileall -q src"], route=route
         )
         delegated = arms.delegation_prompt("Do the thing.", unit)
-        self.assertIn("python -m compileall -q src", delegated)
-        self.assertNotIn("Python -m compileall", delegated)
+        self.assertIn("python3 -m compileall -q src", delegated)
+        self.assertNotIn("Python -m", delegated)
+        self.assertNotIn("Python3 -m", delegated)
 
     def test_the_transport_criterion_is_derived_not_transcribed(self) -> None:
         """Derived from the protocol, so a rewording upstream stays filtered."""
 
         protocol = arms.prompt_protocol()
-        empty = protocol.completion_criteria_for_unit(
-            {"boundary": {}, "integration_checks": []}
+        criteria = protocol.completion_criteria_for_unit(
+            {"boundary": {}, "integration_checks": [arms.TRANSPORT_SENTINEL]}
         )
-        self.assertEqual(arms.fanout_transport_criteria(), tuple(list(empty)[1:]))
+        after = list(criteria)[list(criteria).index(arms.TRANSPORT_SENTINEL) + 1 :]
+        self.assertTrue(after)
+        self.assertEqual(arms.fanout_transport_criteria(), tuple(after))
+
+    def test_a_criterion_the_protocol_puts_before_the_checks_reaches_the_model(self) -> None:
+        """The transport filter used to drop every criterion after the scope line.
+
+        It took an empty unit's criteria minus the first, so a criterion the
+        protocol inserted ahead of the integration checks landed in the
+        transport set and vanished from this lane's prompt without anything
+        failing -- the lane would have measured a product that does not exist.
+        """
+
+        protocol = arms.prompt_protocol()
+        shipped = protocol.completion_criteria_for_unit
+        inserted = "A product criterion the protocol inserts before the checks."
+
+        def with_inserted(unit):  # noqa: ANN001, ANN202
+            criteria = list(shipped(unit))
+            return [criteria[0], inserted, *criteria[1:]]
+
+        route = {
+            "selected_model": "gpt-5.6-sol",
+            "selected_reasoning_effort": "high",
+            "model_family": "gpt",
+        }
+        unit = arms.benchmark_unit(
+            file_scope=arms.unit_file_scope(), checks=["python -m compileall -q src"], route=route
+        )
+        with mock.patch.object(protocol, "completion_criteria_for_unit", with_inserted):
+            delegated = arms.delegation_prompt("Do the thing.", unit)
+            transport = arms.fanout_transport_criteria()
+        self.assertNotIn(inserted, transport)
+        self.assertIn(f"2. {inserted}", delegated)
+        for criterion in transport:
+            self.assertNotIn(criterion, delegated)
+
+    def test_the_completion_file_is_inside_the_unit_scope(self) -> None:
+        """Criterion 1 forbade the file the completion contract requires.
+
+        `GOAL_ECHO_PROTOCOL` says to stop on a conflict with the brief, and one
+        model declined two of five tasks over exactly this one without making
+        a tool call.
+        """
+
+        route = {
+            "selected_model": "gpt-5.6-sol",
+            "selected_reasoning_effort": "high",
+            "model_family": "gpt",
+        }
+        unit = arms.benchmark_unit(
+            file_scope=arms.unit_file_scope(), checks=["python -m compileall -q src"], route=route
+        )
+        delegated = arms.delegation_prompt("Do the thing.", unit)
+        first = next(line for line in delegated.splitlines() if line.startswith("1. "))
+        self.assertIn(lane.COMPLETION_FILE, first)
+        self.assertTrue(runner.completion_file_in_scope(arms.unit_file_scope()))
+        self.assertFalse(runner.completion_file_in_scope(["src/", "tests/"]))
+
+    def test_the_criterion_names_the_command_the_gate_runs(self) -> None:
+        """One function renders the criterion and builds the gate's argv.
+
+        The criterion said `python -m unittest …` while the gate ran another
+        interpreter with `PYTHONPATH=tests`. A model that found the verbatim
+        command failing judged the criterion passing on its own authority.
+        """
+
+        payload = corpus.load(LANE / "corpus" / "evaluation.json")
+        commands = {str(command) for task in payload["tasks"] for command in task["verification_commands"]}
+        self.assertGreaterEqual(len(commands), 2)
+        for command in sorted(commands)[:5] + ["python -m compileall -q src"]:
+            with self.subTest(command=command[:60]):
+                prefix, argv = arms.gate_invocation(command)
+                rendered = arms.criterion_for_command(command)
+                backticked = rendered.split("`")[1]
+                self.assertEqual(backticked, shlex.join([*prefix, *argv]))
+                self.assertEqual(argv[0], arms.PROMPT_INTERPRETER)
+                self.assertEqual(argv[1:], shlex.split(command)[1:])
+        with TemporaryDirectory() as root:
+            environment = lane.unittest_environment(Path(root), Path(root) / "scratch")
+        prefix, _argv = arms.gate_invocation("python -m compileall -q src")
+        for assignment in prefix:
+            name, value = assignment.split("=", 1)
+            self.assertEqual(environment[name], value)
+
+    def test_the_gate_runs_the_lane_interpreter_in_place_of_the_token(self) -> None:
+        with TemporaryDirectory() as root:
+            workspace = Path(root) / "ws"
+            workspace.mkdir()
+            result = arms.run_verification(
+                python_executable=sys.executable,
+                workspace=workspace,
+                scratch=Path(root) / "scratch",
+                commands=[
+                    "python -c 'import os, sys; "
+                    "sys.exit(0 if os.environ[\"PYTHONPATH\"] == \"tests\" else 4)'"
+                ],
+                timeout=60,
+            )
+        self.assertEqual(result["status"], "passed", result)
+
+    def test_both_arms_are_told_how_to_read_an_instruction_to_commit(self) -> None:
+        """`VERIFICATION_STOP_PROTOCOL` says "commit what passes"; the lane says not to.
+
+        The shipped sentence stays verbatim, so the conflict is resolved in the
+        workspace preamble, which both arms receive.
+        """
+
+        route = {
+            "selected_model": "gpt-5.6-sol",
+            "selected_reasoning_effort": "high",
+            "model_family": "gpt",
+        }
+        unit = arms.benchmark_unit(
+            file_scope=arms.unit_file_scope(), checks=["python -m compileall -q src"], route=route
+        )
+        resolution = "Where an instruction says to commit, leave the change uncommitted"
+        self.assertIn(resolution, arms.WORKSPACE_PREAMBLE)
+        self.assertIn(arms.WORKSPACE_PREAMBLE, arms.base_prompt("Do the thing."))
+        self.assertIn(arms.WORKSPACE_PREAMBLE, arms.delegation_prompt("Do the thing.", unit))
 
     def test_the_oneshot_argv_pins_the_workspace_and_passes_the_prompt_as_an_argument(self) -> None:
         argv = arms.oneshot_argv(
@@ -1236,6 +1373,25 @@ class ArmTests(unittest.TestCase):
     def test_a_usage_file_that_never_appeared_is_not_a_zero_reading(self) -> None:
         with TemporaryDirectory() as root:
             self.assertEqual(arms._read_usage(Path(root) / "missing.json"), {})
+
+    def test_a_usage_key_the_file_does_not_carry_is_null_not_zero(self) -> None:
+        """`turns` and `tool_calls` read 0.0 on every row of both arms.
+
+        The usage file does not carry them on the Hermes version the lane ran
+        against, and a dropped key summed to zero downstream.
+        """
+
+        with TemporaryDirectory() as root:
+            path = Path(root) / "usage.json"
+            path.write_text(json.dumps({"input_tokens": 10, "output_tokens": 2}), encoding="utf-8")
+            usage = arms._read_usage(path)
+        self.assertEqual(usage["input_tokens"], 10)
+        self.assertIsNone(usage["tool_calls"])
+        self.assertIsNone(usage["turns"])
+        self.assertTrue(arms.usage_observed(usage))
+        attempt = arms.Attempt(kind="primary", seconds=1.0, usage=usage, ok=True)
+        self.assertIsNone(runner._usage_total([attempt], "tool_calls"))
+        self.assertEqual(runner._usage_total([attempt], "input_tokens"), 10.0)
 
     def test_a_provider_limit_is_classified_apart_from_a_crash(self) -> None:
         self.assertEqual(arms._classify("You've hit your session limit"), "limit_reached")
@@ -1303,6 +1459,80 @@ class MatrixTests(unittest.TestCase):
                 max_paid_calls=3,
             )
 
+    def test_the_gate_reads_restored_regression_modules_and_says_what_it_cannot_see(self) -> None:
+        """One OMH run, model and validator stubbed, the gate and record real.
+
+        The candidate weakens a regression module. The gate must read the merge
+        base's copy, as the grader does, and the record must carry the gate
+        disclosure: the gate never runs the hidden validator, and its
+        regression set was green before the candidate changed anything.
+        """
+
+        _skip_without_history(self)
+        payload = corpus.load(LANE / "corpus" / "evaluation.json")
+        task = payload["tasks"][0]
+        module = str(task["regression_modules"][0])
+        seen: dict[str, bytes] = {}
+
+        def weaken(**kwargs):  # noqa: ANN003, ANN202
+            target = Path(kwargs["workspace"]) / module
+            target.write_text("# every assertion deleted\n", encoding="utf-8")
+            return arms.Attempt(
+                kind=kwargs["kind"], seconds=1.0, ok=True,
+                usage={"input_tokens": 10, "output_tokens": 2, "tool_calls": None},
+            )
+
+        def gate(**kwargs):  # noqa: ANN003, ANN202
+            seen["module"] = (Path(kwargs["workspace"]) / module).read_bytes()
+            return {"ran": True, "status": "passed", "checks": [], "failed_count": 0, "seconds": 0.1}
+
+        green = {"status": "green", "modules": 1, "ran": 1, "failures": 0, "errors": 0}
+        route = {
+            "selected_model": "gpt-5.6-sol",
+            "selected_reasoning_effort": "high",
+            "model_family": "gpt",
+        }
+        with TemporaryDirectory() as root, mock.patch.object(
+            runner.arms, "resolve_delegation", return_value={}
+        ), mock.patch.object(runner.arms, "resolve_route", return_value=route), mock.patch.object(
+            runner.arms, "run_hermes", side_effect=weaken
+        ), mock.patch.object(runner.arms, "run_verification", side_effect=gate), mock.patch.object(
+            runner.grading, "run_modules", return_value=green
+        ):
+            record = runner.execute_one(
+                manifest=lane.load_object(LANE / "manifest.json"),
+                task=task,
+                arm="omh",
+                corpus_digest=str(payload["corpus_digest"]),
+                repository=ROOT,
+                workspace_root=Path(root) / "ws",
+                output=Path(root) / "runs.jsonl",
+                omh_executable="omh",
+                hermes_executable="hermes",
+                python_executable=sys.executable,
+                live=True,
+            )
+        self.assertEqual(
+            seen["module"], repo_lib.file_bytes(ROOT, str(task["merge_base"]), module)
+        )
+        gate_record = record["verification_gate"]
+        self.assertEqual(gate_record["status"], "passed")
+        self.assertIs(gate_record["covers_target"], False)
+        self.assertIs(gate_record["regression_green_at_merge_base"], True)
+        self.assertIsNone(gate_record["compile_green_at_merge_base"])
+        self.assertEqual(record["schema_version"], lane.RUN_SCHEMA)
+        self.assertIsNone(record["usage"]["tool_calls"])
+        self.assertEqual(record["usage"]["input_tokens"], 10.0)
+
+    def test_every_admitted_task_discloses_a_gate_green_before_any_change(self) -> None:
+        payload = corpus.load(LANE / "corpus" / "evaluation.json")
+        for task in payload["tasks"]:
+            with self.subTest(task=task["task_id"]):
+                disclosure = runner.gate_disclosure(task)
+                self.assertIs(disclosure["covers_target"], False)
+                self.assertIs(disclosure["regression_green_at_merge_base"], True)
+        self.assertIsNone(runner.gate_disclosure({})["regression_green_at_merge_base"])
+
     def test_list_price_cost_comes_from_the_shipped_table(self) -> None:
         cost = runner.approximate_cost_usd(
             "gpt-5.6-sol",
@@ -1344,6 +1574,60 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(summary["seconds_median"], 60.0)
         self.assertEqual(summary["false_completions"], 1)
         self.assertAlmostEqual(summary["false_completion_rate"], 1 / 3)
+
+    def test_a_decline_is_counted_apart_from_calibration(self) -> None:
+        """A decline writes no claim and scores no false completion.
+
+        One model's false-completion column improved entirely through declines
+        the bench provoked, so absent and blocked claims are counted per arm.
+        """
+
+        absent = _record("omh", "PR-1", passed=False, claim="absent", cost=0.01, seconds=5, tokens=10)
+        blocked = _record("omh", "PR-2", passed=False, claim="blocked", cost=0.01, seconds=5, tokens=10)
+        done = _record("omh", "PR-3", passed=True, claim="complete", cost=0.01, seconds=5, tokens=10)
+        summary = report.arm_summary({"PR-1": absent, "PR-2": blocked, "PR-3": done})
+        self.assertEqual(summary["claim_absent"], 1)
+        self.assertEqual(summary["claim_blocked"], 1)
+        self.assertEqual(summary["false_completions"], 0)
+        rendered = report.render_table({"arms": {"omh": summary}})
+        self.assertIn("Claim absent", rendered)
+        self.assertIn("Claim blocked", rendered)
+
+    def test_an_unmeasured_usage_column_prints_as_not_available(self) -> None:
+        row = _record("omh", "PR-1", passed=True, claim="complete", cost=0.01, seconds=5, tokens=10)
+        row["usage"] = {"total_tokens": 10, "turns": None, "tool_calls": None}
+        summary = report.arm_summary({"PR-1": row})
+        self.assertIsNone(summary["tool_calls"])
+        self.assertIsNone(summary["api_turns"])
+        rendered = report.render_table({"arms": {"omh": summary}})
+        self.assertIn("| n/a | n/a |", rendered)
+
+    def test_the_table_says_the_gate_cannot_see_a_missing_fix(self) -> None:
+        with TemporaryDirectory() as root:
+            produced = report.analyze(
+                records_path=self._write(root),
+                manifest=lane.load_object(LANE / "manifest.json"),
+                repetitions=200,
+            )
+        self.assertEqual(produced["gate_disclosure"], report.GATE_DISCLOSURE)
+        self.assertIn(report.GATE_DISCLOSURE, report.render_table(produced))
+        self.assertIn("never a missing fix", report.GATE_DISCLOSURE)
+
+    def test_a_known_corpus_defect_is_listed_and_kept_in_the_numbers(self) -> None:
+        payload = corpus.load(LANE / "corpus" / "evaluation.json")
+        defects = report.known_defects(payload)
+        self.assertIn("PR-914", defects)
+        self.assertIn("resolve_record_expiry_deadline", defects["PR-914"])
+        with TemporaryDirectory() as root:
+            produced = report.analyze(
+                records_path=self._write(root),
+                manifest=lane.load_object(LANE / "manifest.json"),
+                repetitions=200,
+                known_defects={"PR-2": "a defect note", "PR-999": "not in this run"},
+            )
+        self.assertEqual(produced["known_defects"], {"PR-2": "a defect note"})
+        self.assertEqual(produced["arms"]["omh"]["tasks"], 3)
+        self.assertIn("PR-2: a defect note", report.render_table(produced))
 
     def test_an_unpriced_run_is_unknown_and_never_zero(self) -> None:
         """A model with no price-table entry must not render as a free arm.
@@ -1644,7 +1928,13 @@ class CommandLineTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         names = [check["check"] for check in payload["checks"]]
         self.assertIn("corpus_present", [c["check"] for c in payload["checks"] if not c["ok"]])
-        for required in ("providers_linked", "control_route_resolves", "workspace_creatable"):
+        for required in (
+            "providers_linked",
+            "control_route_resolves",
+            "workspace_creatable",
+            "completion_file_in_unit_scope",
+            "prompt_interpreter_on_path",
+        ):
             self.assertIn(required, names)
 
     def test_the_manifest_pins_one_control_model_and_a_claim_boundary(self) -> None:

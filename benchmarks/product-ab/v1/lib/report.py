@@ -43,6 +43,34 @@ PROVIDER_FAILURES = frozenset(
 )
 
 
+#: Printed beside the false-completion column. The verification gate never runs
+#: the hidden validator, and the corpus probe admits a task only when the gate's
+#: regression set is green on the untouched checkout, so on this corpus a
+#: false-completion difference between the arms is not the gate's doing.
+GATE_DISCLOSURE = (
+    "The gate never runs the hidden validator, and on every admitted task it "
+    "passes on an untouched checkout, so it can catch regressions, never a "
+    "missing fix."
+)
+
+
+def _measured_usage(rows: Sequence[Mapping[str, Any]], name: str) -> float | None:
+    """A usage column's sum, or `None` when no row measured it.
+
+    Records written before the usage reader kept absent keys as `null` carry a
+    `0.0` that was never a reading; those still sum as zero, which is why the
+    README says where the real counts come from.
+    """
+
+    values = [
+        float(value)
+        for row in rows
+        if isinstance(value := dict(row.get("usage") or {}).get(name), (int, float))
+        and not isinstance(value, bool)
+    ]
+    return sum(values) if values else None
+
+
 def failed_for_provider_reasons(record: Mapping[str, Any]) -> bool:
     receipt = record.get("failure_receipt") or {}
     return str(receipt.get("classification") or "") in PROVIDER_FAILURES
@@ -54,7 +82,7 @@ def read_records(path: Path) -> list[dict[str, Any]]:
         if not line.strip():
             continue
         value = json.loads(line)
-        if not isinstance(value, dict) or value.get("schema_version") != lane.RUN_SCHEMA:
+        if not isinstance(value, dict) or value.get("schema_version") not in lane.READABLE_RUN_SCHEMAS:
             raise ValueError(f"invalid run record at line {number}")
         rows.append(value)
     return rows
@@ -168,8 +196,13 @@ def arm_summary(records: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
         "false_completion_rate": (
             sum(1 for row in rows if row["grade"]["false_completion"]) / total if total else None
         ),
-        "tool_calls": sum(_metric(row, "tool_calls") for row in rows),
-        "api_turns": sum(_metric(row, "turns") for row in rows),
+        # A decline writes no claim, or a blocked one, and neither counts as a
+        # false completion. Counted apart so a decline the bench caused cannot
+        # read as calibration.
+        "claim_absent": sum(1 for row in rows if row["grade"]["completion_claim"] == "absent"),
+        "claim_blocked": sum(1 for row in rows if row["grade"]["completion_claim"] == "blocked"),
+        "tool_calls": _measured_usage(rows, "tool_calls"),
+        "api_turns": _measured_usage(rows, "turns"),
         "runs_failed": sum(1 for row in rows if row.get("failure_receipt")),
         "runs_failed_for_provider_reasons": len(provider_failed),
         "pass_rate_excluding_provider_failures": (
@@ -276,6 +309,7 @@ def analyze(
     seed: int = 20260914,
     only_task_ids: Sequence[str] | None = None,
     subset_label: str = "all tasks",
+    known_defects: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     records = read_records(records_path)
     if only_task_ids is not None:
@@ -345,6 +379,25 @@ def analyze(
         "comparisons": comparisons,
         "holm": lane.holm(pvalues) if pvalues else {},
         "claim_boundary": str(manifest.get("claim_boundary") or ""),
+        "gate_disclosure": GATE_DISCLOSURE,
+        # Tasks the corpus marks as defective, listed rather than dropped: they
+        # stay in every number above, and a decision rule that excludes them
+        # has to say so.
+        "known_defects": {
+            task_id: note
+            for task_id, note in sorted(dict(known_defects or {}).items())
+            if task_id in {str(row["task_id"]) for row in records}
+        },
+    }
+
+
+def known_defects(corpus_payload: Mapping[str, Any]) -> dict[str, str]:
+    """`task_id -> note` for every corpus task carrying a `known_defect` note."""
+
+    return {
+        str(task["task_id"]): str(task["known_defect"])
+        for task in corpus_payload.get("tasks") or []
+        if task.get("known_defect")
     }
 
 
@@ -353,10 +406,12 @@ def render_table(report: Mapping[str, Any]) -> str:
 
     header = (
         "| Arm | Passed | Pass rate | Tokens | Cost | Cost / pass | Unpriced | "
-        "Median s / task | False completions | Tool calls | API turns |"
+        "Median s / task | False completions | Claim absent | Claim blocked | "
+        "Tool calls | API turns |"
     )
     divider = (
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "---: | ---: |"
     )
     lines = [header, divider]
     unpriced_models: set[str] = set()
@@ -364,8 +419,8 @@ def render_table(report: Mapping[str, Any]) -> str:
         unpriced_models.update(summary.get("unpriced_models") or [])
         lines.append(
             "| {arm} | {passed} / {tasks} | {rate} | {tokens:,} | {cost} | "
-            "{per_pass} | {unpriced} | {median} | {false_count} | {tools:,} | "
-            "{turns:,} |".format(
+            "{per_pass} | {unpriced} | {median} | {false_count} | {absent} | "
+            "{blocked} | {tools} | {turns} |".format(
                 arm=arm,
                 passed=summary["passed"],
                 tasks=summary["tasks"],
@@ -387,9 +442,20 @@ def render_table(report: Mapping[str, Any]) -> str:
                 unpriced=f"{summary['runs_unpriced']} / {summary['tasks']}",
                 median=summary["seconds_median"] if summary["seconds_median"] is not None else "n/a",
                 false_count=summary["false_completions"],
-                tools=int(summary["tool_calls"]),
-                turns=int(summary["api_turns"]),
+                absent=summary.get("claim_absent", "n/a"),
+                blocked=summary.get("claim_blocked", "n/a"),
+                tools=_count(summary.get("tool_calls")),
+                turns=_count(summary.get("api_turns")),
             )
+        )
+    lines.append("")
+    lines.append(f"False completions: {GATE_DISCLOSURE}")
+    defects = dict(report.get("known_defects") or {})
+    if defects:
+        lines.append("")
+        lines.append(
+            "Known corpus defects, included in every number above: "
+            + "; ".join(f"{task_id}: {note}" for task_id, note in defects.items())
         )
     if unpriced_models:
         lines.append("")
@@ -405,6 +471,14 @@ def render_table(report: Mapping[str, Any]) -> str:
             "Cost columns for any arm holding one read `unknown`."
         )
     return "\n".join(lines)
+
+
+def _count(value: Any) -> str:
+    """A usage count, or `n/a` when nothing measured it."""
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"{int(value):,}"
+    return "n/a"
 
 
 def _percent(value: Any) -> str:

@@ -55,14 +55,20 @@ def approximate_cost_usd(model: str, usage: Mapping[str, Any]) -> float | None:
     )
 
 
-def _usage_total(attempts: Sequence[arms.Attempt], name: str) -> float:
-    total = 0.0
-    for attempt in attempts:
-        value = attempt.usage.get(name)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            continue
-        total += float(value)
-    return total
+def _usage_total(attempts: Sequence[arms.Attempt], name: str) -> float | None:
+    """The sum over the attempts that reported `name`, or `None` if none did.
+
+    `None` rather than `0.0`: a key no attempt reported is a column nobody
+    measured, and a zero would be read as a measurement.
+    """
+
+    values = [
+        float(attempt.usage[name])
+        for attempt in attempts
+        if isinstance(attempt.usage.get(name), (int, float))
+        and not isinstance(attempt.usage.get(name), bool)
+    ]
+    return sum(values) if values else None
 
 
 def _reported_cost(attempts: Sequence[arms.Attempt]) -> float | None:
@@ -219,6 +225,19 @@ def doctor(
             calibration_detail = str(error)[:200]
     record("control_route_resolves", route_ok, route_detail)
     record("control_route_carries_calibration", calibration_ok, calibration_detail)
+    record(
+        "completion_file_in_unit_scope",
+        completion_file_in_scope(arms.unit_file_scope()),
+        f"{lane.COMPLETION_FILE} must be inside the unit file scope "
+        f"{arms.unit_file_scope()}, or criterion 1 forbids the file the "
+        "completion contract requires",
+    )
+    record(
+        "prompt_interpreter_on_path",
+        shutil.which(arms.PROMPT_INTERPRETER) is not None,
+        f"the criteria name `{arms.PROMPT_INTERPRETER}`; a model that cannot run "
+        "a criterion as written judges it by its own authority",
+    )
 
     workspace_ok, workspace_detail = False, ""
     if tasks and repo_lib.git_ok(repository, "rev-parse", "--git-dir"):
@@ -250,6 +269,41 @@ def doctor(
         "task_count": len(tasks),
         "checks": checks,
         "claim_boundary": str(manifest.get("claim_boundary") or ""),
+    }
+
+
+def completion_file_in_scope(file_scope: Sequence[str]) -> bool:
+    """Whether a unit file scope covers the completion file at the root."""
+
+    for entry in file_scope:
+        text = str(entry)
+        if text == lane.COMPLETION_FILE:
+            return True
+        if text.endswith("/") and lane.COMPLETION_FILE.startswith(text):
+            return True
+    return False
+
+
+def gate_disclosure(task: Mapping[str, Any]) -> dict[str, Any]:
+    """What the verification gate can and cannot see on this task.
+
+    `covers_target` is a constant. The gate runs a compile pass and the
+    pre-existing regression modules; the pull request's own tests are the
+    hidden validator and never run in it. `regression_green_at_merge_base` is
+    copied from the corpus probe, which admits a task only when that set is
+    green on the untouched checkout -- so on every admitted task the gate
+    passes before the candidate has changed anything, and it can catch a
+    regression, never a missing fix. The compile half is `None` because the
+    probe never ran compile.
+    """
+
+    probe = dict(task.get("baseline_probe") or {})
+    regression = dict(probe.get("regression") or {})
+    status = regression.get("status")
+    return {
+        "covers_target": False,
+        "regression_green_at_merge_base": (status == "green") if status else None,
+        "compile_green_at_merge_base": None,
     }
 
 
@@ -334,7 +388,7 @@ def execute_one(
     )
 
     unit = arms.benchmark_unit(
-        file_scope=["src/", "tests/"],
+        file_scope=arms.unit_file_scope(),
         checks=list(task["verification_commands"]),
         route=route,
     )
@@ -375,6 +429,10 @@ def execute_one(
                     )
                 )
                 if arm in {"omh", "omh_mixture"} and attempts[-1].ok:
+                    # The gate reads the regression modules the grader reads.
+                    # They are modules the pull request did not touch, so the
+                    # restore cannot remove a legitimate change.
+                    grading.restore_regression_modules(repository, task, workspace)
                     verification = arms.run_verification(
                         python_executable=python_executable,
                         workspace=workspace,
@@ -398,6 +456,7 @@ def execute_one(
                                 kind="repair",
                             )
                         )
+                        grading.restore_regression_modules(repository, task, workspace)
                         verification = arms.run_verification(
                             python_executable=python_executable,
                             workspace=workspace,
@@ -492,7 +551,7 @@ def execute_one(
                 },
             ),
         },
-        "verification_gate": verification,
+        "verification_gate": {**verification, **gate_disclosure(task)},
         "grade": grade,
         "failure_receipt": next(
             (attempt.failure for attempt in attempts if attempt.failure), None

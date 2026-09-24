@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Turn a run file into the four quotable numbers and the paired deltas."""
+"""Turn a run file into the four quotable numbers and the paired deltas.
+
+The table prints the gate disclosure beside the false-completion column and
+lists the corpus tasks marked `known_defect`, which stay in every number.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,7 @@ import corpus as corpus_lib  # noqa: E402
 import lane  # noqa: E402
 from report import (  # noqa: E402
     analyze,
+    known_defects,
     render_deltas,
     render_table,
     subset_task_ids,
@@ -34,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         "--corpus",
         type=Path,
         default=BASE / "corpus" / "evaluation.json",
-        help="The corpus the subset flags below are read from.",
+        help="The corpus the subset flags below and the known-defect notes are read from.",
     )
     parser.add_argument(
         "--task-source",
@@ -54,8 +59,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("bootstrap repetitions must be at least 100")
 
     only, label = None, "all tasks"
+    payload = corpus_lib.load(args.corpus)
     if args.task_source or args.leak_class:
-        payload = corpus_lib.load(args.corpus)
         only = sorted(
             subset_task_ids(
                 payload,
@@ -78,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         only_task_ids=only,
         subset_label=label,
+        known_defects=known_defects(payload),
     )
     if args.output:
         lane.write_json(args.output, report)
