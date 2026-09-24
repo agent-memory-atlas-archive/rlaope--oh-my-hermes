@@ -17,6 +17,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -190,14 +192,18 @@ def _plugin_yaml_name() -> str:
 
 class DesktopBackendTests(unittest.TestCase):
     def setUp(self) -> None:
-        # The reader resolves the OMH store from the process env when the
-        # home's config names none; a temp store keeps the read off ~/.omh.
+        # The reader resolves the OMH store from the process's own Hermes
+        # home (here `HERMES_HOME`, since no host answers), through that
+        # home's config, then `OMH_HOME`; both point into the temp root so
+        # the read never reaches ~/.hermes/config.yaml or ~/.omh.
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.hermes_home = self.root / "hermes"
         self.hermes_home.mkdir()
-        patcher = mock.patch.dict(os.environ, {"OMH_HOME": str(self.root / "omh")})
+        patcher = mock.patch.dict(
+            os.environ, {"OMH_HOME": str(self.root / "omh"), "HERMES_HOME": str(self.hermes_home)}
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -250,13 +256,46 @@ class DesktopBackendTests(unittest.TestCase):
             {"error": "RuntimeError: store is unreadable", "schema_version": "omh_desktop_hud/v1"},
         )
 
+    def test_concurrent_first_polls_share_one_load_and_answer_no_error_records(self) -> None:
+        # Hermes serves the route from a thread pool: two windows polling at
+        # once both find a cold cache. The module is registered before it has
+        # executed, so without the load lock the second poll takes the
+        # half-initialised module and answers a reader error for a healthy
+        # backend.
+        plugin_api._forget_reader_package()
+        workers = 8
+        barrier = threading.Barrier(workers)
+        payloads: list[dict | None] = [None] * workers
+
+        def poll(index: int) -> None:
+            barrier.wait()
+            payloads[index] = plugin_api.hud_payload(self.hermes_home, "20260924_101010_abc123")
+
+        threads = [threading.Thread(target=poll, args=(index,)) for index in range(workers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual([payload["error"] for payload in payloads if "error" in payload], [])
+        self.assertEqual({payload["schema_version"] for payload in payloads}, {"omh_hud/v1"})
+        readers = [plugin_api.load_reader(BUNDLE) for _ in range(workers)]
+        self.assertEqual({id(reader) for reader in readers}, {id(readers[0])})
+
+    def test_resolve_hermes_home_asks_the_host_first(self) -> None:
+        host = types.ModuleType("hermes_constants")
+        host.get_hermes_home = lambda: str(self.root / "host-home")
+        with mock.patch.dict(sys.modules, {"hermes_constants": host}):
+            with mock.patch.dict(os.environ, {"HERMES_HOME": str(self.hermes_home)}):
+                self.assertEqual(plugin_api.resolve_hermes_home(), self.root / "host-home")
+
     def test_resolve_hermes_home_falls_back_to_the_env_then_the_default(self) -> None:
-        if "hermes_constants" in sys.modules:  # a Hermes checkout on the path answers itself
-            self.skipTest("hermes_constants is importable here; the host answers the home")
-        with mock.patch.dict(os.environ, {"HERMES_HOME": str(self.hermes_home)}):
-            self.assertEqual(plugin_api.resolve_hermes_home(), self.hermes_home)
-        with mock.patch.dict(os.environ, {"HERMES_HOME": ""}):
-            self.assertEqual(plugin_api.resolve_hermes_home(), Path.home() / ".hermes")
+        # `None` in sys.modules makes the import raise wherever this runs, so
+        # the fallback branch is pinned on a host with Hermes on its path too.
+        with mock.patch.dict(sys.modules, {"hermes_constants": None}):
+            with mock.patch.dict(os.environ, {"HERMES_HOME": str(self.hermes_home)}):
+                self.assertEqual(plugin_api.resolve_hermes_home(), self.hermes_home)
+            with mock.patch.dict(os.environ, {"HERMES_HOME": ""}):
+                self.assertEqual(plugin_api.resolve_hermes_home(), Path.home() / ".hermes")
 
     def test_router_exists_exactly_when_fastapi_does(self) -> None:
         # OMH declares no dependency on FastAPI; the route is the host's
@@ -265,9 +304,13 @@ class DesktopBackendTests(unittest.TestCase):
         if plugin_api.APIRouter is not None:
             self.assertEqual([route.path for route in plugin_api.router.routes], ["/hud"])
 
-    def test_manifest_names_the_plugin_and_its_api_file(self) -> None:
+    def test_manifest_names_the_plugin_and_its_api_file_and_hides_the_dashboard_tab(self) -> None:
+        # The browser dashboard (`hermes dashboard`) reads the same manifest
+        # and registers a tab at `/<name>` loading `dist/index.js` for every
+        # manifest not marked hidden; OMH ships no dashboard UI, so the tab
+        # is hidden rather than a broken page.
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        self.assertEqual(manifest, {"name": "omh", "api": "plugin_api.py"})
+        self.assertEqual(manifest, {"name": "omh", "api": "plugin_api.py", "tab": {"hidden": True}})
         self.assertEqual(manifest["name"], _plugin_yaml_name())
         self.assertTrue((MANIFEST.parent / manifest["api"]).is_file())
 
@@ -431,10 +474,14 @@ class DoctorDesktopHalfTests(unittest.TestCase):
         check = self._checks()["plugin_desktop_half"]
         self.assertTrue(check.ok)
         self.assertEqual(check.severity, "ok")
-        self.assertIn("Capabilities -> Plugins", check.message)
         # Enablement lives in the app's renderer storage and is not readable
-        # from here, so the message never claims the half is on.
-        self.assertNotIn("enabled", check.message.split("switched on")[0])
+        # from here, so the message names the switch and never says it is on.
+        self.assertEqual(
+            check.message,
+            f"Hermes Desktop half present in the installed bundle ({self.paths.hermes_plugin_dir}); "
+            "it ships off; switch it on in Hermes Desktop under Capabilities -> Plugins",
+        )
+        self.assertNotIn("is switched on", check.message)
 
     def test_an_older_bundle_warns_toward_omh_update_without_flipping_the_exit_code(self) -> None:
         install_plugin_bundle(self.paths)
@@ -444,11 +491,12 @@ class DoctorDesktopHalfTests(unittest.TestCase):
         before = blocking(self._checks())
         shutil.rmtree(self.paths.hermes_plugin_dir / "desktop")
         (self.paths.hermes_plugin_dir / "dashboard" / "manifest.json").unlink()
+        (self.paths.hermes_plugin_dir / "dashboard" / "plugin_api.py").unlink()
         stale = self._checks()
         check = stale["plugin_desktop_half"]
         self.assertTrue(check.ok)
         self.assertEqual(check.severity, "warning")
-        self.assertIn("missing desktop/plugin.js, dashboard/manifest.json", check.message)
+        self.assertIn("missing desktop/plugin.js, dashboard/manifest.json, dashboard/plugin_api.py", check.message)
         self.assertIn("omh update", check.next_action)
         self.assertTrue(doctor_ok([check]))
         # An installed bundle without the files is also one whose manifest

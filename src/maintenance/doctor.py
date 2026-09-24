@@ -1934,19 +1934,19 @@ def _awareness_delivery_check(paths: OmhPaths, *, now: datetime | None = None) -
     )
 
 
-DESKTOP_HALF_FILES = ("desktop/plugin.js", "dashboard/manifest.json")
+DESKTOP_HALF_FILES = ("desktop/plugin.js", "dashboard/manifest.json", "dashboard/plugin_api.py")
 
 
 def _plugin_desktop_half_check(paths: OmhPaths) -> Check:
     """Does the installed bundle carry its Hermes Desktop half?
 
     Hermes Desktop copies ``desktop/plugin.js`` out of the installed bundle
-    into its own ``desktop-plugins/omh/`` and mounts the API that
-    ``dashboard/manifest.json`` names inside the gateway. Both files ship in
-    the bundle, so a bundle installed before they existed is the one condition
-    OMH can observe from here. Whether the app made its copy and whether the
-    half is switched on live inside the app (its renderer storage), so this
-    check reports presence and never enablement.
+    into its own ``desktop-plugins/omh/``, and the gateway mounts the
+    ``dashboard/plugin_api.py`` that ``dashboard/manifest.json`` names. All
+    three files ship in the bundle, so a bundle installed before they existed
+    is the one condition OMH can observe from here. Whether the app made its
+    copy and whether the half is switched on live inside the app (its
+    renderer storage), so this check reports presence and never enablement.
     """
     plugin_dir = paths.hermes_plugin_dir
     missing = [relative for relative in DESKTOP_HALF_FILES if not (plugin_dir / relative).is_file()]
@@ -1956,7 +1956,7 @@ def _plugin_desktop_half_check(paths: OmhPaths) -> Check:
             True,
             (
                 f"Hermes Desktop half present in the installed bundle ({plugin_dir}); "
-                "it ships off and is switched on in Hermes Desktop under Capabilities -> Plugins"
+                "it ships off; switch it on in Hermes Desktop under Capabilities -> Plugins"
             ),
         )
     return Check(

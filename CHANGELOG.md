@@ -549,26 +549,35 @@ All notable changes will be documented here.
   filter: `latest` resolves to the most recent session with that tag, an
   explicit id whose tag differs or cannot be checked is an error rather than
   a silently ignored flag, and the payload records `source_filter`.
-- **The OMH status line and plan todo now reach Hermes Desktop.** They rendered
-  only in the modern TUI, through the widget Hermes Desktop does not load. The
-  plugin bundle now ships a Desktop half beside its agent half:
-  `dashboard/plugin_api.py`, which Hermes' web server imports by path inside
-  the gateway process and mounts at `/api/plugins/omh/hud`, answers with the
-  same `omh_hud/v1` payload the widget renders (read for the session the app
-  names, a reader failure as a 200 error record rather than a 500), and
-  `desktop/plugin.js`, an uncompiled ESM plugin the app copies into
-  `desktop-plugins/omh/`, polls that route every 5 s while the gateway is open
-  and shows `display.line` in the status bar and the widget and todo lines in
-  an `omh` pane, verbatim and never a value the reader did not produce. The
-  half ships off, as the app requires of unified-package halves, and is
-  switched on under Capabilities -> Plugins. `pyproject.toml` declares the two
-  new subpackages so the wheel and the `main.zip` pip install carry all three
-  files, `omh update` refreshes them through the existing bundle manifest, and
-  `omh doctor` gains a non-blocking `plugin_desktop_half` check that warns an
-  older bundle toward `omh update` and never claims the half is enabled.
-  `tests/test_desktop_half.py` drives the backend's pure functions without
-  FastAPI and the renderer file under node with the SDK shims replaced by
-  recording fakes.
+- **The plugin bundle ships a Hermes Desktop half.** The OMH status line and
+  plan todo rendered only in the modern TUI, through the widget Hermes Desktop
+  does not load; the app's extension point is a unified plugin package. The
+  bundle now carries `dashboard/plugin_api.py`, which Hermes' web server
+  imports by path inside the gateway process and mounts at
+  `/api/plugins/omh/hud` while `omh` is in its `plugins.enabled` (the
+  registration `omh setup` and `omh update` write); it answers with the same
+  `omh_hud/v1` payload the widget renders, read for the gateway's own Hermes
+  home and the session the app names, a reader failure as a 200 error record
+  the pane can label rather than a raise it could not tell from a transport
+  failure, and concurrent first polls share one load under a lock. Beside it,
+  `desktop/plugin.js` is an uncompiled ESM plugin written for the app's
+  disk-plugin loader: it polls that route every 5 s while the gateway is open
+  and puts `display.line` in the status bar and the widget and todo lines in
+  an `omh` pane, verbatim and never a value the reader did not produce; it
+  ships off, as the app requires of unified-package halves, and the switch is
+  under Capabilities -> Plugins. `dashboard/manifest.json` is also read by the
+  browser dashboard (`hermes dashboard`), which registers a tab for every
+  manifest, so it is marked `tab.hidden` and the browser dashboard gets no
+  `omh` tab. Observed: a live `hermes serve` logged the mount and answered 200
+  on the route, and node drove the renderer file with the SDK shims replaced
+  by recording fakes; the app's copy into `desktop-plugins/omh/` and the
+  rendered pane are by construction from Hermes' loader source, not observed.
+  `pyproject.toml` ships the three files (the backend as a `dashboard`
+  subpackage, the renderer file as package data, so no Python package marker
+  lands in the folder the app copies), `omh update` refreshes them through the
+  existing bundle manifest, and `omh doctor` gains a non-blocking
+  `plugin_desktop_half` check that warns an older bundle toward `omh update`
+  and never claims the half is enabled.
 
 ## 2.0.5 - 2026-09-22
 

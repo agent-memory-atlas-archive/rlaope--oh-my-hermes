@@ -637,16 +637,21 @@ class PluginDistributionTests(unittest.TestCase):
             "capability_families.json",
             pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.tools"],
         )
-        # The Hermes Desktop half: two declared packages, so the wheel and the
-        # main.zip pip install carry the renderer file and the backend module,
-        # and `plugin_api.py` stays a module the standalone gate imports.
-        for subpackage in ("dashboard", "desktop"):
-            self.assertIn(f"omh.plugin_bundle.omh.{subpackage}", packages)
-            self.assertTrue((Path("src") / "plugin_bundle" / "omh" / subpackage / "__init__.py").is_file())
+        # The Hermes Desktop half. `dashboard` is a declared package so
+        # `plugin_api.py` ships as a module the standalone gate imports;
+        # `desktop/` is not one -- Hermes Desktop copies that whole folder
+        # into its app-owned `desktop-plugins/omh/`, so it carries no Python
+        # package marker and the renderer file ships as the parent's data.
+        self.assertIn("omh.plugin_bundle.omh.dashboard", packages)
+        self.assertNotIn("omh.plugin_bundle.omh.desktop", packages)
+        self.assertTrue((Path("src") / "plugin_bundle" / "omh" / "dashboard" / "__init__.py").is_file())
+        desktop_files = sorted(path.name for path in (Path("src") / "plugin_bundle" / "omh" / "desktop").iterdir() if path.is_file())
+        self.assertEqual(desktop_files, ["plugin.js"])
         self.assertTrue(root.joinpath("desktop", "plugin.js").is_file())
         self.assertTrue(root.joinpath("dashboard", "manifest.json").is_file())
         self.assertTrue(root.joinpath("dashboard", "plugin_api.py").is_file())
-        self.assertIn("*.js", pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.desktop"])
+        self.assertIn("desktop/*.js", pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh"])
+        self.assertNotIn("omh.plugin_bundle.omh.desktop", pyproject["tool"]["setuptools"]["package-data"])
         self.assertIn(
             "manifest.json",
             pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.dashboard"],

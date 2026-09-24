@@ -3,16 +3,21 @@
 Hermes' web server (``hermes_cli/web_server_dashboard.py``,
 ``_mount_plugin_api_routes``) imports this file by path as the module
 ``hermes_dashboard_plugin_omh`` and mounts ``router`` under
-``/api/plugins/omh``. That import is standalone -- no package, no ``omh`` on
-the path, and the same process as the agent -- so the bundle's reader is
-loaded here by path as well, under a private package name, and everything it
-needs resolves through the bundle's own relative imports.
+``/api/plugins/omh`` -- only while ``omh`` is in the host's ``plugins.enabled``
+allow-list, the registration ``omh setup`` and ``omh update`` write. That
+import is standalone -- no package, no ``omh`` on the path, and the same
+process as the agent -- so the bundle's reader is loaded here by path as well,
+under a private package name, and everything it needs resolves through the
+bundle's own relative imports.
 
 ``GET /hud?session=<stored session id>`` answers with the ``omh_hud/v1``
 payload the modern-TUI widget renders, read for the gateway process's own
-Hermes home. A reader failure is answered with HTTP 200 and an error record the
-pane shows in place of the lines; the route never raises, because a 500 here
-would surface as a red toast on every poll.
+Hermes home. The ``profile`` query Hermes Desktop appends when it routes a
+non-primary profile through a shared backend is not read: the route answers
+for the launch profile, as the host's own bundled plugin backends do. A reader
+failure is answered with HTTP 200 and an error record: in the pane a thrown
+error is indistinguishable from a transport failure, so the reader's failure
+is returned as a record the pane can label ``reader error`` instead.
 
 The two pure functions, ``load_reader`` and ``hud_payload``, are kept apart
 from the route so OMH's own tests can call them without FastAPI, which is the
@@ -24,6 +29,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import threading
 import types
 from pathlib import Path
 from typing import Any
@@ -44,6 +50,14 @@ DESKTOP_HUD_SCHEMA_VERSION = "omh_desktop_hud/v1"
 READER_PACKAGE = "omh_desktop_bundle"
 BUNDLE_ROOT = Path(__file__).resolve().parent.parent
 
+# Hermes serves the route from a thread pool, so two first polls -- two
+# Desktop windows, or Desktop beside the browser dashboard -- can arrive
+# together. The module is registered in ``sys.modules`` before it has
+# executed, so without this lock the second caller takes the half-initialised
+# module as its cache hit and, on its own failure, pops the package the first
+# load is still executing.
+_LOAD_LOCK = threading.Lock()
+
 
 def _forget_reader_package() -> None:
     for name in list(sys.modules):
@@ -59,31 +73,33 @@ def load_reader(bundle_root: str | Path = BUNDLE_ROOT) -> types.ModuleType:
     imports resolve to the sibling files of the same bundle. The loaded module
     is reused on later calls while it still comes from ``bundle_root``; a
     module that failed to exec is dropped rather than left half-initialised.
+    One caller loads at a time; the others wait and take the finished module.
     """
     root = Path(bundle_root).resolve()
     reader_path = root / "runtime_reader.py"
     module_name = f"{READER_PACKAGE}.runtime_reader"
-    cached = sys.modules.get(module_name)
-    if cached is not None and str(getattr(cached, "__file__", "") or "") == str(reader_path):
-        return cached
-    _forget_reader_package()
-    package = types.ModuleType(READER_PACKAGE)
-    package.__path__ = [str(root)]
-    sys.modules[READER_PACKAGE] = package
-    spec = importlib.util.spec_from_file_location(module_name, reader_path)
-    if spec is None or spec.loader is None:
+    with _LOAD_LOCK:
+        cached = sys.modules.get(module_name)
+        if cached is not None and str(getattr(cached, "__file__", "") or "") == str(reader_path):
+            return cached
         _forget_reader_package()
-        raise ImportError(f"no loadable runtime_reader at {reader_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    loaded = False
-    try:
-        spec.loader.exec_module(module)
-        loaded = True
-    finally:
-        if not loaded:
+        package = types.ModuleType(READER_PACKAGE)
+        package.__path__ = [str(root)]
+        sys.modules[READER_PACKAGE] = package
+        spec = importlib.util.spec_from_file_location(module_name, reader_path)
+        if spec is None or spec.loader is None:
             _forget_reader_package()
-    return module
+            raise ImportError(f"no loadable runtime_reader at {reader_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        loaded = False
+        try:
+            spec.loader.exec_module(module)
+            loaded = True
+        finally:
+            if not loaded:
+                _forget_reader_package()
+        return module
 
 
 def resolve_hermes_home() -> Path:
@@ -107,10 +123,12 @@ def hud_payload(
 ) -> dict[str, Any]:
     """The HUD the pane renders, or the error record it shows instead.
 
-    ``omh_home`` is left to the reader so the home's own
-    ``plugins.entries.omh.settings.omh_home`` applies, as it does for the TUI
-    widget. ``session`` is the focused stored session id the app names, and
-    naming one is what makes the plan todo session-scoped rather than a
+    ``omh_home`` is left to the reader, which resolves the store from the
+    gateway's own Hermes home -- the same ``get_hermes_home()`` this route
+    resolves, not the ``hermes_home`` handed in -- through that home's
+    ``plugins.entries.omh.settings.omh_home``, as it does for the TUI widget.
+    ``session`` is the focused stored session id the app names, and naming
+    one is what makes the plan todo session-scoped rather than a
     most-recent-TUI guess.
     """
     session_ref = str(session or "").strip()
@@ -142,8 +160,8 @@ if APIRouter is not None:
 
     @router.get("/hud")
     async def hud(session: str = "") -> dict[str, Any]:
-        # The home is resolved on the event loop, where the host's
-        # context-local override is visible; the reader's file and sqlite
-        # reads then run off the loop so a slow home never stalls the stream.
+        # The reader's file and sqlite reads run off the loop so a slow home
+        # never stalls the stream. The home is the gateway's own; the
+        # ``profile`` query is not read (see the module docstring).
         home = resolve_hermes_home()
         return await run_in_threadpool(hud_payload, home, session)

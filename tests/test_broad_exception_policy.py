@@ -73,8 +73,9 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         INTENTIONAL,
         "A reader failure inside the Hermes gateway becomes a record with `error` naming the "
         "exception class and message under `omh_desktop_hud/v1`, and no `display` key; the pane "
-        "renders that record as a reader error, so it is never mistaken for a HUD payload, and the "
-        "route answers 200 rather than raising into a red toast on every poll.",
+        "renders that record as a reader error, so it is never mistaken for a HUD payload; the "
+        "route answers 200 because in the pane a thrown error is indistinguishable from a transport "
+        "failure, and the record is what lets it say which one happened.",
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/jev_ask_client.py",
