@@ -347,6 +347,16 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 self.assertIsNone(provider_serves_alias(spelling, "zai"))
                 # The row carries the generation's own documented list price.
                 self.assertEqual(cost(spelling, 1_000_000, 1_000_000, 0), 5.8)
+                # Cached input reads at GLM-5.3's own 0.186 ratio (docs.z.ai:
+                # $0.26 cached vs $1.4 input) rather than the generic tenth,
+                # and the tier prices a cached-input call identically to the
+                # base model.
+                self.assertAlmostEqual(cost("glm-5.3", 1_000, 1_000, 1_000_000), 0.2662)
+                self.assertAlmostEqual(cost(spelling, 1_000, 1_000, 1_000_000), 0.2662)
+                self.assertEqual(
+                    cost(spelling, 1_000, 1_000, 1_000_000),
+                    cost("glm-5.3", 1_000, 1_000, 1_000_000),
+                )
                 # And the shipped chains name only the base model, so the tier
                 # projects onto the category its base sits in.
                 self.assertEqual(mixture_category_for(spelling, "low", parent_model="kimi-k3"), "unspecified-low")
