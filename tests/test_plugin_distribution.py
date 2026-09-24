@@ -637,6 +637,20 @@ class PluginDistributionTests(unittest.TestCase):
             "capability_families.json",
             pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.tools"],
         )
+        # The Hermes Desktop half: two declared packages, so the wheel and the
+        # main.zip pip install carry the renderer file and the backend module,
+        # and `plugin_api.py` stays a module the standalone gate imports.
+        for subpackage in ("dashboard", "desktop"):
+            self.assertIn(f"omh.plugin_bundle.omh.{subpackage}", packages)
+            self.assertTrue((Path("src") / "plugin_bundle" / "omh" / subpackage / "__init__.py").is_file())
+        self.assertTrue(root.joinpath("desktop", "plugin.js").is_file())
+        self.assertTrue(root.joinpath("dashboard", "manifest.json").is_file())
+        self.assertTrue(root.joinpath("dashboard", "plugin_api.py").is_file())
+        self.assertIn("*.js", pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.desktop"])
+        self.assertIn(
+            "manifest.json",
+            pyproject["tool"]["setuptools"]["package-data"]["omh.plugin_bundle.omh.dashboard"],
+        )
 
     def test_plugin_yaml_advertises_metadata_tools_and_hooks(self) -> None:
         root = resources.files("omh.plugin_bundle.omh")
@@ -891,6 +905,16 @@ print(json.dumps(observed, ensure_ascii=False))
             self.assertTrue(plugin["requires_hermes_plugin_enable"])
             self.assertTrue((plugin_dir / "plugin.yaml").exists())
             self.assertTrue((plugin_dir / ".omh-plugin-manifest.json").exists())
+            # The Hermes Desktop half is copied with the bundle and hashed
+            # into the manifest, which is what lets `omh update` refresh it.
+            desktop_half = ("desktop/plugin.js", "dashboard/manifest.json", "dashboard/plugin_api.py")
+            for relative in desktop_half:
+                self.assertTrue((plugin_dir / relative).is_file(), relative)
+            manifest_paths = {
+                record["path"]
+                for record in json.loads((plugin_dir / ".omh-plugin-manifest.json").read_text(encoding="utf-8"))["files"]
+            }
+            self.assertTrue(set(desktop_half).issubset(manifest_paths), sorted(manifest_paths))
             self.assertEqual(
                 plugin["registered_tools"],
                 [

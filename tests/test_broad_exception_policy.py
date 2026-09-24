@@ -68,6 +68,15 @@ class ClassifiedSite(NamedTuple):
 
 CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ClassifiedSite(
+        "src/plugin_bundle/omh/dashboard/plugin_api.py",
+        "hud_payload",
+        INTENTIONAL,
+        "A reader failure inside the Hermes gateway becomes a record with `error` naming the "
+        "exception class and message under `omh_desktop_hud/v1`, and no `display` key; the pane "
+        "renders that record as a reader error, so it is never mistaken for a HUD payload, and the "
+        "route answers 200 rather than raising into a red toast on every poll.",
+    ),
+    ClassifiedSite(
         "src/plugin_bundle/omh/jev_ask_client.py",
         "send_ask",
         INTENTIONAL,
@@ -430,8 +439,8 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # function. `_write_candidate_batch`, `_is_catalog_question`, `pre_llm_call`,
 # `_resume_unlocked`, and `_execute_cell` each hold two handlers, so the handler
 # count is five above the anchor count.
-EXPECTED_HANDLER_COUNT = 45
-EXPECTED_ANCHOR_COUNT = 40
+EXPECTED_HANDLER_COUNT = 46
+EXPECTED_ANCHOR_COUNT = 41
 
 
 class DerivedSite(NamedTuple):

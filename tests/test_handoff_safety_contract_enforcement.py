@@ -546,6 +546,16 @@ PATH_MODULE_LOAD_ALLOWLIST: dict[str, str] = {
         "in its own first line that it is not a sandbox for hostile Python and audits trusted trees "
         "only; the whole probe runs in a killable `multiprocessing` child with an output cap."
     ),
+    "src/plugin_bundle/omh/dashboard/plugin_api.py": (
+        "the Hermes Desktop backend half, which Hermes' web server itself imports by path as "
+        "`hermes_dashboard_plugin_omh` -- standalone, no package, no `omh` on the path -- so the "
+        "bundle's own `runtime_reader` has to be reached the same way. `load_reader` loads exactly "
+        "one file, `<bundle_root>/runtime_reader.py`, under the private parent `omh_desktop_bundle` "
+        "whose `__path__` is the bundle root; the one route passes no root at all and takes the "
+        "default, `Path(__file__).resolve().parent.parent`, the installed bundle this file ships "
+        "in. Everything the load reaches is a sibling of this file, which `_source_modules()` "
+        "already parses under `src/plugin_bundle/omh/`."
+    ),
 }
 
 
