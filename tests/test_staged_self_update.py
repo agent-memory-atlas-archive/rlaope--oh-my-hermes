@@ -1425,7 +1425,13 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
 
             def apply_result(profile_args: Namespace) -> dict[str, object]:
                 applied.append(profile_args)
-                return {}
+                # The three keys the sync copies onto the profile row; the
+                # real `_apply_result` always returns them (#1857).
+                return {
+                    "registration": "unchanged",
+                    "retired_external_dirs": [],
+                    "registered_dir": current_skills.as_posix(),
+                }
 
             def capture_results(
                 results: list[dict[str, object]], *, language: str
@@ -1452,7 +1458,18 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
                 status = setup_commands.cmd_update(args)
 
             self.assertEqual(status, 0)
-            self.assertEqual(captured_results, [{"profile": "bot", "status": "refreshed"}])
+            self.assertEqual(
+                captured_results,
+                [
+                    {
+                        "profile": "bot",
+                        "status": "refreshed",
+                        "registration": "unchanged",
+                        "retired_external_dirs": [],
+                        "registered_dir": current_skills.as_posix(),
+                    }
+                ],
+            )
             self.assertEqual(len(applied), 1)
 
     def test_migrated_uninstall_removes_current_registration_from_primary_and_profiles(self) -> None:

@@ -600,6 +600,53 @@ All notable changes will be documented here.
   existing bundle manifest, and `omh doctor` gains a non-blocking
   `plugin_desktop_half` check that warns an older bundle toward `omh update`
   and never claims the half is enabled.
+- **A Hermes home registered at the pre-pointer skills path is migrated to
+  the generation pointer instead of keeping both.** A bot profile registered
+  at `~/.omh/skills` before the command install moved to its shared
+  generation pointer was carried forward by `omh update`, which added the
+  pointer beside the older entry and retired nothing. Hermes refuses a bare
+  skill name that resolves to two different files across
+  `skills.external_dirs`, and every generation refresh made the two copies
+  differ, so after each update every OMH skill present in both failed to
+  load by name in that bot (#1857; on the owner machine `profiles/miku`
+  recorded `Ambiguous skill name 'omh-model-setup'`). `_apply_result` run
+  from the installer-managed command now retires every other OMH-managed
+  entry in the same config write that registers the pointer, so the home
+  ends registered at exactly one managed path. Entries are matched by real
+  path, the rule Hermes resolves them by and the one the readers below
+  count by, so an older entry spelled through `~`, a trailing slash or a
+  symlink is retired too rather than reported as an ambiguity `omh update`
+  could never clear. A directory the person registered themselves is never
+  touched, a home naming no managed directory stays opted out, and a
+  command that is not the installer-managed one (a checkout, a pip or uv
+  tool install) stays additive and never retires the pointer, so it cannot
+  move a machine backwards. The apply step and every profile row carry
+  `registration` (`migrated`, `added`, `unchanged`) with the entries
+  retired, and update prints one line per home that moved. `omh doctor`
+  gains `external_dir_ambiguity` for the primary home and one row per
+  affected bot profile: a warning naming both paths and the consequence,
+  counting only directories present on disk (Hermes skips a missing one),
+  with `run \`omh update\`` promoted to doctor's headline next action.
+  Update re-reads every home after the write and prints the same sentence
+  as a warning line for one it could not retire; that residual state does
+  not move the update's exit code. The pre-pointer copy on disk is not
+  deleted: no manifest records it, and on a managed install it backs the
+  always-retained `bootstrap-legacy` generation (the self-update rollback
+  target), which only `omh uninstall` collects. Doctor reports it as
+  unregistered but retained (`external_dir_unregistered_copy`) and calls
+  it safe to delete, with its directory mtime, only when no home registers
+  it and no generation links it. Update also names the gateways whose last
+  recorded start precedes this update, from Hermes' own files: a
+  `gateway.pid` record for the home plus a `gateway-starts.log` last start
+  earlier than the bundle manifest's `installed_at` (rewritten by every
+  update) prints `Hermes gateway for <home>: last recorded start <ISO>
+  precedes this bundle's install (<ISO>); run \`hermes [--profile <name>]
+  gateway restart\``. The pid record's `start_time` is Hermes' PID-reuse
+  fingerprint (psutil `create_time() * 100` on macOS, `/proc/<pid>/stat`
+  field 22 on Linux), never a wall clock, and is pinned as not read; a
+  ledger line that is not a finite positive number, or bytes that are not
+  UTF-8, yield no hint rather than a traceback. No signal, no process
+  listing, no subprocess.
 
 ## 2.0.5 - 2026-09-22
 

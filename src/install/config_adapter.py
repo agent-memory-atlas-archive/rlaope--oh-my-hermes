@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import os
 
 from contextlib import ExitStack
@@ -1697,8 +1699,27 @@ def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
 
 
 def remove_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange:
-    _validate_external_dirs_mutation_shape(config_text)
+    """Remove the entry spelled exactly as `skill_dir` normalizes, the way registration wrote it."""
     target = _normalize(skill_dir)
+    return _remove_external_dir_items(config_text, lambda value: value == target)
+
+
+def remove_external_dir_entries(config_text: str, entries: Iterable[str]) -> ConfigChange:
+    """Remove the entries whose text the file spells exactly as one of `entries`.
+
+    The caller has already decided which entries name the directory it means
+    -- by real path, as `external_dir_registered` reads -- so this removes by
+    the entry's own text and never re-normalizes it: an entry spelled through
+    `~`, with a trailing slash or through a symlink is removed as written.
+    """
+    wanted = set(entries)
+    if not wanted:
+        return ConfigChange(False, "external dir absent", config_text)
+    return _remove_external_dir_items(config_text, lambda value: value in wanted)
+
+
+def _remove_external_dir_items(config_text: str, should_remove: Callable[[str], bool]) -> ConfigChange:
+    _validate_external_dirs_mutation_shape(config_text)
     lines = config_text.splitlines()
     changed = False
     output: list[str] = []
@@ -1714,7 +1735,7 @@ def remove_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
         if in_skills and in_external:
             value = _external_dir_item_value(line)
             if value is not None:
-                if value == target:
+                if should_remove(value):
                     changed = True
                     continue
                 output.append(line)
@@ -1724,7 +1745,7 @@ def remove_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
             if inline.matched:
                 if not inline.supported:
                     raise ValueError(_UNSUPPORTED_EXTERNAL_DIRS_SHAPE)
-                values = [value for value in inline.values if value != target]
+                values = [value for value in inline.values if not should_remove(value)]
                 if len(values) != len(inline.values):
                     changed = True
                     output.extend(_format_external_dirs(values))

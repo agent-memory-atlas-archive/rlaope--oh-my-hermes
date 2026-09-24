@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import json
+import os
 from pathlib import Path
 
 from .advisory import AdvisoryReport, run_config_advisories
@@ -22,15 +23,29 @@ from ..config_adapter import (
     read_config,
 )
 from ..hashutil import sha256_file, sha256_text
-from ..local_store import can_write_dir
+from ..local_store import can_write_dir, read_json_object
 from ..install.guidance_projection import build_guidance_projection_status, catalog_revision
 from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_hook_integrity_status
 from ..install.identity_conflicts import build_identity_conflict_report
 from ..install.installer import installed_skill_directories
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
 from ..install.plugin_loader_observation import observe_real_loader_registration
+from ..install.skill_registration import (
+    AMBIGUOUS_REGISTRATION_NEXT_ACTION,
+    ambiguous_registration_message,
+    external_dir_key,
+    hermes_profile_dirs,
+    managed_skill_dir_candidates,
+    registered_managed_entries,
+    registration_home_label,
+)
 from ..manifest import local_modifications, read_manifest
-from ..paths import OmhPaths
+from ..paths import (
+    OmhPaths,
+    managed_command_generations_dir,
+    managed_command_self_update_state_path,
+    managed_current_workflow_pack_dir,
+)
 from ..plugin_bundle.omh.memory_dreaming import read_dreaming_state, read_latest_consolidation
 from ..workflows.memory import (
     _OPEN_MAX_DAYS,
@@ -60,9 +75,19 @@ WARNING_NEXT_ACTION_PRIORITY = {
     # health checks are otherwise OK. Lower-priority warnings stay visible in
     # the check list without replacing the beginner next action.
     "command_path": 100,
+    # A home naming two managed skills directories has lost every OMH skill
+    # by name (#1857); the row's `run \`omh update\`` is the headline action
+    # too. Per-profile rows are named `external_dir_ambiguity:<profile>` and
+    # read the same priority through `_warning_priority`.
+    "external_dir_ambiguity": 90,
     "target_topology": 80,
     "awareness_delivery": 70,
 }
+
+
+def _warning_priority(name: str) -> int:
+    """The promotion priority of a warning row, by its name or its `name:qualifier` prefix."""
+    return WARNING_NEXT_ACTION_PRIORITY.get(name) or WARNING_NEXT_ACTION_PRIORITY.get(name.split(":", 1)[0], 0)
 AWARENESS_ZERO_DELIVERY_WARNING_DAYS = 7
 # How far back doctor looks in the plugin host observation journal for a hook
 # call that did not come back observed. The same default the `omh plugin
@@ -200,6 +225,10 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     # the running command knows its generation, and both name this directory.
     external_registered = external_dir_registered(dirs, paths.skills_dir)
     checks.append(Check("external_dir", external_registered, f"{paths.skills_dir} in skills.external_dirs"))
+    # Both named with the `external_dir` prefix so the summary groups them
+    # under Hermes registration beside the check above.
+    checks.extend(_external_dir_ambiguity_checks(paths, config_text))
+    checks.append(_external_dir_unregistered_copy_check(paths, config_text))
     # Named with the `hermes_config` prefix so the summary groups it under
     # Hermes registration. Setup refuses a `plugins.enabled` it cannot extend
     # before it installs the bundle, and the plugin checks below run only once
@@ -1083,6 +1112,183 @@ def _jev_skipped_fragment(skipped: list[dict[str, object]]) -> str:
     return f"{len(names)} {noun} under plugins/ not fully read: {shown}"
 
 
+def _profile_paths(paths: OmhPaths, profile_dir: Path) -> OmhPaths:
+    """A bot profile's homes the way the setup sync resolves them.
+
+    The profile's own Hermes home, the primary's OMH store: every profile
+    shares the primary's store for the managed skills, widget and skin, and
+    the registration candidates the sync scores are the primary's too.
+    """
+    return OmhPaths(
+        omh_home=paths.omh_home,
+        hermes_home=profile_dir,
+        omh_home_named=paths.omh_home_named,
+        managed_skills_dir=paths.managed_skills_dir,
+    )
+
+
+def _external_dir_ambiguity_checks(paths: OmhPaths, config_text: str) -> list[Check]:
+    """A home naming two OMH-managed skills directories is a finding, per home.
+
+    Hermes refuses a bare skill name that resolves to two different files
+    across its skill directories, and every generation refresh makes the
+    pre-pointer copy and the pointer differ, so a home that names both loses
+    every OMH skill by name (#1857). `omh update` migrates such a home; this
+    names one it has not reached yet, in the same words update's post-check
+    uses. Doctor otherwise reads one Hermes home; bot profiles are walked for
+    this one question because the profile sync is where the older entry
+    survived, and each affected profile gets its own row so the name says
+    which home to look at. `severity="warning"` with `ok=True`: the finding
+    carries its own next action and must not flip the doctor exit code for
+    a profile the primary home does not share.
+    """
+    current = managed_current_workflow_pack_dir()
+    entries = registered_managed_entries(config_text, managed_skill_dir_candidates(paths, current=current))
+    checks = [_ambiguity_check("external_dir_ambiguity", registration_home_label(paths.hermes_config_path), entries)]
+    for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
+        profile_paths = _profile_paths(paths, profile_dir)
+        profile_entries = registered_managed_entries(
+            read_config(profile_paths.hermes_config_path),
+            managed_skill_dir_candidates(profile_paths, current=current),
+        )
+        if len(profile_entries) > 1:
+            checks.append(
+                _ambiguity_check(
+                    f"external_dir_ambiguity:{name}",
+                    registration_home_label(profile_paths.hermes_config_path, profile=name),
+                    profile_entries,
+                )
+            )
+    return checks
+
+
+def _ambiguity_check(name: str, label: str, entries: list[str]) -> Check:
+    if len(entries) > 1:
+        return Check(
+            name,
+            True,
+            ambiguous_registration_message(label, entries),
+            severity="warning",
+            next_action=AMBIGUOUS_REGISTRATION_NEXT_ACTION,
+        )
+    if entries:
+        return Check(name, True, f"{label} names one OMH-managed skills directory: {entries[0]}")
+    return Check(name, True, f"{label} names no OMH-managed skills directory")
+
+
+def _external_dir_unregistered_copy_check(paths: OmhPaths, config_text: str) -> Check:
+    """The pre-pointer skills copy left on disk after the registration moved off it.
+
+    `omh update` never deletes it: the OMH manifest records the generation
+    pack as its skills directory, and no manifest records that copy at the
+    catalog revision it froze at, so nothing proves it is unmodified OMH
+    output -- the same bar the manifest-checked removals hold every other
+    directory to. Read-only evidence instead, and two references are read
+    before anything is called deletable. Registrations: a copy a home still
+    registers is the migration's job. Generations: on a managed install the
+    lazy migration linked `generations/bootstrap-legacy/skills` to this very
+    copy, and that generation is always retained as the rollback target, so
+    the copy backs a live fallback pack for as long as the generations exist
+    and is collected only by `omh uninstall`, which removes them. Only a copy
+    no home registers and no generation links is named as safe to delete.
+    The time shown is the directory's own mtime -- when a direct child was
+    last added or removed -- not the newest file inside it.
+    """
+    copy = paths.omh_home / "skills"
+    if external_dir_key(copy) == external_dir_key(paths.skills_dir):
+        return Check("external_dir_unregistered_copy", True, f"managed skills are served from {copy}")
+    if not copy.is_dir():
+        return Check("external_dir_unregistered_copy", True, f"no pre-pointer skills copy at {copy}")
+    registered_by: list[str] = []
+    if external_dir_registered(external_dirs(config_text), copy):
+        registered_by.append(registration_home_label(paths.hermes_config_path))
+    for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
+        profile_paths = _profile_paths(paths, profile_dir)
+        if external_dir_registered(external_dirs(read_config(profile_paths.hermes_config_path)), copy):
+            registered_by.append(registration_home_label(profile_paths.hermes_config_path, profile=name))
+    if registered_by:
+        return Check(
+            "external_dir_unregistered_copy",
+            True,
+            f"pre-pointer skills copy at {copy} is still registered by {', '.join(registered_by)}; "
+            f"`omh update` migrates that registration to {paths.skills_dir}",
+        )
+    try:
+        directory_mtime = (
+            datetime.fromtimestamp(copy.stat().st_mtime, UTC)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except OSError:
+        directory_mtime = "unknown"
+    retained = _retained_generations_backed_by(copy)
+    if retained:
+        return Check(
+            "external_dir_unregistered_copy",
+            True,
+            f"unregistered managed skills copy at {copy} (directory mtime {directory_mtime}); "
+            f"neither {paths.hermes_config_path} nor its profiles register it, and it is retained as the "
+            f"{', '.join(retained)} fallback pack under {managed_command_generations_dir()}, "
+            "collected only by `omh uninstall`",
+        )
+    return Check(
+        "external_dir_unregistered_copy",
+        True,
+        f"unregistered managed skills copy at {copy} (directory mtime {directory_mtime}); "
+        f"neither {paths.hermes_config_path} nor its profiles register it and no retained generation "
+        "links it, safe to delete",
+        severity="warning",
+        next_action=f"remove {copy}; no manifest records that copy, so `omh update` never deletes it",
+    )
+
+
+def _retained_generations_backed_by(copy: Path) -> list[str]:
+    """Names of managed generations whose `skills` link resolves to `copy`.
+
+    Every generation directory on disk is read, plus the names the
+    self-update state retains (`retained_generations`, `previous_known_good`)
+    in case one is named there but not listed; a name without a directory has
+    no link to resolve and contributes nothing. Sorted so the message is
+    stable.
+    """
+    generations = managed_command_generations_dir()
+    if generations is None:
+        return []
+    names: set[str] = set()
+    try:
+        names.update(entry.name for entry in generations.iterdir() if entry.is_dir())
+    except OSError:
+        pass
+    state_path = managed_command_self_update_state_path()
+    try:
+        state = read_json_object(state_path) if state_path is not None else None
+    except (OSError, ValueError):
+        state = None
+    if isinstance(state, dict):
+        retained = state.get("retained_generations")
+        if isinstance(retained, list):
+            names.update(item for item in retained if isinstance(item, str))
+        previous = state.get("previous_known_good")
+        if isinstance(previous, dict) and isinstance(previous.get("id"), str):
+            names.add(previous["id"])
+    try:
+        copy_real = os.path.normcase(os.path.realpath(copy))
+    except OSError:
+        return []
+    backed: list[str] = []
+    for name in sorted(names):
+        link = generations / name / "skills"
+        if not link.exists():
+            continue
+        try:
+            if os.path.normcase(os.path.realpath(link)) == copy_real:
+                backed.append(name)
+        except OSError:
+            continue
+    return backed
+
+
 def _retired_skill_install_check(paths: OmhPaths) -> Check:
     """A retired skill still installed under skills_dir is a finding.
 
@@ -1850,9 +2056,9 @@ def recommended_next_action(checks: list[Check]) -> str:
         (
             check
             for check in checks
-            if check.severity == "warning" and check.next_action and WARNING_NEXT_ACTION_PRIORITY.get(check.name, 0) > 0
+            if check.severity == "warning" and check.next_action and _warning_priority(check.name) > 0
         ),
-        key=lambda check: WARNING_NEXT_ACTION_PRIORITY[check.name],
+        key=lambda check: _warning_priority(check.name),
         reverse=True,
     )
     if prioritized_warnings:
