@@ -279,13 +279,25 @@ package succeeds, the re-entered command refreshes managed skills, an already
 installed plugin bundle, and existing Hermes registration.
 
 On a machine that never completed `omh setup`, `omh update` bootstraps the
-full OMH TUI surface instead of skipping it: it installs the plugin bundle,
-registers and enables OMH in the Hermes config (activating the skin), installs
-the TUI widget, and seeds `~/.omh/routing/model-chains.json` — update and
-setup converge on the same machine state. One deliberate opt-out is honored:
-after `omh uninstall --registration-only` the plugin directory stays in place,
-so update never re-registers a machine whose owner removed the registration
-on purpose.
+full OMH TUI surface instead of skipping it: it installs the plugin bundle
+(which carries the Hermes Desktop half), registers and enables OMH in the
+Hermes config (activating the skin), installs the TUI widget, and seeds
+`~/.omh/routing/model-chains.json` — update and setup converge on the same
+machine state. One deliberate opt-out is honored: after
+`omh uninstall --registration-only` the plugin directory stays in place, so
+update never re-registers a machine whose owner removed the registration on
+purpose.
+
+The Hermes Desktop half needs one switch OMH cannot flip. Hermes Desktop
+copies `plugins/omh/desktop/plugin.js` into its own `desktop-plugins/omh/`
+on its next plugin rescan (Capabilities -> Plugins -> Rescan, or an app
+restart) and mounts the backend at `/api/plugins/omh/hud` inside the gateway
+it spawns; the half then appears on the Plugins page switched off, because
+the app keeps every unified-package half off until its owner enables it. Turn
+it on there to get the OMH status line in the status bar and the plan todo in
+an `omh` pane. `omh doctor` reports `plugin_desktop_half` for whether the
+installed bundle carries the files (an older bundle warns toward `omh update`);
+it never claims the half is enabled, since that state lives inside the app.
 
 An explicit `--source` or `--from-skills-dir` remains a workflow-content-only
 operation, and `--dry-run` never changes the command package. A source checkout

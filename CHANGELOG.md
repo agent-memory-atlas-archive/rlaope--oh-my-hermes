@@ -549,6 +549,26 @@ All notable changes will be documented here.
   filter: `latest` resolves to the most recent session with that tag, an
   explicit id whose tag differs or cannot be checked is an error rather than
   a silently ignored flag, and the payload records `source_filter`.
+- **The OMH status line and plan todo now reach Hermes Desktop.** They rendered
+  only in the modern TUI, through the widget Hermes Desktop does not load. The
+  plugin bundle now ships a Desktop half beside its agent half:
+  `dashboard/plugin_api.py`, which Hermes' web server imports by path inside
+  the gateway process and mounts at `/api/plugins/omh/hud`, answers with the
+  same `omh_hud/v1` payload the widget renders (read for the session the app
+  names, a reader failure as a 200 error record rather than a 500), and
+  `desktop/plugin.js`, an uncompiled ESM plugin the app copies into
+  `desktop-plugins/omh/`, polls that route every 5 s while the gateway is open
+  and shows `display.line` in the status bar and the widget and todo lines in
+  an `omh` pane, verbatim and never a value the reader did not produce. The
+  half ships off, as the app requires of unified-package halves, and is
+  switched on under Capabilities -> Plugins. `pyproject.toml` declares the two
+  new subpackages so the wheel and the `main.zip` pip install carry all three
+  files, `omh update` refreshes them through the existing bundle manifest, and
+  `omh doctor` gains a non-blocking `plugin_desktop_half` check that warns an
+  older bundle toward `omh update` and never claims the half is enabled.
+  `tests/test_desktop_half.py` drives the backend's pure functions without
+  FastAPI and the renderer file under node with the SDK shims replaced by
+  recording fakes.
 
 ## 2.0.5 - 2026-09-22
 
