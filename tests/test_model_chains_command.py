@@ -155,7 +155,7 @@ class ModelChainsInterviewTests(unittest.TestCase):
         # and `writing` (custom entry).
         answers = []
         for name, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
-            has_ultrafast = any(model in ("glm-5.2", "kimi-k3") for model, _ in chain)
+            has_ultrafast = _ultrafast_variant(tuple(chain)) is not None
             if name == "quick":
                 answers.append("2" if has_ultrafast else "1")
             elif name == "writing":
@@ -188,14 +188,20 @@ class ModelChainsInterviewTests(unittest.TestCase):
 
     def test_ultrafast_option_never_invents_an_unknown_variant(self) -> None:
         # The offer follows the -ultrafast suffix only when that token is a known
-        # model (shipped chains or price table). Since 2026-09-11 no shipped chain
-        # names an Ultrafast tier, so the offer rests on the retained price rows
-        # (`glm-5.2-ultrafast`, `kimi-k3-ultrafast`). deepseek-v3.2-ultrafast exists
-        # in neither source, so no swap is offered; an already-suffixed member never
-        # re-swaps.
+        # model (shipped chains or price table). No shipped chain names an
+        # Ultrafast tier, so the offer rests on the price rows: the retained
+        # `glm-5.2-ultrafast` / `kimi-k3-ultrafast` and, since 2026-09-24,
+        # `glm-5.3-ultrafast`. deepseek-v3.2-ultrafast exists in neither source,
+        # so no swap is offered; the chains name the `deepseek-flash` pointer,
+        # whose `-ultrafast` spelling is deliberately unpriced, so it stays put;
+        # an already-suffixed member never re-swaps.
         self.assertEqual(
             _ultrafast_variant((("glm-5.2", "low"), ("kimi-k3", "high"))),
             (("glm-5.2-ultrafast", "low"), ("kimi-k3-ultrafast", "high")),
+        )
+        self.assertEqual(
+            _ultrafast_variant((("glm-5.3", "low"), ("deepseek-flash", "low"))),
+            (("glm-5.3-ultrafast", "low"), ("deepseek-flash", "low")),
         )
         self.assertIsNone(_ultrafast_variant((("deepseek-v3.2", "high"),)))
         self.assertIsNone(_ultrafast_variant((("glm-5.2-ultrafast", "low"),)))

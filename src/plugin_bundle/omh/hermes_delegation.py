@@ -1276,6 +1276,29 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # output side dominates real spend; still an approximation, not billing.
     "glm-5.3": (1.4, 4.4),
     "glm-5.3-flash": (0.15, 0.5),
+    # Z.ai publishes no separate rate for the 5.3-generation Ultrafast serving
+    # (observed 2026-09-24), so this row carries the generation's own
+    # documented list price (docs.z.ai pricing, 2026-08) rather than the
+    # halved ballpark the older speed tiers use: a run on the tier reports the
+    # base model's rate instead of a discount nobody published, and instead of
+    # no cost at all. Approximate and editable, not billing evidence.
+    #
+    # The tier deliberately has no provider-family row either (same as
+    # `kimi-k3-ultrafast`): it was observed on a gateway, and OpenRouter's own
+    # catalog serves no `-ultrafast` id at all, so naming a family here would
+    # claim a serving path nobody observed. Absent means "served by every
+    # provider", the honest default for an id the catalog has not described.
+    "glm-5.3-ultrafast": (1.4, 4.4),
+    # DeepSeek publishes no separate rate for the OpenGateway Ultrafast serving
+    # of V4.1 Flash either (observed 2026-09-24), so this row mirrors the
+    # contract's documented peak list price (api-docs.deepseek.com pricing,
+    # 2026-09) and the cache-hit ratio below: the tier reports the model's
+    # published rate rather than no cost at all. It is deliberately NOT a
+    # declared contract row -- a different serving tier is not the contract's
+    # second spelling, so the exact id keeps its own label and this row owns
+    # the rate -- and, like the GLM tier above, it gets no provider-family row:
+    # the tier was observed on a gateway and no vendor catalog lists it.
+    "deepseek-v4.1-flash-ultrafast": (0.30, 1.20),
     # DeepSeek list price (api-docs.deepseek.com/quick_start/pricing, 2026-09):
     # peak-hour cache-miss input 0.30 / output 1.20; cache-hit input 0.006
     # (the 0.02 ratio below); every rate halves off-peak (outside 01:00-04:00
@@ -1321,8 +1344,11 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     "claude-fable-5-1": 0.025,
     "claude-mythos-5-1": 0.025,
     # DeepSeek V4.1 Flash cache hit 0.006 vs cache miss 0.30 per MTok input
-    # (api-docs.deepseek.com/quick_start/pricing, 2026-09).
+    # (api-docs.deepseek.com/quick_start/pricing, 2026-09); the Ultrafast
+    # serving of the same model carries the same cache-hit ratio, or a run on
+    # the tier would price cached input at the generic tenth.
     "deepseek-v4.1-flash": 0.02,
+    "deepseek-v4.1-flash-ultrafast": 0.02,
 }
 _DEFAULT_CACHE_READ_RATIO = 0.1
 

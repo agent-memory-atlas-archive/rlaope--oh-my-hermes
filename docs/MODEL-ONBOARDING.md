@@ -449,8 +449,15 @@ Files that move together (grep the old id to find every site):
 ## 5. Price from documented list only
 
 `APPROX_PRICE_PER_MTOK` takes the vendor's first-party list price with the
-source and month in a comment. A model or tier without a documented price
-gets no entry; absence renders no estimate. For an explicitly declared alias,
+source and month in a comment. A model without a documented price gets no
+entry; absence renders no estimate. A serving tier of a priced model whose
+vendor publishes no separate tier rate may carry the base model's documented
+list price, never an invented discount, with a comment naming the base source
+and saying the tier rate is unpublished; `glm-5.3-ultrafast` and
+`deepseek-v4.1-flash-ultrafast` take this shape. The older halved speed-tier
+rows (`glm-5.2-ultrafast`, `kimi-k3-ultrafast`) predate this rule. A new price
+row also widens what `omh model-chains interview` offers, since it proposes a
+member's `-ultrafast` variant only when that id is priced. For an explicitly declared alias,
 an exact user `model-prices.json` row wins first, then a base-contract row may
 be inherited. Documented service-tier multipliers apply to inherited rates
 (Astra Fast 2x, Flex 0.5x); a reasoning-mode label such as Astra Pro gets no
