@@ -237,28 +237,68 @@ class PayloadTests(unittest.TestCase):
         self.assertIn("clean across 0 replies", format_reply_lint_summary(payload))
 
 
+# A skill_view result carries the SKILL.md frontmatter; OMH's own skills are
+# the ones whose description starts with the catalog's `[omh] ` prefix, which
+# includes the `ulw-*` display names.
+OMH_PLAN_SKILL_VIEW = json.dumps(
+    {"name": "omh-plan", "description": "[omh] Hermes Plan workflow: turn a goal into a plan.", "success": True}
+)
+ULW_WORK_SKILL_VIEW = json.dumps(
+    {"name": "ulw-work", "description": "[omh] Ultrawork: carry a goal to done.", "success": True}
+)
+OTHER_SKILL_VIEW = json.dumps({"name": "reviewer", "description": "Review code for defects.", "success": True})
+OMH_FILE_SKILL_VIEW = json.dumps({"name": "omh-plan", "file": "references/plan.md", "content": "notes", "success": True})
+
+
 def _write_state_db(home: Path, *, session_id: str = "20260923_150513_4286a5") -> Path:
+    """A four-session store shaped like Hermes' own: the reply-lint rows (ids 1-8)
+    plus the tool rows the session-usage reader counts (ids 9 and up)."""
     home.mkdir(parents=True, exist_ok=True)
     path = home / "state.db"
     connection = sqlite3.connect(path)
     with connection:
-        connection.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, started_at REAL, last_activity_at REAL)")
         connection.execute(
-            "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL)"
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, last_activity_at REAL)"
         )
-        connection.execute("INSERT INTO sessions VALUES (?, 1.0, 5.0)", (session_id,))
-        connection.execute("INSERT INTO sessions VALUES ('older', 0.5, 2.0)")
-        rows = [
-            (1, session_id, "user", "what does prepared_not_observed mean?"),
-            (2, session_id, "assistant", "prepared_not_observed means prepared, not run yet."),
-            (3, session_id, "tool", '{"ok": true}'),
-            (4, session_id, "user", "merge it"),
-            (5, session_id, "assistant", "[PRIOR CONTEXT — for reference only] old summary"),
-            (6, session_id, "assistant", OWNER_REFUSAL_REPLY),
-            (7, session_id, "assistant", OWNER_REFUSAL_REPLY),  # compaction re-record
-            (8, "older", "assistant", "unrelated"),
+        connection.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, "
+            "tool_name TEXT, tool_call_id TEXT, timestamp REAL)"
+        )
+        sessions = [
+            (session_id, "tui", 1.0, 5.0),
+            ("older", "cli", 0.5, 2.0),
+            ("desk", "desktop", 3.0, 4.0),
+            ("untagged", None, 1.5, None),
         ]
-        connection.executemany("INSERT INTO messages VALUES (?, ?, ?, ?, 0.0)", rows)
+        connection.executemany(
+            "INSERT INTO sessions (id, source, started_at, last_activity_at) VALUES (?, ?, ?, ?)", sessions
+        )
+        rows = [
+            (1, session_id, "user", "what does prepared_not_observed mean?", None, None),
+            (2, session_id, "assistant", "prepared_not_observed means prepared, not run yet.", None, None),
+            (3, session_id, "tool", '{"ok": true}', "read_file", None),  # no tool_call_id: counts by row
+            (4, session_id, "user", "merge it", None, None),
+            (5, session_id, "assistant", "[PRIOR CONTEXT — for reference only] old summary", None, None),
+            (6, session_id, "assistant", OWNER_REFUSAL_REPLY, None, None),
+            (7, session_id, "assistant", OWNER_REFUSAL_REPLY, None, None),  # compaction re-record
+            (8, "older", "assistant", "unrelated", None, None),
+            (9, session_id, "tool", '{"ok": true}', "omh_status", "c1"),
+            (10, session_id, "tool", '{"ok": true}', "omh_status", "c1"),  # compaction re-persists the row
+            (11, session_id, "tool", '{"ok": true}', "omh_recommend", "c2"),
+            (12, session_id, "tool", OMH_PLAN_SKILL_VIEW, "skill_view", "c3"),
+            (13, session_id, "tool", OTHER_SKILL_VIEW, "skill_view", "c4"),
+            (14, session_id, "tool", OMH_FILE_SKILL_VIEW, "skill_view", "c5"),  # file shape: no description
+            (15, "older", "tool", '{"ok": true}', "omh_todo", "c6"),
+            (16, "desk", "tool", "loaded [omh] guidance as text", "skill_view", "c7"),  # non-JSON fallback
+            (17, "desk", "tool", "plain text", "skill_view", "c8"),
+            (18, "untagged", "tool", '{"ok": true}', "terminal", "c9"),
+            (19, session_id, "tool", ULW_WORK_SKILL_VIEW, "skill_view", "c10"),
+        ]
+        connection.executemany(
+            "INSERT INTO messages (id, session_id, role, content, tool_name, tool_call_id, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?, 0.0)",
+            rows,
+        )
     connection.close()
     return path
 
@@ -307,6 +347,22 @@ class HermesSessionSourceTests(unittest.TestCase):
             hermes_session_replies(home, "latest", last=3)
 
             self.assertEqual(path.read_bytes(), before)
+
+    def test_source_scopes_latest_to_that_surface_and_checks_an_explicit_id(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_state_db(home)
+
+            scoped = hermes_session_replies(home, "latest", source="cli")
+            explicit = hermes_session_replies(home, "20260923_150513_4286a5", source="tui")
+            with self.assertRaisesRegex(ReplySourceError, "session 20260923_150513_4286a5 has source tui, not cli"):
+                hermes_session_replies(home, "20260923_150513_4286a5", source="cli")
+            with self.assertRaisesRegex(ReplySourceError, "no Hermes session with source slack"):
+                hermes_session_replies(home, "latest", source="slack")
+
+        self.assertEqual(scoped["session_id"], "older")
+        self.assertEqual([item["message_id"] for item in scoped["replies"]], [8])
+        self.assertEqual(explicit["session_id"], "20260923_150513_4286a5")
 
 
 class ReplyLintCliTests(unittest.TestCase):
@@ -360,6 +416,29 @@ class ReplyLintCliTests(unittest.TestCase):
         self.assertIn("OMH reply lint: 1 finding across 2 replies", stdout)
         self.assertIn("named by the user, not counted: prepared_not_observed", stdout)
         self.assertIn("not execution, review, CI, or merge evidence", stdout)
+
+    def test_source_filter_is_recorded_and_applies_only_to_a_hermes_session(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_state_db(home)
+            common = ["--omh-home", str(Path(tmp) / ".omh"), "--hermes-home", str(home)]
+
+            status, stdout, stderr = run_cli(
+                [*common, "quality-evidence", "reply-lint", "--hermes-session", "latest", "--source", "cli"]
+            )
+            stdin_status, stdin_stdout, stdin_stderr = run_cli(
+                [*common, "quality-evidence", "reply-lint", "--stdin", "--source", "cli"], stdin_text="fine?"
+            )
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["source"],
+            {"kind": "hermes_session", "session_id": "older", "last": 1, "source_filter": "cli"},
+        )
+        self.assertEqual(stdin_status, 2)
+        self.assertIn("--source applies only to --hermes-session", stdin_stderr)
+        self.assertEqual(stdin_stdout.strip(), "")
 
     def test_a_missing_database_is_an_error_not_a_clean_result(self) -> None:
         with TemporaryDirectory() as tmp:

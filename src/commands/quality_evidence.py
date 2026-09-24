@@ -20,6 +20,7 @@ from ..quality.language_diagnostic_evidence import (
 )
 from ..quality.reply_lint import build_reply_lint, format_reply_lint_summary, summarize_reply_lints
 from ..quality.reply_lint_source import HERMES_LATEST_SESSION, ReplySourceError, hermes_session_replies
+from ..quality.session_usage import SessionUsageError, build_session_usage, format_session_usage_summary
 from .common import _paths, _print_json, _wants_json
 
 
@@ -142,15 +143,45 @@ def cmd_quality_evidence_reply_lint(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def cmd_quality_evidence_session_usage(args: argparse.Namespace) -> int:
+    """Report OMH utilisation per Hermes host surface; reads state.db only.
+
+    OMH's tools and skills reach a Hermes session through whichever surface
+    opened it, and nothing observed which surfaces they reached. This reads
+    Hermes' own session store read-only and counts, per ``sessions.source``,
+    sessions, tool calls, ``omh_*`` calls and OMH skill loads. An empty window
+    exits 0: it is an observation, and a wrapper that wants to gate on
+    utilisation reads ``totals``. A missing or unreadable database is an error.
+    """
+    try:
+        payload = build_session_usage(_paths(args).hermes_home, since=args.since, source=args.source)
+    except (OSError, SessionUsageError, ValueError) as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        print(format_session_usage_summary(payload))
+    return 0
+
+
 def _reply_lint_input(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if args.hermes_session:
         paths = _paths(args)
-        read = hermes_session_replies(paths.hermes_home, args.hermes_session, last=int(args.last))
-        source = {"kind": "hermes_session", "session_id": read["session_id"], "last": int(args.last)}
+        read = hermes_session_replies(
+            paths.hermes_home, args.hermes_session, last=int(args.last), source=args.source
+        )
+        source = {
+            "kind": "hermes_session",
+            "session_id": read["session_id"],
+            "last": int(args.last),
+            "source_filter": args.source,
+        }
         return source, [
             {"user_text": item["user_text"], "reply": item["reply"], "message_id": item["message_id"]}
             for item in read["replies"]
         ]
+    if args.source is not None:
+        raise ValueError("--source applies only to --hermes-session")
     user_text = Path(args.user_text_file).read_text(encoding="utf-8") if args.user_text_file else ""
     if args.stdin:
         return {"kind": "stdin"}, [{"user_text": user_text, "reply": sys.stdin.read()}]
@@ -240,11 +271,42 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     )
     reply_lint.add_argument("--last", type=int, default=1, help="How many trailing replies of the session to lint.")
     reply_lint.add_argument(
+        "--source",
+        default=None,
+        help=(
+            "Only consider Hermes sessions whose source tag equals this value (tui, cli, desktop, ...); "
+            f"with `{HERMES_LATEST_SESSION}`, the most recent such session."
+        ),
+    )
+    reply_lint.add_argument(
         "--user-text-file",
         help="Path to the user message the reply answers; a term it names is explained, not leaked.",
     )
     reply_lint.add_argument("--json", action="store_true", help="Print the machine-readable reply_lint/v1 payload.")
     reply_lint.set_defaults(func=cmd_quality_evidence_reply_lint)
+
+    usage = commands.add_parser(
+        "session-usage",
+        help="Report OMH utilisation per Hermes host surface from state.db, read-only.",
+        description=(
+            "Read Hermes' own session store (mode=ro) and count, per sessions.source (tui, cli, "
+            "desktop, oneshot, ...), sessions, tool calls, omh_* tool calls, sessions with at least "
+            "one omh_* call, skill_view loads and OMH skill loads. It observes nothing about whether "
+            "a call succeeded or a skill was followed, and is not execution, review, CI, or merge evidence."
+        ),
+    )
+    usage.add_argument(
+        "--since",
+        default=None,
+        help="ISO-8601 timestamp or epoch seconds; sessions whose last activity is older are excluded.",
+    )
+    usage.add_argument(
+        "--source",
+        default=None,
+        help="Only sessions whose Hermes source tag equals this value, such as tui, cli, desktop, oneshot.",
+    )
+    usage.add_argument("--json", action="store_true", help="Print the machine-readable session_usage/v1 payload.")
+    usage.set_defaults(func=cmd_quality_evidence_session_usage)
 
 
 def _add_json_input(parser: argparse.ArgumentParser, name: str, label: str) -> None:
