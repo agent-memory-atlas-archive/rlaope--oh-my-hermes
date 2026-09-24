@@ -214,14 +214,19 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             self.assertEqual(entries, [])
 
     def test_the_message_names_both_paths_and_the_consequence(self) -> None:
-        message = ambiguous_registration_message(registration_home_label(Path("/h/config.yaml")), ["/a", "/b"])
+        # The label spells the config path as `str(Path)` does on the
+        # platform (`\h\config.yaml` on Windows), so the expectation is
+        # built from the same object; the entries are config text and stay
+        # as written.
+        config = Path("/h/config.yaml")
+        message = ambiguous_registration_message(registration_home_label(config), ["/a", "/b"])
         self.assertEqual(
             message,
-            "/h/config.yaml names 2 OMH-managed skills directories in skills.external_dirs (/a and /b); "
+            f"{config} names 2 OMH-managed skills directories in skills.external_dirs (/a and /b); "
             "Hermes refuses a bare skill name that resolves to two different files, "
             "so OMH skills fail to load by name",
         )
-        self.assertEqual(registration_home_label(Path("/h/config.yaml"), profile="miku"), "profile miku (/h/config.yaml)")
+        self.assertEqual(registration_home_label(config, profile="miku"), f"profile miku ({config})")
 
 
 class DoctorAmbiguityCheckTests(unittest.TestCase):
