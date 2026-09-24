@@ -79,7 +79,11 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             old.mkdir(parents=True)
             candidates = managed_skill_dir_candidates(paths, current=pointer)
             spellings = {"trailing slash": old.as_posix() + "/"}
-            with mock.patch.dict(os.environ, {"HOME": str(root)}):
+            # USERPROFILE alongside HOME: ntpath.expanduser reads USERPROFILE
+            # (then HOMEDRIVE+HOMEPATH) and ignores HOME, so a HOME-only
+            # fixture would expand `~` to the runner's real profile on
+            # Windows. Same pair the other home-redirecting tests patch.
+            with mock.patch.dict(os.environ, {"HOME": str(root), "USERPROFILE": str(root)}):
                 spellings["tilde"] = "~/.omh/skills"
                 self.assertEqual(Path(spellings["tilde"]).expanduser(), old)
                 for label, spelled in spellings.items():
