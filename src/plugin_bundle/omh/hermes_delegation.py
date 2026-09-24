@@ -1349,6 +1349,15 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # the tier would price cached input at the generic tenth.
     "deepseek-v4.1-flash": 0.02,
     "deepseek-v4.1-flash-ultrafast": 0.02,
+    # Z.ai lists GLM-5.3 cached input at $0.26 against $1.4 input, and
+    # GLM-5.3-Flash cached input at $0.03 against $0.15 input (docs.z.ai
+    # pricing, read 2026-09-24). The Ultrafast serving of GLM-5.3 carries the
+    # same ratio as the base generation -- same reasoning as the DeepSeek row
+    # above, or a run on the tier would price cached input at the generic
+    # tenth.
+    "glm-5.3": 0.186,
+    "glm-5.3-flash": 0.2,
+    "glm-5.3-ultrafast": 0.186,
 }
 _DEFAULT_CACHE_READ_RATIO = 0.1
 

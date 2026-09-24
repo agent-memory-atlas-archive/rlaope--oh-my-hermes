@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Cached-input calls on GLM 5.3 (and its Ultrafast tier) now price at the
+  vendor's own cache-hit ratio instead of the generic tenth.** `glm-5.3` and
+  `glm-5.3-ultrafast` were priced in `APPROX_PRICE_PER_MTOK` but absent from
+  `APPROX_CACHE_READ_RATIO`, so a cached-input token on either id fell
+  through to the 0.1 default. Z.ai lists GLM 5.3 cached input at $0.26
+  against $1.4 input, and GLM-5.3-Flash cached input at $0.03 against $0.15
+  input (docs.z.ai pricing, read 2026-09-24); both `glm-5.3` and
+  `glm-5.3-ultrafast` now carry the 0.26/1.4 ratio (rounded to 0.186, at the
+  same precision as the neighbouring Fable and DeepSeek rows), and
+  `glm-5.3-flash` carries the exact 0.03/0.15 ratio (0.2). No routing or
+  list-price change.
+
 - **Claude Opus 5.5 in the shared last resort now names `medium` effort
   (editorial, unmeasured).** The `last_resort.any` entry carried no effort,
   so fanout dispatch passed no effort flag (claude-code `--effort`, codex
