@@ -298,9 +298,10 @@ it `tab.hidden`, so that dashboard gets no `omh` tab (it still requests the
 manifest's default entry script and logs its absence at console level).
 _Avoid_: reading `desktop-plugins/` as install truth (it is the app's copy;
 the bundle under `plugins/omh/` is what `omh update` refreshes), claiming the
-half is enabled (not observable from OMH), claiming the app's copy or the
-rendered pane was observed (they are read from the app's source), OMH status
-widget (that is the Modern-TUI surface)
+half is enabled (not observable from OMH), claiming the app's own copy or the
+rendered pane was observed (the status-bar item was observed once, from a
+hand-placed standalone copy; the copy step and the pane are read from the
+app's source), OMH status widget (that is the Modern-TUI surface)
 
 ### Host surfaces OMH reads
 

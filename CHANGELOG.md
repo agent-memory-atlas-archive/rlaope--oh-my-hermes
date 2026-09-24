@@ -570,7 +570,10 @@ All notable changes will be documented here.
   manifest, so it is marked `tab.hidden` and the browser dashboard gets no
   `omh` tab. Observed: a live `hermes serve` logged the mount and answered 200
   on the route, and node drove the renderer file with the SDK shims replaced
-  by recording fakes; the app's copy into `desktop-plugins/omh/` and the
+  by recording fakes, and the built Hermes Desktop app, launched against an
+  isolated home with the renderer file placed by hand as a standalone disk
+  plugin, showed `[omh] vunknown | plugin:ready | coding-agent:not-selected`
+  in its status bar; the app's own copy into `desktop-plugins/omh/` and the
   rendered pane are by construction from Hermes' loader source, not observed.
   `pyproject.toml` ships the three files (the backend as a `dashboard`
   subpackage, the renderer file as package data, so no Python package marker
