@@ -411,9 +411,36 @@ pairing so a benchmark claim can never mix in other prompt changes.
     The vendor's own client restrains Luna rather than pushing it.
 
   A future counter would narrow scope, never push the model to keep
-  working; test restraint is the strongest candidate. Editorial,
-  unmeasured: the `gpt-5.6-luna` vs `gpt-6-luna` pair at `low` is the named
-  follow-up.
+  working; test restraint is the strongest candidate.
+  - **Measured (2026-09-24, OMH `low` vs vendor-default `medium`, plus the
+    generation-swap follow-up):** four arms on
+    `benchmarks/live-model-tools/v1`, evaluation split (30 instances),
+    `hermes_current_session` path, `openai-codex`, `optimized` condition, one
+    arm at a time, same UTC day. L1 (`gpt-6-luna` at `low`, the OMH-shipped
+    rung) and L2 (`gpt-6-luna` at `medium`, the vendor default) both passed
+    15 / 30 (McNemar p = 1.0); `low` used +9,904 tokens per task more than
+    `medium`, bootstrap CI95 [+846, +19,880] (+13.9% in total, sign-test
+    p = 0.043) — the CI excludes 0, but the list price came out equal
+    ($0.0766 against $0.0773, a gap smaller than the $0.0008 measured by
+    repeating the `low` condition on a separate arm). So on this corpus
+    `low` saves neither tokens nor money over `medium`; kept anyway, per the
+    owner decision below. A third arm (L3, the predecessor `gpt-5.6-luna` at
+    `low`) answers the named follow-up: pass went from 18 (`gpt-5.6-luna`)
+    to 15 (`gpt-6-luna`), McNemar p = 0.25 (not significant), with all three
+    lost tasks in `PREDICATE` — every `gpt-6-luna` run in this bench scored
+    0 / 3 there while `gpt-5.6-luna` scored 3 / 3. List cost dropped from
+    $0.2324 to $0.0766 (−67%), driven by `gpt-6-luna`'s lower list rates and
+    higher cache share rather than by a token-count drop. Owner decision
+    (2026-09-24): keep `gpt-6-luna` in the `quick` and `simple-work` chain
+    slots — the cost win is real on short-task slots (about a third of the
+    predecessor's list price) and the 3-task `PREDICATE` gap is not
+    statistically significant on this corpus; flagged here as a known
+    weakness to re-check with a larger corpus. Corpus ceiling on this bench
+    is 18 / 30 (no arm passes the read or lsp templates); wall clock was
+    contended in every arm and is not compared. Not measured: any claim
+    beyond this corpus, and `low` vs `medium` at any placement other than
+    `quick` / `simple-work`. Archive (outside git, owner checkout):
+    `.omc/research/opus55-luna-bench-2026-09-24/`.
 - **GPT-6 Sol: documented traits, no counter shipped.** `gpt-6-sol` has an
   exact contract but no exact calibration, the Luna precedent. Unlike Luna,
   its placement reaches the calibrated tiers: it heads `deep` at `high`,
@@ -669,6 +696,29 @@ pairing so a benchmark claim can never mix in other prompt changes.
   `main` role suggestion. Anthropic's "Unattended agentic runs" paragraph is
   deliberately not adopted: it tells the model to keep working. Editorial,
   unmeasured: Opus 5 vs Opus 5.5 at the same rung is the named follow-up.
+- **Measured (2026-09-24, subagent block on Opus 5.5, block vs no block):**
+  three arms on `benchmarks/live-model-tools/v1`, evaluation split
+  (30 instances), `hermes_current_session` path, `og` / `claude-opus-5-5`
+  at `xhigh`, `optimized` condition, one arm at a time, same UTC day. O1
+  sends no calibration block (2,567,274 harness tokens); O2 sends the block
+  above, the 2026-09-23 deletion text (2,606,382 tokens); O3 repeats O2 to
+  measure same-text drift (2,769,542 tokens). All three passed the same
+  18 / 30 instances (McNemar p = 1.0), so pass rate decided nothing. Tasks
+  with the block used +4,023 tokens per task more than the no-block
+  baseline on average, bootstrap CI95 [−3,983, +12,842]; running the same
+  block-bearing text twice moved +5,439 [−1,033, +12,334]. The block's cost
+  sits inside its own same-text drift — no measurable effect either way —
+  so it is kept. `xhigh` is not a shipped Opus 5.5 setting: the subagent
+  block fires only at `high` or above (`HIGH_EFFORT_TIER`), and no shipped
+  Opus 5.5 chain slot requests `high` or above, so this measurement bears on
+  an operator running Opus 5.5 manually at `xhigh`, not on a shipped route.
+  Not measured: O4 (Opus 5.5 at `medium`, the shipped rung) and O5 (Opus 5
+  at `medium`) were skipped for cost on the owner's decision, so this makes
+  no claim about Opus effort placement and no claim about the Opus 5 → 5.5
+  swap. Corpus ceiling on this bench is 18 / 30 (no arm passes the read or
+  lsp templates); wall clock was contended in all but one arm and is not
+  compared. Archive (outside git, owner checkout):
+  `.omc/research/opus55-luna-bench-2026-09-24/`.
 - **Source:** the original checklist/fan-out counters are adapted research
   (same origin as `gpt`), the composer block was added after observing
   over-fan-out in live composition; the 5.1 additions follow the official

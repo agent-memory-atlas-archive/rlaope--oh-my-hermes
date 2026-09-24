@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Opus 5.5 subagent block and GPT-6 Luna's `low` placement are now
+  measured (2026-09-24).** `MODEL_OPTI.md` records two new benchmark
+  results, both from `.omc/research/opus55-luna-bench-2026-09-24/`: the
+  Claude subagent calibration block on Opus 5.5 at `xhigh` costs +4,023
+  tokens/task over no block, within its own +5,439 same-text drift, at the
+  same 18/30 pass rate — kept, though `xhigh` is not a shipped Opus 5.5
+  setting; and OMH's `low` effort for `gpt-6-luna` costs +13.9% more tokens
+  than the vendor-default `medium` for the same 15/30 pass rate and the same
+  list price, so `low` saves nothing measured on this corpus. A third arm
+  shows the `gpt-5.6-luna` → `gpt-6-luna` generation swap at `low` dropping
+  pass from 18 to 15 (not significant, all three losses in `PREDICATE`) for
+  a 67% list-cost cut; `gpt-6-luna` stays in the `quick` and `simple-work`
+  chain slots (owner decision), with `PREDICATE` flagged as a known weakness
+  to re-check on a larger corpus. No routing, pricing, or contract change.
+
 - **Runs on the GLM 5.3 and DeepSeek V4.1 Flash Ultrafast tiers now report a
   cost.** `glm-5.3-ultrafast` and `deepseek-v4.1-flash-ultrafast` are served
   by an OpenAI-compatible gateway next to the base ids the shipped chains
