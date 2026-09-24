@@ -510,7 +510,7 @@ The shipped catalog is editorial policy, not benchmark output:
 | `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), DeepSeek Flash (V4.1) (`low`), Claude Haiku 4.5 (`low`) |
 | `deep-work` | Long tasks at frontier depth | GPT-6 Astra (`high`) |
 | `x_platform_data` affinity | X-platform data affinity | Grok Code Fast, Kimi K3, Gemini 3.1 Pro |
-| Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5, GPT-6 Sol (`medium`) |
+| Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6 Sol (`medium`) |
 <!-- omh:model-chain-table:end -->
 
 Chain customization is a config edit, not a source edit — bare

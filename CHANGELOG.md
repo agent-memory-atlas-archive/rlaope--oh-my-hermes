@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Claude Opus 5.5 in the shared last resort now names `medium` effort
+  (editorial, unmeasured).** The `last_resort.any` entry carried no effort,
+  so fanout dispatch passed no effort flag (claude-code `--effort`, codex
+  `model_reasoning_effort`) and the executor CLI's own default applied, and a
+  prepared route carried none. It now names `medium`, which reaches fanout
+  dispatch and prepared routes; the Hermes `delegate_task` path is unchanged.
+  Anthropic's Opus 5.5 guidance is to set effort explicitly
+  (https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5.md),
+  and `medium` is the rung Opus 5.5 already carries in `unspecified-high` and
+  `capable`. No calibration block fires at `medium`; the vendor order is
+  unchanged. Named follow-up: bench arm O4 (Opus 5.5 at `medium` on
+  `benchmarks/live-model-tools/v1`).
+
 - **Opus 5.5 subagent block and GPT-6 Luna's `low` placement are now
   measured (2026-09-24).** `MODEL_OPTI.md` records two new benchmark
   results, both from `.omc/research/opus55-luna-bench-2026-09-24/`: the
@@ -18,6 +31,12 @@ All notable changes will be documented here.
   a 67% list-cost cut; `gpt-6-luna` stays in the `quick` and `simple-work`
   chain slots (owner decision), with `PREDICATE` flagged as a known weakness
   to re-check on a larger corpus. No routing, pricing, or contract change.
+  Correction (2026-09-24, observed from the run transcripts): the three
+  `PREDICATE` losses are a `kind` vocabulary mismatch, not a search miss —
+  every `gpt-6-luna` run found the functions and wrote a task-derived `kind`
+  label where the grader expects `function`. Named follow-up: bench arm L6
+  (`gpt-6-luna` at `low` on the three `PREDICATE` tasks with the `kind`
+  vocabulary stated).
 
 - **Runs on the GLM 5.3 and DeepSeek V4.1 Flash Ultrafast tiers now report a
   cost.** `glm-5.3-ultrafast` and `deepseek-v4.1-flash-ultrafast` are served

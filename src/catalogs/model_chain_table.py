@@ -29,7 +29,7 @@ Effort is rendered from the catalog, never assumed, and always on the entry
 that declares it. The hand-written table used a trailing token for a row whose
 entries all shared an effort, which reads shorter but cannot be read back: in
 `Claude Opus 5.5, GPT-6 Sol (medium)` the token could belong to the row or to
-Sol alone, and for `last_resort.any` it belongs to Sol alone. One rule --
+Sol alone, and for `last_resort.any` it then belonged to Sol alone. One rule --
 `Label (effort)` per entry, nothing at all for an entry that declares none --
 is longer on the uniform rows and unambiguous on every row, which is what lets
 `tests/test_model_chain_table.py` read the table back into aliases and efforts

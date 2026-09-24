@@ -435,7 +435,22 @@ pairing so a benchmark claim can never mix in other prompt changes.
     slots — the cost win is real on short-task slots (about a third of the
     predecessor's list price) and the 3-task `PREDICATE` gap is not
     statistically significant on this corpus; flagged here as a known
-    weakness to re-check with a larger corpus. Corpus ceiling on this bench
+    weakness to re-check with a larger corpus. Correction (2026-09-24,
+    observed from the run transcripts): the `PREDICATE` loss is a field
+    vocabulary mismatch, not a search miss. The grader compares
+    `(path, line, kind)` exactly
+    (`benchmarks/live-model-tools/v1/lib/validation.py:39-46,118-123`) and
+    the task text never lists the allowed `kind` values; `gpt-6-luna` found
+    the functions and filled `kind` with a task-derived label (Hermes
+    `state.db` sessions `20260924_130123_bf450a` and
+    `20260924_130154_64bfa0`: `"kind":"provider_failure_to_fallback"`;
+    `20260924_130221_ac6657`: `"kind":"provider_failure_to_fallback_result"`)
+    where `gpt-5.6-luna` wrote
+    `"kind":"function"` (session `20260924_135649_e47bf4`), so the run is
+    scored `search_false_negative`. Named follow-up: bench arm L6
+    (`gpt-6-luna` at `low`, the three `PREDICATE` tasks with the `kind`
+    vocabulary stated) to test whether the gap is vocabulary only; the
+    pinned corpus and scorer stay unchanged here. Corpus ceiling on this bench
     is 18 / 30 (no arm passes the read or lsp templates); wall clock was
     contended in every arm and is not compared. Not measured: any claim
     beyond this corpus, and `low` vs `medium` at any placement other than
@@ -719,6 +734,18 @@ pairing so a benchmark claim can never mix in other prompt changes.
   lsp templates); wall clock was contended in all but one arm and is not
   compared. Archive (outside git, owner checkout):
   `.omc/research/opus55-luna-bench-2026-09-24/`.
+- **Opus 5.5 in the shared last resort names `medium` (2026-09-24,
+  editorial, unmeasured).** The `last_resort.any` entry carried no effort,
+  which does not mean the API default: fanout dispatch then passes no effort
+  flag and the executor CLI's own default applies, and a prepared route
+  carries none. Anthropic's Opus 5.5 guidance is to set effort explicitly
+  (official,
+  https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5.md;
+  the Opus 5.5 migration guide's checklist says the same), `medium` is the rung Opus 5.5 already carries in
+  `unspecified-high` and `capable`, and GPT-6 Sol beside it already names `medium`. No
+  calibration block fires at `medium`, and the vendor order is unchanged.
+  Named follow-up: bench arm O4 (Opus 5.5 at `medium` on
+  `benchmarks/live-model-tools/v1`), the arm skipped above.
 - **Source:** the original checklist/fan-out counters are adapted research
   (same origin as `gpt`), the composer block was added after observing
   over-fan-out in live composition; the 5.1 additions follow the official
