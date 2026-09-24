@@ -324,8 +324,17 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
     # that ecosystem is not confirmed active. This is not a per-category
     # anchor: it never outranks a category, role, or domain candidate, and it
     # never rescues an unavailable explicit model.
+    #
+    # Opus 5.5 names `medium` here rather than no effort (2026-09-24,
+    # editorial, unmeasured). An entry with no effort leaves the level to
+    # whatever runs it: fanout dispatch passes no effort flag and the executor
+    # CLI's own default applies, and a prepared route carries none. Anthropic's
+    # Opus 5.5 guidance is to set effort explicitly, `medium` is the rung it
+    # already carries in `unspecified-high` and `capable`, and Sol's entry beside it already
+    # names `medium`, so the row is now uniform. Named follow-up: bench arm O4
+    # (Opus 5.5 at `medium`, live-model-tools) in MODEL_OPTI.md.
     "last_resort": {
-        "any": [deepcopy(_OPUS_55), deepcopy(_SOL)],
+        "any": [_with_effort(_OPUS_55, "medium"), deepcopy(_SOL)],
     },
 }
 

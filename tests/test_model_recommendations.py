@@ -249,6 +249,9 @@ class RecommendationCatalogTests(unittest.TestCase):
         self.assertEqual(catalog["role_suggestions"]["main"][4]["reasoning_effort"], "high")
         self.assertEqual(catalog["categories"]["deep"][0]["reasoning_effort"], "high")
         self.assertEqual(catalog["last_resort"]["any"][1]["reasoning_effort"], "medium")
+        # Opus 5.5 in the shared last resort names its effort (2026-09-24):
+        # an entry with none leaves the level to the executor CLI's default.
+        self.assertEqual(catalog["last_resort"]["any"][0]["reasoning_effort"], "medium")
         # A chain that would otherwise sit in one provider ecosystem ends on
         # a comparable-tier candidate from another (owner rule, 2026-08-19)
         # so one rejected ecosystem cannot exhaust the chain.
