@@ -33,7 +33,7 @@ _DECISION_RECEIPT = "decision receipt for planning with supported option, reject
 
 DEFINITION = SkillDefinition(
     "decision-prototype",
-    "Bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.",
+    "Uncertain technical choice for a spike: bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.",
     (
         "decision-prototype",
         "$decision-prototype",
@@ -214,4 +214,11 @@ DEFINITION = SkillDefinition(
         "If the user asks to ship the prototype, summarize the receipt and route to `ralplan`; promotion needs an accepted plan and its own implementation handoff.",
     ),
     progressive_disclosure=True,
+    situations=(
+        "try both libraries quickly before deciding",
+        "throwaway experiment to test performance",
+        "will this api work for us",
+        "quick proof of concept for one question",
+        "spike before we plan",
+    ),
 )

@@ -32,7 +32,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### oh-my-hermes
 
-[omh] Router guidance for using oh-my-hermes workflow skills inside Hermes Agent.
+[omh] Choosing among OMH skills for a request: router guidance for using oh-my-hermes workflow skills inside Hermes Agent.
 
 - Category: `router`
 - Phase: `routing`
@@ -95,7 +95,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### meta-router
 
-[omh] Meta-routing guidance for a leading /omh command: reason over the imperative task, consult the live workflow catalog, and select or chain the right workflow(s).
+[omh] Message opens with /omh and a task: meta-routing guidance for a leading /omh command: reason over the imperative task, consult the live workflow catalog, and select or chain the right workflow(s).
 
 - Category: `router`
 - Phase: `meta-routing`
@@ -172,7 +172,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### loop
 
-[omh] Hermes Loop workflow: agentic interviewer -> planner -> researcher -> builder -> reviewer cycles until a real gate.
+[omh] Ambitious goal needing many iterative cycles: agentic interviewer -> planner -> researcher -> builder -> reviewer cycles until a real gate.
 
 - Category: `goal-loop`
 - Phase: `continuous-goal-loop`
@@ -309,7 +309,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### context
 
-[omh] Project terminology alignment workflow: look up, capture, correct, and align the words a repository uses before planning or handoff.
+[omh] Repository vocabulary unclear or inconsistent: project terminology alignment workflow: look up, capture, correct, and align the words a repository uses before planning or handoff.
 
 - Category: `clarification`
 - Phase: `terminology-alignment`
@@ -387,7 +387,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### deep-interview
 
-[omh] Hermes Deep Interview workflow: one-question-at-a-time clarification.
+[omh] Vague, underspecified request: one-question-at-a-time clarification.
 
 - Category: `clarification`
 - Phase: `discovery`
@@ -448,7 +448,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jit-learn
 
-[omh] Just-in-time learning workflow: select and confirm an immediate learning target, research credible sources, and prepare an application-first brief without popularity ranking.
+[omh] Blocked and choosing a learning target: just-in-time learning workflow: select and confirm an immediate learning target, research credible sources, and prepare an application-first brief without popularity ranking.
 
 - Category: `research`
 - Phase: `learning-target`
@@ -535,7 +535,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ultrawork
 
-[omh] Ultrawork - split an accepted plan into disjoint parallel lanes with per-lane acceptance criteria, verification commands, and owners; prevents two lanes editing the same file.
+[omh] Accepted plan awaiting implementation: split it into disjoint parallel lanes with per-lane acceptance criteria, verification commands, and owners; prevents two lanes editing the same file.
 
 - Category: `execution`
 - Phase: `parallel-delivery`
@@ -658,7 +658,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### maestro
 
-[omh] Maestro - prepares the handoff for the coding agent you already chose, composing its prompt from that agent's own installed skills; never selects the owner and never executes the work itself.
+[omh] Coding owner already chosen, handoff pending: prepares the handoff for the coding agent you already chose, composing its prompt from that agent's own installed skills; never selects the owner and never executes the work itself.
 
 - Category: `execution`
 - Phase: `external-handoff`
@@ -740,7 +740,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### research
 
-[omh] Deep research engine - grounding for specs and decisions: study open-source reference implementations with pinned refs, gather live web evidence with citation discipline, verify contested claims, and distill a decision-grounding dossier that planning consumes; for a decision brief use research-brief, for upstream guidance use web-research.
+[omh] Deep dive before a decision: deep research engine - grounding for specs and decisions: study open-source reference implementations with pinned refs, gather live web evidence with citation discipline, verify contested claims, and distill a decision-grounding dossier that planning consumes; for a decision brief use research-brief, for upstream guidance use web-research.
 
 - Category: `research`
 - Phase: `decision-grounding`
@@ -852,7 +852,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### web-research
 
-[omh] Web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`.
+[omh] Current-facts lookup on the web: web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`.
 
 - Category: `research`
 - Phase: `web-evidence`
@@ -924,7 +924,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### product-docs
 
-[omh] Current-source-first documentation for OMH itself: product identity, public capability catalog, model routing, local state, and long-term memory.
+[omh] Explaining OMH itself: current-source-first documentation for OMH itself: product identity, public capability catalog, model routing, local state, and long-term memory.
 
 - Category: `research`
 - Phase: `product-documentation`
@@ -990,7 +990,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### source-finder
 
-[omh] Source candidate inventory - prepare typed source candidates and acquisition status before downstream work; use ulw-research to fetch and cite them, or research-brief to turn them into a decision-ready brief.
+[omh] Gathering candidate papers, datasets, or repos: source candidate inventory - prepare typed source candidates and acquisition status before downstream work; use ulw-research to fetch and cite them, or research-brief to turn them into a decision-ready brief.
 
 - Category: `research`
 - Phase: `source-acquisition`
@@ -1061,7 +1061,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### research-brief
 
-[omh] Business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department.
+[omh] Market, competitor, or pricing question: business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department.
 
 - Category: `research`
 - Phase: `business-brief`
@@ -1120,7 +1120,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### research-department
 
-[omh] Research operations department - coordinate Scout, Analyst, and Briefer work with source-inbox and status boundaries; for one decision brief use research-brief, and for typed candidates before research starts use source-finder.
+[omh] Recurring market or topic research: research operations department - coordinate Scout, Analyst, and Briefer work with source-inbox and status boundaries; for one decision brief use research-brief, and for typed candidates before research starts use source-finder.
 
 - Category: `research`
 - Phase: `research-department`
@@ -1183,7 +1183,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### paper-learning
 
-[omh] Hermes Paper Learning workflow: explain a supplied paper or paper/PDF at a selected level while preserving full section coverage and source evidence boundaries.
+[omh] Paper or paper PDF to understand: explain a supplied paper or paper/PDF at a selected level while preserving full section coverage and source evidence boundaries.
 
 - Category: `research`
 - Phase: `paper-learning`
@@ -1320,7 +1320,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### meeting-brief
 
-[omh] Hermes Meeting Brief workflow: agenda, prompts, decisions, and record template.
+[omh] Upcoming meeting that lacks an agenda: agenda, prompts, decisions, and record template.
 
 - Category: `meeting`
 - Phase: `preparation`
@@ -1379,7 +1379,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### feedback-triage
 
-[omh] Hermes Feedback Triage workflow: cluster customer signals and choose the next workflow.
+[omh] Unsorted customer feedback and bug reports: cluster customer signals and choose the next workflow.
 
 - Category: `triage`
 - Phase: `feedback`
@@ -1440,7 +1440,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### finance-analysis
 
-[omh] Turn finance and accounting inputs into a decision-ready variance, cash, and close-risk brief.
+[omh] Budget overruns, cash risk, or close issues: turn finance and accounting inputs into a decision-ready variance, cash, and close-risk brief.
 
 - Category: `operations`
 - Phase: `finance-analysis`
@@ -1554,7 +1554,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### people-ops
 
-[omh] Turn hiring and people context into a fair, structured recruiting or people-operations brief.
+[omh] Hiring or people-process decisions: turn hiring and people context into a fair, structured recruiting or people-operations brief.
 
 - Category: `operations`
 - Phase: `people-operations`
@@ -1616,7 +1616,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### legal-compliance-review
 
-[omh] Surface contract and compliance risks, questions, and escalation points before a legal decision or action.
+[omh] Contract, NDA, or policy with legal exposure: surface contract and compliance risks, questions, and escalation points before a legal decision or action.
 
 - Category: `review`
 - Phase: `legal-compliance-review`
@@ -1741,7 +1741,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### support-operations
 
-[omh] Turn a support case into a clear customer reply, severity path, and owned next step.
+[omh] Customer support case needs a reply or escalation: turn a support case into a clear customer reply, severity path, and owned next step.
 
 - Category: `triage`
 - Phase: `support-operations`
@@ -1807,7 +1807,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### curriculum-design
 
-[omh] Turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.
+[omh] Teaching goal that needs a course or syllabus: turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.
 
 - Category: `planning`
 - Phase: `curriculum-design`
@@ -1917,7 +1917,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### localization-review
 
-[omh] Make a product or content release locale-ready with terminology, cultural-fit, and quality-review guidance.
+[omh] Translated product or content release: make a product or content release locale-ready with terminology, cultural-fit, and quality-review guidance.
 
 - Category: `review`
 - Phase: `localization-review`
@@ -1979,7 +1979,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### sales-development
 
-[omh] Turn an account or market opportunity into a focused discovery, qualification, and next-step brief.
+[omh] Prospect or account worth pursuing: turn an account or market opportunity into a focused discovery, qualification, and next-step brief.
 
 - Category: `strategy`
 - Phase: `sales-development`
@@ -2090,7 +2090,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### product-brief
 
-[omh] Turn product evidence into a decision-ready PRD, prioritization frame, and roadmap brief.
+[omh] PRD or roadmap priorities to decide: turn product evidence into a decision-ready PRD, prioritization frame, and roadmap brief.
 
 - Category: `planning`
 - Phase: `product-brief`
@@ -2154,7 +2154,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ops-review
 
-[omh] Hermes Ops Review workflow: status, risks, blockers, priorities, and follow-ups.
+[omh] Recurring operating status and blockers: status, risks, blockers, priorities, and follow-ups.
 
 - Category: `operations`
 - Phase: `status-review`
@@ -2216,7 +2216,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### operating-rhythm
 
-[omh] Hermes Operating Rhythm workflow: meeting minutes, scrum/sprint records, retros, decisions, and follow-up history.
+[omh] Keeping minutes, retros, and decision history: meeting minutes, scrum/sprint records, retros, decisions, and follow-up history.
 
 - Category: `operations`
 - Phase: `rhythm-history`
@@ -2275,7 +2275,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### report-package
 
-[omh] Hermes Report Package workflow: weekly/monthly reports, executive briefs, PPT-ready outlines, and upload packages.
+[omh] Periodic report for executives: weekly/monthly reports, executive briefs, PPT-ready outlines, and upload packages.
 
 - Category: `reporting`
 - Phase: `package-outline`
@@ -2334,7 +2334,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### materials-package
 
-[omh] Hermes Materials Package workflow: decks, PDFs, spreadsheets, documents, HWP, Markdown, and binary export handoffs.
+[omh] PPT, PDF, Excel, or HWP output to produce: decks, PDFs, spreadsheets, documents, HWP, Markdown, and binary export handoffs.
 
 - Category: `materials`
 - Phase: `material-plan`
@@ -2394,7 +2394,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### img-summary
 
-[omh] Image prompt cards - turn meetings, reports, PRs, issues, research, and releases into domain-aware image prompt cards.
+[omh] Image card or infographic of content: image prompt cards - turn meetings, reports, PRs, issues, research, and releases into domain-aware image prompt cards.
 
 - Category: `materials`
 - Phase: `visual-prompt-card`
@@ -2490,7 +2490,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### apple-design
 
-[omh] Hermes Apple design workflow: prepare native Apple UI or Apple marketing product-visual direction, review, and improvement briefs with evidence-backed remediation handoffs.
+[omh] Designing or reviewing an iOS, macOS, or Apple-style UI: prepare native Apple UI or Apple marketing product-visual direction, review, and improvement briefs with evidence-backed remediation handoffs.
 
 - Category: `materials`
 - Phase: `apple-design`
@@ -2560,7 +2560,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### design-orchestration
 
-[omh] Hermes design orchestration workflow: prepare a bounded design direction, existing-lane composition, and executor-neutral handoff.
+[omh] Entire design problem to delegate: prepare a bounded design direction, existing-lane composition, and executor-neutral handoff.
 
 - Category: `materials`
 - Phase: `design-orchestration`
@@ -2628,7 +2628,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### design-quality-gate
 
-[omh] Hermes Design Quality Gate workflow: enforce superior content, design, layout, publishing, and visual QA gates.
+[omh] Deliverable demands premium polish: enforce superior content, design, layout, publishing, and visual QA gates.
 
 - Category: `materials`
 - Phase: `design-quality-gate`
@@ -2708,7 +2708,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### award-bar-score
 
-[omh] Hermes award-bar score workflow: score a web surface against published design-award judging axes and name the binding constraint.
+[omh] Aiming for design-award quality: score a web surface against published design-award judging axes and name the binding constraint.
 
 - Category: `materials`
 - Phase: `award-bar-score`
@@ -2779,7 +2779,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### frontend
 
-[omh] Hermes frontend workflow: prepare design-system-driven web and terminal (TUI) UI creation, redesign, polish, accessibility, performance, and visual QA handoffs.
+[omh] Building or polishing a web or terminal UI: prepare design-system-driven web and terminal (TUI) UI creation, redesign, polish, accessibility, performance, and visual QA handoffs.
 
 - Category: `materials`
 - Phase: `frontend-design`
@@ -2883,7 +2883,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### frontend-refactor
 
-[omh] Hermes frontend refactor workflow: behavior-preserving refactor of UI code - preview the full change plan first, apply as a second explicit step, and work impact-ordered from state architecture down to naming polish.
+[omh] Oversized or tangled UI component: behavior-preserving refactor of UI code - preview the full change plan first, apply as a second explicit step, and work impact-ordered from state architecture down to naming polish.
 
 - Category: `maintenance`
 - Phase: `frontend-refactor`
@@ -2948,7 +2948,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### backend
 
-[omh] Hermes backend workflow: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.
+[omh] Designing an API, server, or database change: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.
 
 - Category: `planning`
 - Phase: `backend-design`
@@ -3034,7 +3034,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### rust
 
-[omh] Hermes Rust workflow: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
+[omh] Rust borrow-checker or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
 
 - Category: `planning`
 - Phase: `rust-development`
@@ -3114,7 +3114,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### native-debugging
 
-[omh] Hermes native-debugging workflow: prepare hypothesis-driven debugging of native binaries and instruct the executor to drive a DAP debugger instead of printf.
+[omh] Native program crashes or corrupts memory: prepare hypothesis-driven debugging of native binaries and instruct the executor to drive a DAP debugger instead of printf.
 
 - Category: `verification`
 - Phase: `native-debugging`
@@ -3191,7 +3191,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### accessibility-audit
 
-[omh] Hermes Accessibility Audit workflow: prepare WCAG, keyboard, focus, screen-reader, target-size, and reflow evidence gates for UI surfaces.
+[omh] Screen-reader or keyboard accessibility gaps: prepare WCAG, keyboard, focus, screen-reader, target-size, and reflow evidence gates for UI surfaces.
 
 - Category: `accessibility`
 - Phase: `accessibility-audit`
@@ -3278,7 +3278,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### visual-qa
 
-[omh] Hermes visual-qa workflow: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.
+[omh] Rendered screen or screenshot to verify: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.
 
 - Category: `materials`
 - Phase: `visual-qa`
@@ -3388,7 +3388,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### build-failure-triage
 
-[omh] Hermes Build Failure Triage workflow: classify build, typecheck, lint, test, CI, and DCO failures into minimal safe fix handoffs.
+[omh] Build or CI failure to triage: classify build, typecheck, lint, test, CI, and DCO failures into minimal safe fix handoffs.
 
 - Category: `verification`
 - Phase: `build-failure-triage`
@@ -3469,7 +3469,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### workspace-audit
 
-[omh] Hermes Workspace Audit workflow: map repository, skill, prompt, plugin, MCP, hook, config, and runtime surfaces before strengthening or operating OMH.
+[omh] Workspace setup inventory and gaps: map repository, skill, prompt, plugin, MCP, hook, config, and runtime surfaces before strengthening or operating OMH.
 
 - Category: `operations`
 - Phase: `workspace-audit`
@@ -3535,7 +3535,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### production-audit
 
-[omh] Hermes Production Audit workflow: evaluate release, deploy, security, observability, rollback, docs, and support readiness without claiming production access.
+[omh] Imminent production launch or release: evaluate release, deploy, security, observability, rollback, docs, and support readiness without claiming production access.
 
 - Category: `review`
 - Phase: `production-readiness`
@@ -3602,7 +3602,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### verification-gate
 
-[omh] Hermes Verification Gate workflow: define and record build, lint, typecheck, test, security, docs, generated-output, and CI evidence before completion or merge.
+[omh] Proof a change is done before merge: define and record build, lint, typecheck, test, security, docs, generated-output, and CI evidence before completion or merge.
 
 - Category: `verification`
 - Phase: `verification-gate`
@@ -3675,7 +3675,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### agent-evaluation
 
-[omh] Hermes Agent Evaluation workflow: compare executor or agent choices on reproducible tasks using quality, cost, time, tool, and evidence metrics.
+[omh] Choosing between coding agents on evidence: compare executor or agent choices on reproducible tasks using quality, cost, time, tool, and evidence metrics.
 
 - Category: `operations`
 - Phase: `agent-evaluation`
@@ -3743,7 +3743,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### rules-distill
 
-[omh] Hermes Rules Distill workflow: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance.
+[omh] Turn repeated lessons into written rules: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance.
 
 - Category: `knowledge`
 - Phase: `rules-distillation`
@@ -3807,7 +3807,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### codebase-onboarding
 
-[omh] Hermes Codebase Onboarding workflow: create a repo map, reading path, glossary, risk map, and first-task runway for unfamiliar codebases.
+[omh] Unfamiliar repository needing a guided tour: create a repo map, reading path, glossary, risk map, and first-task runway for unfamiliar codebases.
 
 - Category: `planning`
 - Phase: `codebase-onboarding`
@@ -3874,7 +3874,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### codegraph-refresh
 
-[omh] Hermes Codegraph Refresh workflow: refresh local code intelligence, summarize repo structure, and prepare task-scoped codegraph handoff context without overclaiming execution.
+[omh] Outdated code index or codemap: refresh local code intelligence, summarize repo structure, and prepare task-scoped codegraph handoff context without overclaiming execution.
 
 - Category: `planning`
 - Phase: `codegraph-refresh`
@@ -3942,7 +3942,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### codebase-uml
 
-[omh] OMH Codebase UML workflow: turn a repository into one readable, interface-level PlantUML architecture picture - packages or modules, the public symbols other units actually import, bounded import edges - and get it rendered to a single PNG a chat surface can show.
+[omh] Architecture picture of a codebase: turn a repository into one readable, interface-level PlantUML architecture picture - packages or modules, the public symbols other units actually import, bounded import edges - and get it rendered to a single PNG a chat surface can show.
 
 - Category: `planning`
 - Phase: `codebase-uml`
@@ -4011,7 +4011,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### context-budget-review
 
-[omh] Hermes Context Budget Review workflow: plan compact context, token/cost budgets, summarization checkpoints, and overflow recovery before long agent work.
+[omh] Context window or token budget at risk: plan compact context, token/cost budgets, summarization checkpoints, and overflow recovery before long agent work.
 
 - Category: `observability`
 - Phase: `context-budget-review`
@@ -4081,7 +4081,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### security-safety-review
 
-[omh] Hermes Security Safety Review workflow: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution.
+[omh] Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution.
 
 - Category: `review`
 - Phase: `security-safety-review`
@@ -4159,7 +4159,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### automation-blueprint
 
-[omh] Hermes Scheduled Ops Blueprint workflow: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.
+[omh] Recurring scheduled job or digest: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.
 
 - Category: `operations`
 - Phase: `scheduled-ops-blueprint`
@@ -4228,7 +4228,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### reliability-review
 
-[omh] Hermes Reliability Review workflow: postmortems, SLOs, error budgets, incident follow-ups, and service reliability evidence.
+[omh] Postmortem for an outage or SLO miss: postmortems, SLOs, error budgets, incident follow-ups, and service reliability evidence.
 
 - Category: `reliability`
 - Phase: `incident-and-slo-review`
@@ -4290,7 +4290,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### idea-to-deploy
 
-[omh] Hermes Idea-to-Deploy workflow: shape an app idea into decisions, delivery handoff, verification, release, and monitoring status.
+[omh] App idea headed for launch: shape an app idea into decisions, delivery handoff, verification, release, and monitoring status.
 
 - Category: `delivery`
 - Phase: `app-delivery-loop`
@@ -4350,7 +4350,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### llm-app-dev
 
-[omh] Hermes LLM App Development workflow: prepare a build handoff for an LLM-powered feature with a pinned provider boundary, schema-first outputs, versioned prompt files, grounded retrieval, and an eval suite as a shipped deliverable.
+[omh] LLM-powered feature to build: LLM app development: prepare a build handoff for an LLM-powered feature with a pinned provider boundary, schema-first outputs, versioned prompt files, grounded retrieval, and an eval suite as a shipped deliverable.
 
 - Category: `delivery`
 - Phase: `llm-app-dev`
@@ -4437,7 +4437,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### cto-loop
 
-[omh] Hermes CTO Loop workflow: roadmap, PM, technical tradeoffs, risk, delivery, release, and follow-up operating cadence.
+[omh] Engineering leadership over roadmap and risk: roadmap, PM, technical tradeoffs, risk, delivery, release, and follow-up operating cadence.
 
 - Category: `leadership`
 - Phase: `operating-loop`
@@ -4496,7 +4496,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### deploy-and-monitor
 
-[omh] Hermes Deploy-and-Monitor workflow: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
+[omh] Release rollout needing a health watch: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
 
 - Category: `monitoring`
 - Phase: `release-ops`
@@ -4559,7 +4559,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ultraqa
 
-[omh] Hermes UltraQA workflow: adversarial QA and fix loops.
+[omh] Hostile scenario testing: adversarial QA and fix loops.
 
 - Category: `verification`
 - Phase: `qa`
@@ -4623,7 +4623,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### plan
 
-[omh] Hermes Plan workflow: structured planning before execution.
+[omh] Unplanned feature or bugfix: structured planning before execution.
 
 - Category: `planning`
 - Phase: `plan`
@@ -4681,7 +4681,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ralplan
 
-[omh] Hermes Ralplan workflow: consensus planning with review gates.
+[omh] High-stakes proposal needing approval: consensus planning with review gates.
 
 - Category: `planning`
 - Phase: `reviewed-plan`
@@ -4765,7 +4765,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### adversarial-consensus
 
-[omh] Hermes Adversarial Consensus workflow: independent perspectives attack a proposal, then distill into a bundle a separate planner consumes.
+[omh] Proposal facing adversarial scrutiny: independent perspectives attack a proposal, then distill into a bundle a separate planner consumes.
 
 - Category: `planning`
 - Phase: `adversarial-consensus`
@@ -4840,7 +4840,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### code-review
 
-[omh] Hermes Code Review workflow: bug-first review with evidence.
+[omh] Pull request or changes to vet: bug-first review with evidence.
 
 - Category: `review`
 - Phase: `critique`
@@ -4915,7 +4915,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ai-slop-cleaner
 
-[omh] Hermes AI slop cleaner workflow: delete AI-generated slop, dead code, and duplication while observable behavior stays identical.
+[omh] Messy or AI-generated code to clean up: delete AI-generated slop, dead code, and duplication while observable behavior stays identical.
 
 - Category: `maintenance`
 - Phase: `cleanup`
@@ -4980,7 +4980,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### refactor-plan
 
-[omh] Hermes refactor planning workflow: turn a decided boundary-changing refactor into a phased plan - reconnaissance, contracts-first phase order, per-phase verification and rollback, a files table, and an explicit approval gate before any edit.
+[omh] Decided cross-module refactor to phase: refactor planning - turn a decided boundary-changing refactor into a phased plan - reconnaissance, contracts-first phase order, per-phase verification and rollback, a files table, and an explicit approval gate before any edit.
 
 - Category: `planning`
 - Phase: `refactor-plan`
@@ -5044,7 +5044,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### tech-debt-audit
 
-[omh] Hermes Tech Debt Audit workflow: build the severity-by-effort debt ledger from observed repo evidence - orient, audit the named dimensions with file:line citations, rank fixes and quick wins - and reconcile RESOLVED/NEW/CARRIED against the previous ledger on rerun.
+[omh] Accumulated tech debt to rank: build the severity-by-effort debt ledger from observed repo evidence - orient, audit the named dimensions with file:line citations, rank fixes and quick wins - and reconcile RESOLVED/NEW/CARRIED against the previous ledger on rerun.
 
 - Category: `maintenance`
 - Phase: `tech-debt-audit`
@@ -5133,7 +5133,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### inference-serving
 
-[omh] OMH Inference Serving workflow: choose the serving engine and quantization from decision tables, prepare deployment as an idempotent runbook with observed-only verification, and measure the endpoint with the standard TTFT/TPOT/goodput protocol.
+[omh] Self-hosted LLM serving on GPUs: choose the serving engine and quantization from decision tables, prepare deployment as an idempotent runbook with observed-only verification, and measure the endpoint with the standard TTFT/TPOT/goodput protocol.
 
 - Category: `operations`
 - Phase: `inference-serving`
@@ -5200,7 +5200,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### model-optimization
 
-[omh] OMH Model Optimization workflow: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.
+[omh] Model family's latest generation: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.
 
 - Category: `optimization`
 - Phase: `model-onboarding`
@@ -5264,7 +5264,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ultraperf
 
-[omh] Ultraperf - find where a system is actually slow, leaking, or expensive across runtime, memory, token cost, storage, rendering, inference, CI, and query domains, then fix one measured hot path at a time behind a regression budget.
+[omh] Unexplained slowness, leaks, or cost spikes: find where a system is actually slow, leaking, or expensive across runtime, memory, token cost, storage, rendering, inference, CI, and query domains, then fix one measured hot path at a time behind a regression budget.
 
 - Category: `optimization`
 - Phase: `measured-optimization-loop`
@@ -5335,7 +5335,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### wiki
 
-[omh] Hermes adaptation for wiki construction blueprints and retained knowledge capture with destination-aware external knowledge connection guidance.
+[omh] Scattered knowledge needing a wiki: wiki construction blueprints and retained knowledge capture with destination-aware external knowledge connection guidance.
 
 - Category: `knowledge`
 - Phase: `design-and-capture`
@@ -5405,7 +5405,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ask
 
-[omh] Hermes adaptation for consulting an external advisor when configured.
+[omh] Outside AI critique wanted: consulting an external advisor when configured.
 
 - Category: `review`
 - Phase: `external-advice`
@@ -5461,7 +5461,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### cancel
 
-[omh] Hermes adaptation for ending active workflow state cleanly.
+[omh] Aborting an active workflow: ending active workflow state cleanly.
 
 - Category: `operator`
 - Phase: `state-cleanup`
@@ -5513,7 +5513,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### skill
 
-[omh] Hermes adaptation for managing local skills.
+[omh] Installing, removing, or editing skills: managing local skills.
 
 - Category: `operator`
 - Phase: `skill-management`
@@ -5565,7 +5565,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### doctor
 
-[omh] Hermes adaptation for diagnosing oh-my-hermes installation health.
+[omh] OMH install misbehaving: diagnosing oh-my-hermes installation health.
 
 - Category: `operator`
 - Phase: `diagnostics`
@@ -5623,7 +5623,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### capability-toggle
 
-[omh] Hermes adaptation for turning one OMH capability family on or off so an install can be tailored instead of taken whole.
+[omh] Tailoring enabled OMH families: turning one OMH capability family on or off so an install can be tailored instead of taken whole.
 
 - Category: `operator`
 - Phase: `configuration`
@@ -5679,7 +5679,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### running-work-board
 
-[omh] Hermes adaptation for showing which coding units are running right now, on which runtime and model, with observed tokens and elapsed time.
+[omh] Live view of running coding units: showing which coding units are running right now, on which runtime and model, with observed tokens and elapsed time.
 
 - Category: `operator`
 - Phase: `observability`
@@ -5734,7 +5734,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### todo-checklist
 
-[omh] Continue or finish the accepted work from conversation context, preserve rejected ideas, and report evidence-bounded completion. Also declare and advance the metadata-only plan checklist without starting a delivery engine.
+[omh] Resume or finish the work we agreed on: continue or finish the accepted work from conversation context, preserve rejected ideas, and report evidence-bounded completion. Also declare and advance the metadata-only plan checklist without starting a delivery engine.
 
 - Category: `operator`
 - Phase: `observability`
@@ -5796,7 +5796,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### model-setup
 
-[omh] Hermes Model Setup workflow: diagnose role-slot model configuration, guide provider connection, and apply changes only after diff approval.
+[omh] Model and provider configuration changes: diagnose role-slot model configuration, guide provider connection, and apply changes only after diff approval.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -5876,7 +5876,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### parallel-tools
 
-[omh] Hermes Parallel Tools workflow: check version currency and parallel-tool capability status, then apply an update only after diff approval.
+[omh] Parallel tool-call capability in doubt: check version currency and parallel-tool capability status, then apply an update only after diff approval.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -5934,7 +5934,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### websearch-setup
 
-[omh] Hermes Web Search Setup workflow: diagnose scraper and auxiliary extract-model configuration, guide account setup, and apply each change as its own diff approval.
+[omh] Expensive or unconfigured web search: diagnose scraper and auxiliary extract-model configuration, guide account setup, and apply each change as its own diff approval.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -5993,7 +5993,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### morning-brief
 
-[omh] Morning brief SETUP (one-time) - connects mail and calendar MCP with read-and-draft-only scope and diff approval; produces the configuration, not the daily brief itself.
+[omh] Mail and calendar brief configuration: morning brief SETUP (one-time) - connects mail and calendar MCP with read-and-draft-only scope and diff approval; produces the configuration, not the daily brief itself.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -6114,7 +6114,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### buzz
 
-[omh] Connect and operate Hermes as a native Buzz community agent, deliver local media with verified relay receipts, or diagnose a self-hosted Buzz relay without inventing transport evidence.
+[omh] Buzz community agent setup or relay trouble: connect and operate Hermes as a native Buzz community agent, deliver local media with verified relay receipts, or diagnose a self-hosted Buzz relay without inventing transport evidence.
 
 - Category: `operator`
 - Phase: `messaging-integration`
@@ -6179,7 +6179,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### github-issue-intake
 
-[omh] GitHub issue intake workflow: turn a public chat report into a confirmed, verified issue package.
+[omh] Chat report that should become a GitHub issue: turn a public chat report into a confirmed, verified issue package.
 
 - Category: `github-ops`
 - Phase: `issue-intake`
@@ -6258,7 +6258,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### long-document-reading
 
-[omh] Long document reading workflow: read a very large PDF, contract, manual, or report through Hermes in page-anchored ranges with a coverage ledger.
+[omh] Huge PDF or document to read in full: read a very large PDF, contract, manual, or report through Hermes in page-anchored ranges with a coverage ledger.
 
 - Category: `research`
 - Phase: `long-document-reading`
@@ -6340,7 +6340,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### application-threat-model
 
-[omh] Application threat model workflow: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds.
+[omh] Attack paths into an operated system: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds.
 
 - Category: `review`
 - Phase: `application-threat-model`
@@ -6420,7 +6420,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### live-incident-response
 
-[omh] Live incident response workflow: command an incident that is still open -- severity as declared live state, commander and roles, an append-only timeline, a recorded temporary mitigation, verified recovery, and the customer notice.
+[omh] Production is down or an incident is open: command an incident that is still open -- severity as declared live state, commander and roles, an append-only timeline, a recorded temporary mitigation, verified recovery, and the customer notice.
 
 - Category: `reliability`
 - Phase: `live-incident-command`
@@ -6503,7 +6503,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### decision-prototype
 
-[omh] Bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.
+[omh] Uncertain technical choice for a spike: bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.
 
 - Category: `planning`
 - Phase: `decision-prototype`
@@ -6640,7 +6640,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### lifecycle-growth
 
-[omh] Turn an observed onboarding, activation, retention, re-engagement, referral, or monetization problem into one consent-safe in-app journey or growth experiment plan with a bounded readout and an explicit decision.
+[omh] Churn or weak activation among users: turn an observed onboarding, activation, retention, re-engagement, referral, or monetization problem into one consent-safe in-app journey or growth experiment plan with a bounded readout and an explicit decision.
 
 - Category: `strategy`
 - Phase: `lifecycle-growth`
@@ -6790,7 +6790,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### product-discovery-validation
 
-[omh] Test whether a customer problem, segment, and business hypothesis deserve product investment, ending in kill, pivot, persevere, or inconclusive before any PRD.
+[omh] Unvalidated early product idea: test whether a customer problem, segment, and business hypothesis deserve product investment, ending in kill, pivot, persevere, or inconclusive before any PRD.
 
 - Category: `planning`
 - Phase: `product-discovery-validation`
@@ -6938,7 +6938,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### sales-pipeline-review
 
-[omh] Turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review.
+[omh] CRM pipeline or sales forecast to review: turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review.
 
 - Category: `operations`
 - Phase: `sales-pipeline-review`
@@ -7067,7 +7067,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-ask
 
-[omh] Jev ask: typed yes/no, pick-one, or scored questions to Jev with your own key; returns probabilities, never prose.
+[omh] Jev asked for yes/no or pick-one odds: Jev ask: typed yes/no, pick-one, or scored questions to Jev with your own key; returns probabilities, never prose.
 
 - Category: `gateway`
 - Phase: `jev-ask`
@@ -7127,7 +7127,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-route
 
-[omh] Jev route pick: answer an OMH route question about which workflow fits, recorded without re-routing.
+[omh] Undecided OMH route handed to Jev: Jev route pick: answer an OMH route question about which workflow fits, recorded without re-routing.
 
 - Category: `gateway`
 - Phase: `jev-route`
@@ -7185,7 +7185,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-failure-triage
 
-[omh] Jev failure triage: retry, fix a dependency, ask for access, or change approach on a failing run.
+[omh] Failing run handed to Jev for a next move: Jev failure triage: retry, fix a dependency, ask for access, or change approach on a failing run.
 
 - Category: `review`
 - Phase: `jev-failure-triage`
@@ -7242,7 +7242,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-review-gate
 
-[omh] Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.
+[omh] Diff flagged by Jev during review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.
 
 - Category: `review`
 - Phase: `jev-review-gate`
@@ -7298,7 +7298,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-action-check
 
-[omh] Jev action check before a risky command: secrets, outbound sends, blast radius; can only add a hold.
+[omh] Risky command screened by Jev: Jev action check before a risky command: secrets, outbound sends, blast radius; can only add a hold.
 
 - Category: `review`
 - Phase: `jev-action-check`
@@ -7354,7 +7354,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-done-check
 
-[omh] Jev done check: does the gathered evidence support the completion claim? It can only object.
+[omh] Completion claim tested by Jev: Jev done check: does the gathered evidence support the completion claim? It can only object.
 
 - Category: `review`
 - Phase: `jev-done-check`
@@ -7410,7 +7410,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### github-event-ops
 
-[omh] Hermes GitHub event operations workflow: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards.
+[omh] Incoming GitHub PR, issue, or CI event: GitHub event operations: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards.
 
 - Category: `github-ops`
 - Phase: `event-routing`
@@ -7467,7 +7467,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### agent-board
 
-[omh] Hermes agent board workflow: coordinate multiple Hermes profiles or agents with task, handoff, heartbeat, blocker, and completion states.
+[omh] Coordinating several agents or profiles: coordinate multiple Hermes profiles or agents with task, handoff, heartbeat, blocker, and completion states.
 
 - Category: `agent-coordination`
 - Phase: `board-status`
@@ -7529,7 +7529,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### memory-new
 
-[omh] Capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync, and for a past decision use decision-recall.
+[omh] Remember a fact for future sessions: capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync, and for a past decision use decision-recall.
 
 - Category: `memory`
 - Phase: `candidate-capture`
@@ -7590,7 +7590,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### memory-sync
 
-[omh] English-canonical Hermes memory-review guidance: inspect USER.md and MEMORY.md claims and prepare a native write diff without invoking, applying, or observing a native write; for a new fact use memory-new, and for a past decision use decision-recall.
+[omh] Outdated or wrong Hermes memory entries: English-canonical Hermes memory-review guidance: inspect USER.md and MEMORY.md claims and prepare a native write diff without invoking, applying, or observing a native write; for a new fact use memory-new, and for a past decision use decision-recall.
 
 - Category: `memory`
 - Phase: `curation-review`
@@ -7652,7 +7652,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### gateway-intent-card
 
-[omh] Hermes gateway intent workflow: normalize Discord, Slack, Telegram, and other gateway sessions into origin, thread, delivery, silent, attachment, and status-update policy.
+[omh] Bot replies via Discord, Slack, or Telegram: normalize Discord, Slack, Telegram, and other gateway sessions into origin, thread, delivery, silent, attachment, and status-update policy.
 
 - Category: `gateway`
 - Phase: `intent-card`
@@ -7709,7 +7709,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### executor-runtime-readiness
 
-[omh] Executor runtime readiness - compare Codex, Claude Code, Hermes coding, and oh-my runtimes by tools and handoff mode; use external-connector-readiness for a named plugin or API, and toolbelt-readiness for the whole capability inventory.
+[omh] Unsure whether Codex or Claude Code is ready: executor runtime readiness - compare Codex, Claude Code, Hermes coding, and oh-my runtimes by tools and handoff mode; use external-connector-readiness for a named plugin or API, and toolbelt-readiness for the whole capability inventory.
 
 - Category: `executor-readiness`
 - Phase: `runtime-selection`
@@ -7768,7 +7768,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### deliverable-package
 
-[omh] Hermes deliverable package workflow: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.
+[omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.
 
 - Category: `deliverables`
 - Phase: `package-status`
@@ -7825,7 +7825,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### voice-operator
 
-[omh] Terse voice and mobile-style requests - turn short spoken-style asks into clarify, plan, status, handoff, or confirmation actions.
+[omh] Short spoken or mobile-style request: terse voice and mobile-style requests - turn short spoken-style asks into clarify, plan, status, handoff, or confirmation actions.
 
 - Category: `accessibility`
 - Phase: `voice-routing`
@@ -7883,7 +7883,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### browser-operator
 
-[omh] Policy overlay for browser tasks - add auth, confirmation, and observed-trace gates after preferring the native browser for ordinary URL, click, login, and form actions.
+[omh] Browser login, click, or form task: policy overlay for browser tasks - add auth, confirmation, and observed-trace gates after preferring the native browser for ordinary URL, click, login, and form actions.
 
 - Category: `browser`
 - Phase: `browser-task`
@@ -7956,7 +7956,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### workspace-file-operator
 
-[omh] Policy overlay for local file tasks - add path scoping and destructive-action gates after preferring native file tools for ordinary list, search, organize, copy, move, and rename actions.
+[omh] Folder cleanup, renames, or deletions: policy overlay for local file tasks - add path scoping and destructive-action gates after preferring native file tools for ordinary list, search, organize, copy, move, and rename actions.
 
 - Category: `filesystem`
 - Phase: `file-task`
@@ -8020,7 +8020,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### command-operator
 
-[omh] Policy overlay for terminal commands - add cwd, environment, safety, and result-evidence gates after preferring native shell tools for ordinary CLI, package-manager, and test runs.
+[omh] Shell command or test-suite execution: policy overlay for terminal commands - add cwd, environment, safety, and result-evidence gates after preferring native shell tools for ordinary CLI, package-manager, and test runs.
 
 - Category: `command`
 - Phase: `command-task`
@@ -8085,7 +8085,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### connector-operator
 
-[omh] External app actions - email, Slack, Discord, Notion, Linear, Jira, CRM, and similar providers, scoped with auth, payload, confirmation, and result-evidence gates.
+[omh] Email, Slack, or Jira action to perform: external app actions - email, Slack, Discord, Notion, Linear, Jira, CRM, and similar providers, scoped with auth, payload, confirmation, and result-evidence gates.
 
 - Category: `connector`
 - Phase: `connector-task`
@@ -8151,7 +8151,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### live-info-operator
 
-[omh] Policy overlay for live lookups - add provider, freshness, units, and source-quality gates after preferring native live-data tools for ordinary weather, finance, sports, maps, and time-zone requests.
+[omh] Weather, exchange-rate, or sports lookups: policy overlay for live lookups - add provider, freshness, units, and source-quality gates after preferring native live-data tools for ordinary weather, finance, sports, maps, and time-zone requests.
 
 - Category: `live-info`
 - Phase: `live-info-task`
@@ -8215,7 +8215,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### external-connector-readiness
 
-[omh] External connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use executor-runtime-readiness for coding-owner choice and toolbelt-readiness for missing capability inventory.
+[omh] Evaluating a plugin, connector, or API for adoption: external connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use executor-runtime-readiness for coding-owner choice and toolbelt-readiness for missing capability inventory.
 
 - Category: `connector`
 - Phase: `connector-readiness`
@@ -8307,7 +8307,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### prompt-import-readiness
 
-[omh] Prompt import readiness - review and normalize external CLI-agent prompt files before offering slash-command candidates; use external-connector-readiness for plugin or API adoption and toolbelt-readiness for missing runtime capabilities.
+[omh] Importing prompt files for Hermes: prompt import readiness - review and normalize external CLI-agent prompt files before offering slash-command candidates; use external-connector-readiness for plugin or API adoption and toolbelt-readiness for missing runtime capabilities.
 
 - Category: `prompt`
 - Phase: `prompt-import-readiness`
@@ -8380,7 +8380,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### physical-device-readiness
 
-[omh] Physical device readiness - gate robots, 3D printers, IoT relays, sensors, and lab hardware before trials; use external-connector-readiness for provider or connector adoption and toolbelt-readiness for missing control tools.
+[omh] Controlling a printer, robot, or IoT device: gate robots, 3D printers, IoT relays, sensors, and lab hardware before trials; use external-connector-readiness for provider or connector adoption and toolbelt-readiness for missing control tools.
 
 - Category: `operations`
 - Phase: `device-readiness`
@@ -8453,7 +8453,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### content-operator
 
-[omh] Hermes content operator workflow: scope publish-ready writing, rewriting, summarization, translation, release-note, newsletter, customer-copy, social-copy, README-copy, and email-draft work with audience, tone, style, source, review, and hallucination gates.
+[omh] Writing or rewriting text for an audience: scope publish-ready writing, rewriting, summarization, translation, release-note, newsletter, customer-copy, social-copy, README-copy, and email-draft work with audience, tone, style, source, review, and hallucination gates.
 
 - Category: `content`
 - Phase: `content-task`
@@ -8520,7 +8520,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### media-input-operator
 
-[omh] User-sent media - audio, video, YouTube links, screenshots, receipts, OCR, meeting recordings, transcripts, timestamps, and clip summaries, gated for source, permission, and hallucination risk.
+[omh] Audio, video, or screenshot to process: user-sent media - audio, video, YouTube links, screenshots, receipts, OCR, meeting recordings, transcripts, timestamps, and clip summaries, gated for source, permission, and hallucination risk.
 
 - Category: `media`
 - Phase: `media-input-task`
@@ -8588,7 +8588,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### data-analysis
 
-[omh] Hermes data analysis workflow: scope supplied data with provenance, causal-claim, and hallucination guards.
+[omh] Dataset or logs to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.
 
 - Category: `analysis`
 - Phase: `data-task`
@@ -8657,7 +8657,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### toolbelt-readiness
 
-[omh] Toolbelt readiness - inventory which MCP servers, CLIs, APIs, credentials, and connectors a workflow needs; use external-connector-readiness to assess one named integration and executor-runtime-readiness to choose the coding owner.
+[omh] Which tools and credentials a workflow needs: inventory which MCP servers, CLIs, APIs, credentials, and connectors a workflow needs; use external-connector-readiness to assess one named integration and executor-runtime-readiness to choose the coding owner.
 
 - Category: `tools`
 - Phase: `readiness-check`
@@ -8714,7 +8714,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### harness-session-inventory
 
-[omh] Hermes harness session inventory workflow: normalize Codex, Claude Code, Hermes, OpenCode, Cursor, MCP host, worktree, and wrapper session metadata into one drift-aware inventory.
+[omh] Lost track of agent sessions and worktrees: normalize Codex, Claude Code, Hermes, OpenCode, Cursor, MCP host, worktree, and wrapper session metadata into one drift-aware inventory.
 
 - Category: `observability`
 - Phase: `harness-session-inventory`
@@ -8780,7 +8780,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### ops-observability-card
 
-[omh] Hermes ops observability workflow: prepare an operations command-board for wrapper-safe token, cost, latency, run history, queue, failure-mode, external metric-provider, and service-quality evidence boundaries.
+[omh] Tracking cost, tokens, latency, or service health: prepare an operations command-board for wrapper-safe token, cost, latency, run history, queue, failure-mode, external metric-provider, and service-quality evidence boundaries.
 
 - Category: `observability`
 - Phase: `telemetry-card`
@@ -8850,7 +8850,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### achievements
 
-[omh] Hermes achievements observation workflow: summarize hermes-achievements badges, tiers, recent unlocks, and progress from local plugin artifacts.
+[omh] Unlocked badges and achievement progress: achievements observation: summarize hermes-achievements badges, tiers, recent unlocks, and progress from local plugin artifacts.
 
 - Category: `observability`
 - Phase: `telemetry-card`
@@ -8909,7 +8909,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### agent-ops-review
 
-[omh] Hermes agent ops review workflow: help managers inspect AI-agent progress, blockers, quality gates, and throughput levers.
+[omh] AI agent progress for managers: help managers inspect AI-agent progress, blockers, quality gates, and throughput levers.
 
 - Category: `operator`
 - Phase: `manager-review`
@@ -8972,7 +8972,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### agent-debug
 
-[omh] Agent Debug workflow: capture a stuck, looping, drifting, or repeatedly failing agent run, diagnose the likely failure pattern, and prepare the smallest safe recovery action.
+[omh] Agent is stuck, looping, or drifting: capture a stuck, looping, drifting, or repeatedly failing agent run, diagnose the likely failure pattern, and prepare the smallest safe recovery action.
 
 - Category: `operations`
 - Phase: `agent-debug`
@@ -9038,7 +9038,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### failure-signal-audit
 
-[omh] Failure Signal Audit workflow: find swallowed errors, unsafe fallbacks, hidden UI/runtime failures, and missing propagation before they become false green status.
+[omh] Hidden or swallowed errors suspected: find swallowed errors, unsafe fallbacks, hidden UI/runtime failures, and missing propagation before they become false green status.
 
 - Category: `review`
 - Phase: `failure-signal-audit`
@@ -9113,7 +9113,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### instinct-ledger
 
-[omh] Instinct Ledger workflow: turn repeated project or cross-project lessons into atomic, confidence-scored instinct candidates with scoped promotion and export boundaries.
+[omh] Recurring lessons worth promoting: turn repeated project or cross-project lessons into atomic, confidence-scored instinct candidates with scoped promotion and export boundaries.
 
 - Category: `optimization`
 - Phase: `instinct-ledger`
@@ -9176,7 +9176,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### skill-scout
 
-[omh] Skill Scout workflow: prepare a metadata-only search-before-creation report for local, marketplace, GitHub, and web skill candidates with risk review and adoption options.
+[omh] Existing skills to reuse before authoring: prepare a metadata-only search-before-creation report for local, marketplace, GitHub, and web skill candidates with risk review and adoption options.
 
 - Category: `operations`
 - Phase: `skill-scout`
@@ -9240,7 +9240,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### skill-health
 
-[omh] Skill Health workflow: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions.
+[omh] OMH skill portfolio health overview: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions.
 
 - Category: `operations`
 - Phase: `skill-health`
@@ -9297,7 +9297,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### workflow-learning
 
-[omh] Hermes workflow learning workflow: classify and review self-improvement store routes as an auxiliary review lane before durable writes, then record workflow attempts as metadata-only traces, evals, review queues, patch proposals, regression cases, audits, indexes, and exports.
+[omh] Missed route or run lessons to record: classify and review self-improvement store routes as an auxiliary review lane before durable writes, then record workflow attempts as metadata-only traces, evals, review queues, patch proposals, regression cases, audits, indexes, and exports.
 
 - Category: `optimization`
 - Phase: `workflow-learning`
@@ -9356,7 +9356,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### decision-recall
 
-[omh] Recall scoped reviewed rejected decisions without elevating them to approved memory.
+[omh] Previously rejected options to revisit: recall scoped reviewed rejected decisions without elevating them to approved memory.
 
 - Category: `memory`
 - Phase: `decision-recall`
@@ -9413,7 +9413,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### run-efficiency
 
-[omh] Report supplied local run efficiency while provider and host data stay unobserved.
+[omh] Run efficiency and context usage report: report supplied local run efficiency while provider and host data stay unobserved.
 
 - Category: `observability`
 - Phase: `run-efficiency`
@@ -9471,7 +9471,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### provider-profile-posture
 
-[omh] Prepare provider-profile metadata without reading secrets or calling providers.
+[omh] Provider credentials without exposure: prepare provider-profile metadata without reading secrets or calling providers.
 
 - Category: `operations`
 - Phase: `provider-profile-posture`

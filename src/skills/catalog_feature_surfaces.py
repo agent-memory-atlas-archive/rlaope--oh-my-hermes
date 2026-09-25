@@ -14,7 +14,7 @@ from .catalog_types import EXECUTION_WAIT_DISCIPLINE_RULE, _GENERAL_RECOVERY_NOT
 _FEATURE_SURFACE_SKILLS = (
     _feature_surface_skill(
         "github-event-ops",
-        "Hermes GitHub event operations workflow: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards.",
+        "Incoming GitHub PR, issue, or CI event: GitHub event operations: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards.",
         (
             "github-event-ops",
             "github event ops",
@@ -52,10 +52,17 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="A GitHub event ops card is not webhook delivery, GitHub API mutation, review completion, label application, CI rerun, or fix execution evidence. When a fix is owned by Hermes coding, read `hermes_coding_harness/v1` before reporting build, review, CI, PR, or merge state.",
         good_prompt="github-event-ops PR opened with failing CI; triage whether this needs review or fix handoff.",
         bad_prompt="github-event-ops prove the issue was labelled and CI was rerun.",
+        situations=(
+            "a pull request was just opened",
+            "ci failed on the main branch",
+            "label incoming issues",
+            "auto review new pull requests",
+            "a webhook from github arrived",
+        ),
     ),
     _feature_surface_skill(
         "agent-board",
-        "Hermes agent board workflow: coordinate multiple Hermes profiles or agents with task, handoff, heartbeat, blocker, and completion states.",
+        "Coordinating several agents or profiles: coordinate multiple Hermes profiles or agents with task, handoff, heartbeat, blocker, and completion states.",
         (
             "agent-board",
             "agent board",
@@ -115,10 +122,17 @@ _FEATURE_SURFACE_SKILLS = (
         extra_do_not_use_when=(
             "A multi-lane implementation of an accepted plan is ultrawork, which prepares its durable lanes through this board.",
         ),
+        situations=(
+            "board for my agents",
+            "split tasks among helper agents",
+            "track which agent is blocked",
+            "hand off work between profiles",
+            "roles for pm qa and dev agents",
+        ),
     ),
     _feature_surface_skill(
         "memory-new",
-        "Capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync, and for a past decision use decision-recall.",
+        "Remember a fact for future sessions: capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync, and for a past decision use decision-recall.",
         (
             "memory-new",
             "new memory",
@@ -157,10 +171,18 @@ _FEATURE_SURFACE_SKILLS = (
         extra_quality_bar=(
             "Ask source class, target store, scope, retention class, and the explicit remember/refuse/defer decision before candidate capture.",
         ),
+        situations=(
+            "remember this for next time",
+            "save this project context",
+            "keep this decision in memory",
+            "don't forget our naming rule",
+            "store this product fact",
+            "do not keep this secret",
+        ),
     ),
     _feature_surface_skill(
         "memory-sync",
-        "English-canonical Hermes memory-review guidance: inspect USER.md and MEMORY.md claims and prepare a native write diff without invoking, applying, or observing a native write; for a new fact use memory-new, and for a past decision use decision-recall.",
+        "Outdated or wrong Hermes memory entries: English-canonical Hermes memory-review guidance: inspect USER.md and MEMORY.md claims and prepare a native write diff without invoking, applying, or observing a native write; for a new fact use memory-new, and for a past decision use decision-recall.",
         (
             "memory-sync",
             "memory curation",
@@ -202,10 +224,18 @@ _FEATURE_SURFACE_SKILLS = (
             "State that Hermes-native and external provider/vector context is not_omh_reviewed, can nominate a candidate only, and may receive rendered OMH prefetch content through a configured Hermes runtime model request.",
             "Send memory-provider lifecycle questions -- enabling, switching, pausing, retention, deletion, export, or failed synchronization -- to external-connector-readiness, which owns the provider posture this review cannot establish.",
         ),
+        situations=(
+            "you have outdated info about me",
+            "clean up my memory file",
+            "forget old project details",
+            "check what hermes knows about me",
+            "fix wrong facts about me",
+            "duplicate or conflicting memories",
+        ),
     ),
     _feature_surface_skill(
         "gateway-intent-card",
-        "Hermes gateway intent workflow: normalize Discord, Slack, Telegram, and other gateway sessions into origin, thread, delivery, silent, attachment, and status-update policy.",
+        "Bot replies via Discord, Slack, or Telegram: normalize Discord, Slack, Telegram, and other gateway sessions into origin, thread, delivery, silent, attachment, and status-update policy.",
         (
             "gateway-intent-card",
             "gateway intent",
@@ -234,10 +264,17 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="A gateway intent card is not platform login, message send, thread mutation, attachment upload, or delivery evidence.",
         good_prompt="gateway-intent-card route this Discord thread update silently unless action is needed.",
         bad_prompt="gateway-intent-card prove the Telegram attachment was sent.",
+        situations=(
+            "reply in the same slack thread",
+            "only notify discord if action is needed",
+            "where should the bot post updates",
+            "send the attachment to telegram",
+            "quiet status updates in the channel",
+        ),
     ),
     _feature_surface_skill(
         "executor-runtime-readiness",
-        "Executor runtime readiness - compare Codex, Claude Code, Hermes coding, and oh-my runtimes by tools and handoff mode; use external-connector-readiness for a named plugin or API, and toolbelt-readiness for the whole capability inventory.",
+        "Unsure whether Codex or Claude Code is ready: executor runtime readiness - compare Codex, Claude Code, Hermes coding, and oh-my runtimes by tools and handoff mode; use external-connector-readiness for a named plugin or API, and toolbelt-readiness for the whole capability inventory.",
         (
             "executor-runtime-readiness",
             "executor readiness",
@@ -273,10 +310,17 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="Runtime readiness is not executor dispatch, plugin load, tool invocation, repository mutation, review, CI, or merge evidence.",
         good_prompt="executor-runtime-readiness can this task run in Codex, Claude Code, or Hermes coding?",
         bad_prompt="executor-runtime-readiness claim Codex already started the session.",
+        situations=(
+            "can claude code handle this task",
+            "is codex set up on this machine",
+            "which coding runtime has the tools",
+            "tools the coding agent lacks",
+            "worktree support for helper agents",
+        ),
     ),
     _feature_surface_skill(
         "deliverable-package",
-        "Hermes deliverable package workflow: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.",
+        "Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.",
         (
             "deliverable-package",
             "deliverable mode",
@@ -294,10 +338,17 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="A deliverable package card is not binary generation, render QA, formula recalculation, approval, upload, attachment, or delivery evidence.",
         good_prompt="deliverable-package turn this research into PPT and PDF with attachment status.",
         bad_prompt="deliverable-package claim the PDF was attached without observed file evidence.",
+        situations=(
+            "was the pdf attached",
+            "status of the report files",
+            "deliver these documents to the client",
+            "which files are approved",
+            "attach the deck to the thread",
+        ),
     ),
     _feature_surface_skill(
         "voice-operator",
-        "Terse voice and mobile-style requests - turn short spoken-style asks into clarify, plan, status, handoff, or confirmation actions.",
+        "Short spoken or mobile-style request: terse voice and mobile-style requests - turn short spoken-style asks into clarify, plan, status, handoff, or confirmation actions.",
         (
             "voice-operator",
             "voice operator",
@@ -326,10 +377,17 @@ _FEATURE_SURFACE_SKILLS = (
         extra_safety_rules=(
             "This card is not realtime voice connector readiness. It may read the tool-safety verdict of a supplied realtime_voice_trial_receipt/v1 when one exists, and it never creates, infers, or upgrades one; route realtime voice adoption to external-connector-readiness.",
         ),
+        situations=(
+            "quick request from my phone",
+            "dictated message",
+            "one-line voice note",
+            "talking while driving",
+            "short command from mobile",
+        ),
     ),
     _feature_surface_skill(
         "browser-operator",
-        "Policy overlay for browser tasks - add auth, confirmation, and observed-trace gates after preferring the native browser for ordinary URL, click, login, and form actions.",
+        "Browser login, click, or form task: policy overlay for browser tasks - add auth, confirmation, and observed-trace gates after preferring the native browser for ordinary URL, click, login, and form actions.",
         (
             "browser-operator",
             "browser operator",
@@ -403,10 +461,17 @@ _FEATURE_SURFACE_SKILLS = (
             "POSIX native agent-browser collector: cold-desktop anonymous read-only Chromium only; other engine/profile/fixture/locale/timezone: named blocker (unsupported_browser_engine_webkit), never substitution.",
             "Trace drift: `promotion status` unlinks only managed SKILL.md, keeps generations/receipts; no autoheal/watch/global fallback.",
         ),
+        situations=(
+            "log into the staging site",
+            "fill out this web form",
+            "click through the checkout",
+            "open this link and tell me what blocks it",
+            "automate a browser flow",
+        ),
     ),
     _feature_surface_skill(
         "workspace-file-operator",
-        "Policy overlay for local file tasks - add path scoping and destructive-action gates after preferring native file tools for ordinary list, search, organize, copy, move, and rename actions.",
+        "Folder cleanup, renames, or deletions: policy overlay for local file tasks - add path scoping and destructive-action gates after preferring native file tools for ordinary list, search, organize, copy, move, and rename actions.",
         (
             "workspace-file-operator",
             "workspace file operator",
@@ -471,10 +536,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If delete, overwrite, move, rename, chmod, or irreversible cleanup is requested, require an explicit confirmation gate.",
             "If the request is file conversion, deck/PDF export, or attachment delivery, route to materials-package or deliverable-package instead.",
         ),
+        situations=(
+            "clean up my downloads folder",
+            "rename all these files",
+            "archive old pdfs",
+            "find files by name",
+            "delete duplicate files safely",
+        ),
     ),
     _feature_surface_skill(
         "command-operator",
-        "Policy overlay for terminal commands - add cwd, environment, safety, and result-evidence gates after preferring native shell tools for ordinary CLI, package-manager, and test runs.",
+        "Shell command or test-suite execution: policy overlay for terminal commands - add cwd, environment, safety, and result-evidence gates after preferring native shell tools for ordinary CLI, package-manager, and test runs.",
         (
             "command-operator",
             "command operator",
@@ -536,10 +608,17 @@ _FEATURE_SURFACE_SKILLS = (
         # a command must give up. They do not say how the session learns that it
         # finished, which is where a status loop gets invented.
         extra_quality_bar=(EXECUTION_WAIT_DISCIPLINE_RULE,),
+        situations=(
+            "run the test suite",
+            "execute this shell script",
+            "npm install and test",
+            "what did this command print",
+            "run make build",
+        ),
     ),
     _feature_surface_skill(
         "connector-operator",
-        "External app actions - email, Slack, Discord, Notion, Linear, Jira, CRM, and similar providers, scoped with auth, payload, confirmation, and result-evidence gates.",
+        "Email, Slack, or Jira action to perform: external app actions - email, Slack, Discord, Notion, Linear, Jira, CRM, and similar providers, scoped with auth, payload, confirmation, and result-evidence gates.",
         (
             "connector-operator",
             "connector operator",
@@ -612,10 +691,18 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request is only chat thread delivery policy for Discord, Slack, or Telegram, route to gateway-intent-card instead.",
             "If the external app action would create, send, invite, mutate, or delete provider state, require an explicit confirmation gate.",
         ),
+        situations=(
+            "send this email to the customer",
+            "file a jira ticket for this",
+            "post in the slack channel",
+            "update the notion page",
+            "add a meeting to my calendar",
+            "update the crm record",
+        ),
     ),
     _feature_surface_skill(
         "live-info-operator",
-        "Policy overlay for live lookups - add provider, freshness, units, and source-quality gates after preferring native live-data tools for ordinary weather, finance, sports, maps, and time-zone requests.",
+        "Weather, exchange-rate, or sports lookups: policy overlay for live lookups - add provider, freshness, units, and source-quality gates after preferring native live-data tools for ordinary weather, finance, sports, maps, and time-zone requests.",
         (
             "live-info-operator",
             "live info operator",
@@ -671,10 +758,18 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request asks for citations, best practices, docs, or broad current-source synthesis, route to research instead.",
             "If the request would create, update, invite, send, or mutate external provider state, route to connector-operator instead.",
         ),
+        situations=(
+            "what is the weather in seoul",
+            "current bitcoin price",
+            "usd to krw rate now",
+            "who won the game last night",
+            "what time is it in new york",
+            "how do I get to the airport",
+        ),
     ),
     _feature_surface_skill(
         "external-connector-readiness",
-        "External connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use executor-runtime-readiness for coding-owner choice and toolbelt-readiness for missing capability inventory.",
+        "Evaluating a plugin, connector, or API for adoption: external connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use executor-runtime-readiness for coding-owner choice and toolbelt-readiness for missing capability inventory.",
         (
             "external-connector-readiness",
             "external connector readiness",
@@ -849,10 +944,17 @@ _FEATURE_SURFACE_SKILLS = (
         extra_quality_bar=(
             "Trial two or more memory providers on one corpus and one query set, never on each provider's own sample — load `references/memory-provider-trial.md` for the corpus, query, and reversibility rules.",
         ),
+        situations=(
+            "should we adopt this plugin",
+            "is this api safe and affordable",
+            "evaluate a memory provider",
+            "compare two data providers",
+            "trial a new connector",
+        ),
     ),
     _feature_surface_skill(
         "prompt-import-readiness",
-        "Prompt import readiness - review and normalize external CLI-agent prompt files before offering slash-command candidates; use external-connector-readiness for plugin or API adoption and toolbelt-readiness for missing runtime capabilities.",
+        "Importing prompt files for Hermes: prompt import readiness - review and normalize external CLI-agent prompt files before offering slash-command candidates; use external-connector-readiness for plugin or API adoption and toolbelt-readiness for missing runtime capabilities.",
         (
             "prompt-import-readiness",
             "prompt import readiness",
@@ -920,10 +1022,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If source trust, prompt-injection risk, secrets, or destructive command content is unclear, route to security-safety-review before import.",
             "If the user asks to actually copy, generate, or register prompt files, prepare an executor or workspace-file handoff and keep readiness prepared_not_observed until file evidence exists.",
         ),
+        situations=(
+            "bring my claude code commands into hermes",
+            "turn codex prompts into slash commands",
+            "reuse my prompt library",
+            "map prompt arguments",
+            "slash command names clash",
+        ),
     ),
     _feature_surface_skill(
         "physical-device-readiness",
-        "Physical device readiness - gate robots, 3D printers, IoT relays, sensors, and lab hardware before trials; use external-connector-readiness for provider or connector adoption and toolbelt-readiness for missing control tools.",
+        "Controlling a printer, robot, or IoT device: gate robots, 3D printers, IoT relays, sensors, and lab hardware before trials; use external-connector-readiness for provider or connector adoption and toolbelt-readiness for missing control tools.",
         (
             "physical-device-readiness",
             "physical device readiness",
@@ -986,10 +1095,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If the user asks to execute commands, move hardware, heat a bed/nozzle, flip a relay, or start a print, route to command-operator or connector-operator and require observed operator approval before any execution claim.",
             "If camera or telemetry evidence is required but unavailable, route to visual-qa or toolbelt-readiness and keep the physical device readiness card prepared_not_observed.",
         ),
+        situations=(
+            "let the agent run my 3d printer",
+            "control a raspberry pi relay",
+            "robot arm safety check",
+            "home automation device control",
+            "lab equipment automation",
+        ),
     ),
     _feature_surface_skill(
         "content-operator",
-        "Hermes content operator workflow: scope publish-ready writing, rewriting, summarization, translation, release-note, newsletter, customer-copy, social-copy, README-copy, and email-draft work with audience, tone, style, source, review, and hallucination gates.",
+        "Writing or rewriting text for an audience: scope publish-ready writing, rewriting, summarization, translation, release-note, newsletter, customer-copy, social-copy, README-copy, and email-draft work with audience, tone, style, source, review, and hallucination gates.",
         (
             "content-operator",
             "content operator",
@@ -1047,10 +1163,18 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request asks for PDF, PPT, DOCX, HWP, spreadsheet, or attachment packaging, route to materials-package or deliverable-package.",
             "If the request is a simple one-off sentence or paragraph transformation, answer directly instead of opening a workflow.",
         ),
+        situations=(
+            "write the changelog for this version",
+            "draft a newsletter",
+            "rewrite this for executives in plain words",
+            "customer announcement email",
+            "linkedin post about the launch",
+            "fix the tone of this copy",
+        ),
     ),
     _feature_surface_skill(
         "media-input-operator",
-        "User-sent media - audio, video, YouTube links, screenshots, receipts, OCR, meeting recordings, transcripts, timestamps, and clip summaries, gated for source, permission, and hallucination risk.",
+        "Audio, video, or screenshot to process: user-sent media - audio, video, YouTube links, screenshots, receipts, OCR, meeting recordings, transcripts, timestamps, and clip summaries, gated for source, permission, and hallucination risk.",
         (
             "media-input-operator",
             "media input operator",
@@ -1139,10 +1263,17 @@ _FEATURE_SURFACE_SKILLS = (
         extra_safety_rules=(
             "A media_result_manifest/v1 describes a supplied recording or transcript. It is never a live duplex session, one-input-to-one-dispatch integrity, audible response behavior, or realtime voice readiness, and it cannot be promoted into one.",
         ),
+        situations=(
+            "transcribe this recording",
+            "what does this youtube video say",
+            "pull text from a screenshot",
+            "read this receipt photo",
+            "timestamps for the podcast",
+        ),
     ),
     _feature_surface_skill(
         "data-analysis",
-        "Hermes data analysis workflow: scope supplied data with provenance, causal-claim, and hallucination guards.",
+        "Dataset or logs to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.",
         (
             "data-analysis",
             "data analysis",
@@ -1206,10 +1337,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If the user wants datasets found online, route to source-finder before analysis.",
             "If the user wants a PPT/PDF/XLSX report generated from data, route to materials-package or deliverable-package after analysis scope is clear.",
         ),
+        situations=(
+            "what does this csv show",
+            "find anomalies in these logs",
+            "trend in this spreadsheet",
+            "is this correlation causal",
+            "chart this table",
+        ),
     ),
     _feature_surface_skill(
         "toolbelt-readiness",
-        "Toolbelt readiness - inventory which MCP servers, CLIs, APIs, credentials, and connectors a workflow needs; use external-connector-readiness to assess one named integration and executor-runtime-readiness to choose the coding owner.",
+        "Which tools and credentials a workflow needs: inventory which MCP servers, CLIs, APIs, credentials, and connectors a workflow needs; use external-connector-readiness to assess one named integration and executor-runtime-readiness to choose the coding owner.",
         (
             "toolbelt-readiness",
             "mcp readiness",
@@ -1247,10 +1385,17 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="A toolbelt readiness card is not MCP server installation, credential validation, API access, connector invocation, or successful workflow execution evidence.",
         good_prompt="toolbelt-readiness what MCP or CLI tools do I need for weekly Linear and GitHub triage?",
         bad_prompt="toolbelt-readiness claim Gmail access works without an observed credential check.",
+        situations=(
+            "what mcp servers do I need",
+            "which cli is missing for this",
+            "which api keys are required",
+            "tools needed for linear and github triage",
+            "check my integrations",
+        ),
     ),
     _feature_surface_skill(
         "harness-session-inventory",
-        "Hermes harness session inventory workflow: normalize Codex, Claude Code, Hermes, OpenCode, Cursor, MCP host, worktree, and wrapper session metadata into one drift-aware inventory.",
+        "Lost track of agent sessions and worktrees: normalize Codex, Claude Code, Hermes, OpenCode, Cursor, MCP host, worktree, and wrapper session metadata into one drift-aware inventory.",
         (
             "harness-session-inventory",
             "harness session inventory",
@@ -1307,10 +1452,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If config sources are unavailable, report only the discovered surfaces and mark the missing hosts not_observed.",
             "If cleanup, host load, connector execution, or session progress is requested, route to the owning workflow instead of folding it into inventory.",
         ),
+        situations=(
+            "find my earlier codex session",
+            "list open worktrees",
+            "mcp configs differ between tools",
+            "which sessions are still around",
+            "recover the last coding session",
+        ),
     ),
     _feature_surface_skill(
         "ops-observability-card",
-        "Hermes ops observability workflow: prepare an operations command-board for wrapper-safe token, cost, latency, run history, queue, failure-mode, external metric-provider, and service-quality evidence boundaries.",
+        "Tracking cost, tokens, latency, or service health: prepare an operations command-board for wrapper-safe token, cost, latency, run history, queue, failure-mode, external metric-provider, and service-quality evidence boundaries.",
         (
             "ops-observability-card",
             "observability card",
@@ -1364,10 +1516,17 @@ _FEATURE_SURFACE_SKILLS = (
             "Never recommend logging raw prompts, responses, or secret values into telemetry; counts, lengths, "
             "hashes, and key-set booleans carry the signal without the leak.",
         ),
+        situations=(
+            "how much are we spending on tokens",
+            "latency dashboard",
+            "prometheus and grafana numbers",
+            "failure modes of our loops",
+            "service quality overview",
+        ),
     ),
     _feature_surface_skill(
         "achievements",
-        "Hermes achievements observation workflow: summarize hermes-achievements badges, tiers, recent unlocks, and progress from local plugin artifacts.",
+        "Unlocked badges and achievement progress: achievements observation: summarize hermes-achievements badges, tiers, recent unlocks, and progress from local plugin artifacts.",
         (
             "achievements",
             "achievement",
@@ -1406,10 +1565,17 @@ _FEATURE_SURFACE_SKILLS = (
             "hermes_achievements_observation/v1 metadata-only payload from `omh achievements` when recorded",
             "supplied `session_activity_receipt/v1` when available; unavailable metrics stay unavailable, never zero",
         ),
+        situations=(
+            "what have I unlocked",
+            "how close am I to the next tier",
+            "show my hermes badges",
+            "achievement progress for my report",
+            "newest badges I earned",
+        ),
     ),
     _feature_surface_skill(
         "agent-ops-review",
-        "Hermes agent ops review workflow: help managers inspect AI-agent progress, blockers, quality gates, and throughput levers.",
+        "AI agent progress for managers: help managers inspect AI-agent progress, blockers, quality gates, and throughput levers.",
         (
             "agent-ops-review",
             "agent ops review",
@@ -1452,10 +1618,17 @@ _FEATURE_SURFACE_SKILLS = (
             "Check the audited setup against the anti-pattern checklist in the same reference; an anti-pattern "
             "hit is a finding with its location and fix, never a style remark.",
         ),
+        situations=(
+            "where is the agent at",
+            "status of the codex work",
+            "manager summary of agent progress",
+            "is the ai work any good",
+            "blockers in agent tasks",
+        ),
     ),
     _feature_surface_skill(
         "agent-debug",
-        "Agent Debug workflow: capture a stuck, looping, drifting, or repeatedly failing agent run, diagnose the likely failure pattern, and prepare the smallest safe recovery action.",
+        "Agent is stuck, looping, or drifting: capture a stuck, looping, drifting, or repeatedly failing agent run, diagnose the likely failure pattern, and prepare the smallest safe recovery action.",
         (
             "agent-debug",
             "agent debug",
@@ -1509,10 +1682,17 @@ _FEATURE_SURFACE_SKILLS = (
             "Name a cause only after revert-verify: remove the suspect change and observe the failure disappear, or state that causation is unproven.",
             "Reproduce the failure before preparing any recovery action; a fix without a reproduced failure first is a guess.",
         ),
+        situations=(
+            "the agent keeps calling the same tool",
+            "it lost track of the goal",
+            "burning tokens with no progress",
+            "agent keeps failing the same way",
+            "why did the agent stall",
+        ),
     ),
     _feature_surface_skill(
         "failure-signal-audit",
-        "Failure Signal Audit workflow: find swallowed errors, unsafe fallbacks, hidden UI/runtime failures, and missing propagation before they become false green status.",
+        "Hidden or swallowed errors suspected: find swallowed errors, unsafe fallbacks, hidden UI/runtime failures, and missing propagation before they become false green status.",
         (
             "failure-signal-audit",
             "failure signal audit",
@@ -1576,10 +1756,17 @@ _FEATURE_SURFACE_SKILLS = (
             "Attribute a masked failure to a specific handler or fallback only with revert-verify evidence (the signal observed reappearing without it), or mark causation unproven.",
             "Route remediation only against a reproduced failing signal; a remediation handoff without a reproduced failure first is a guess.",
         ),
+        situations=(
+            "tests pass but it is broken",
+            "catch blocks that hide errors",
+            "fallback masks a failure",
+            "console errors nobody sees",
+            "status says green but something failed",
+        ),
     ),
     _feature_surface_skill(
         "instinct-ledger",
-        "Instinct Ledger workflow: turn repeated project or cross-project lessons into atomic, confidence-scored instinct candidates with scoped promotion and export boundaries.",
+        "Recurring lessons worth promoting: turn repeated project or cross-project lessons into atomic, confidence-scored instinct candidates with scoped promotion and export boundaries.",
         (
             "instinct-ledger",
             "instinct ledger",
@@ -1630,10 +1817,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request is to mutate durable rules, prompts, skills, or AGENTS guidance, route to rules-distill or implementation after review approval.",
             "If evidence comes from a stuck run, use agent-debug before converting lessons into instincts.",
         ),
+        situations=(
+            "lessons we keep relearning",
+            "promote this lesson to all projects",
+            "how confident are we in this lesson",
+            "export learned patterns",
+            "project specific habits",
+        ),
     ),
     _feature_surface_skill(
         "skill-scout",
-        "Skill Scout workflow: prepare a metadata-only search-before-creation report for local, marketplace, GitHub, and web skill candidates with risk review and adoption options.",
+        "Existing skills to reuse before authoring: prepare a metadata-only search-before-creation report for local, marketplace, GitHub, and web skill candidates with risk review and adoption options.",
         (
             "skill-scout",
             "skill scout",
@@ -1688,10 +1882,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request is a portfolio health dashboard, route to skill-health.",
             "If the request is an approved skill mutation or creation task, route to skill or implementation after the scout decision.",
         ),
+        situations=(
+            "does a skill for this already exist",
+            "best hermes skills to install",
+            "search github for skills",
+            "compare marketplace skills",
+            "don't reinvent this skill",
+        ),
     ),
     _feature_surface_skill(
         "skill-health",
-        "Skill Health workflow: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions.",
+        "OMH skill portfolio health overview: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions.",
         (
             "skill-health",
             "skill health",
@@ -1728,10 +1929,17 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request is about OMH setup, install, stale package paths, or command availability, route to doctor.",
             "If the request is a missed-route or self-improvement trace, route to workflow-learning before adding health actions.",
         ),
+        situations=(
+            "which skills are failing",
+            "stale skills to update",
+            "skill improvement backlog",
+            "overview of skill quality",
+            "pending changes to skills",
+        ),
     ),
     _feature_surface_skill(
         "workflow-learning",
-        "Hermes workflow learning workflow: classify and review self-improvement store routes as an auxiliary review lane before durable writes, then record workflow attempts as metadata-only traces, evals, review queues, patch proposals, regression cases, audits, indexes, and exports.",
+        "Missed route or run lessons to record: classify and review self-improvement store routes as an auxiliary review lane before durable writes, then record workflow attempts as metadata-only traces, evals, review queues, patch proposals, regression cases, audits, indexes, and exports.",
         (
             "workflow-learning",
             "workflow learning",
@@ -1782,6 +1990,13 @@ _FEATURE_SURFACE_SKILLS = (
         recovery_notes=(
             *_GENERAL_RECOVERY_NOTES,
             "Native write policy `required` stops promotion as unsupported and `not_required` is not an approval; drift unlinks only the managed SKILL.md and keeps generations and receipts, and an incomplete promotion resumes only via explicit `retry --receipt-id`.",
+        ),
+        situations=(
+            "why didn't omh pick a skill",
+            "record what happened in this run",
+            "where should this lesson be stored",
+            "turn this failure into a regression case",
+            "improve the skill from this session",
         ),
     ),
 )

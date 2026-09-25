@@ -882,6 +882,12 @@ class SkillDefinition:
     # when a listed tool is not registered for the profile; the portable
     # projection never emits it.
     host_requires_tools: tuple[str, ...] = ()
+    # Short plain-English phrases for the user situations this skill serves,
+    # in the words a user who does not know the skill name would use: domain
+    # nouns, symptoms, artifact names. Catalog data only: no scorer, trigger
+    # table, or renderer reads it yet. `tests/test_skill_situations.py` holds
+    # its shape.
+    situations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "description", omh_description(self.description))
@@ -1292,6 +1298,7 @@ def _feature_surface_skill(
     extra_safety_rules: tuple[str, ...] = (),
     extra_quality_bar: tuple[str, ...] = (),
     extra_do_not_use_when: tuple[str, ...] = (),
+    situations: tuple[str, ...] = (),
 ) -> SkillDefinition:
     return SkillDefinition(
         name,
@@ -1345,4 +1352,5 @@ def _feature_surface_skill(
         ),
         final_checklist=final_checklist or (),
         recovery_notes=recovery_notes or (),
+        situations=situations,
     )

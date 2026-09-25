@@ -7,7 +7,7 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
     return (
         feature_surface_skill(
             "decision-recall",
-            "[omh] Recall scoped reviewed rejected decisions without elevating them to approved memory.",
+            "[omh] Previously rejected options to revisit: recall scoped reviewed rejected decisions without elevating them to approved memory.",
             (
                 "decision-recall",
                 "rejected decision recall",
@@ -29,10 +29,18 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "Only reviewed rejected candidates are returned; expired candidates stay excluded.",
                 "Recall output is not presented as approved memory, source freshness, or execution evidence.",
             ),
+            situations=(
+                "why did we reject this",
+                "what did we decide",
+                "decided against",
+                "options we ruled out",
+                "was this tried before",
+                "alternatives we dropped earlier",
+            ),
         ),
         feature_surface_skill(
             "run-efficiency",
-            "[omh] Report supplied local run efficiency while provider and host data stay unobserved.",
+            "[omh] Run efficiency and context usage report: report supplied local run efficiency while provider and host data stay unobserved.",
             (
                 "run-efficiency",
                 "run efficiency report",
@@ -54,10 +62,17 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "Provider billing, cron, and host claims remain not_observed unless separately recorded.",
                 "The report does not intercept, route, or execute provider or host work.",
             ),
+            situations=(
+                "how much context did this run use",
+                "which tools were slow",
+                "run timing breakdown",
+                "context window usage report",
+                "efficiency of the last session",
+            ),
         ),
         feature_surface_skill(
             "provider-profile-posture",
-            "[omh] Prepare provider-profile metadata without reading secrets or calling providers.",
+            "[omh] Provider credentials without exposure: prepare provider-profile metadata without reading secrets or calling providers.",
             (
                 "provider-profile-posture",
                 "provider profile posture",
@@ -78,6 +93,13 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "Provider ID, profile ID, requested capabilities, and secret-presence metadata are explicit.",
                 "No secret value, credential validation, provider call, model route, wallet, or payment action is claimed.",
                 "Any host observation reference remains supplied metadata, not a live connector check.",
+            ),
+            situations=(
+                "is the api key present without showing it",
+                "provider profile setup",
+                "which secrets does this connector need",
+                "check credentials exist safely",
+                "capabilities of a provider profile",
             ),
         ),
     )

@@ -105,7 +105,7 @@ _CHECK_HANDOFF = "lifecycle_handoff_boundary_check"
 
 DEFINITION = SkillDefinition(
     LIFECYCLE_GROWTH_SKILL_NAME,
-    "Turn an observed onboarding, activation, retention, re-engagement, referral, or monetization problem into one consent-safe in-app journey or growth experiment plan with a bounded readout and an explicit decision.",
+    "Churn or weak activation among users: turn an observed onboarding, activation, retention, re-engagement, referral, or monetization problem into one consent-safe in-app journey or growth experiment plan with a bounded readout and an explicit decision.",
     LIFECYCLE_GROWTH_TRIGGERS,
     "Use when a product or growth owner wants to improve a lifecycle stage and needs the target behavior, eligible audience, safety policy, experiment design, launch/rollback gates, measurement readout, and ship/rollback/review/insufficient_data decision assembled as one evidence-bounded plan.",
     category="strategy",
@@ -278,4 +278,12 @@ DEFINITION = SkillDefinition(
         why="An immediate external send is a connector action, and lifecycle-growth never sends or claims delivery.",
     ),
     progressive_disclosure=True,
+    situations=(
+        "users sign up but never come back",
+        "improve onboarding activation",
+        "win back churned users",
+        "in-app message experiment",
+        "increase trial to paid conversion",
+        "retention a/b test",
+    ),
 )

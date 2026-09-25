@@ -1,6 +1,6 @@
 ---
 name: "omh-jev-review-gate"
-description: "[omh] Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge. Use when the user says: jev-review-gate, jev review gate, ask jev to review this diff."
+description: "[omh] Diff flagged by Jev during review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge. Use when the user says: jev-review-gate, jev review gate, ask jev to review this diff."
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, review]

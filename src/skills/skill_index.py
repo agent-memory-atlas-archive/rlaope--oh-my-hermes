@@ -57,27 +57,14 @@ _TRUNCATION_SUFFIX = "..."
 # a lead phrase carrying no trigger at all ("Hermes adaptation for").
 INDEX_OPENING_WORD_COUNT = 3
 
-# Openings that more than one installable skill shares today, each with the
-# exact set of skills that share it and why it stands. Recorded instead of
-# rewritten: every description change moves the pinned skill-body digests and
-# the router's workflow registry, which is a separate change from adding this
-# gate. The lint fails when a group gains a member, when a new group appears,
-# and (on the full catalog) when a recorded member no longer shares its opening.
-REVIEWED_SHARED_INDEX_OPENINGS: dict[str, tuple[frozenset[str], str]] = {
-    "hermes adaptation for": (
-        frozenset({"ask", "cancel", "capability-toggle", "doctor", "running-work-board", "skill", "wiki"}),
-        "Seven utility skills share an adaptation label. The fourth word onward names the action "
-        "(consulting, diagnosing, ending, managing, showing, turning, wiki), so the visible window "
-        "still separates them; the shared three words spend visible characters on every one of them "
-        "and are the first candidate for a description rewrite.",
-    ),
-    "policy overlay for": (
-        frozenset({"browser-operator", "command-operator", "live-info-operator", "workspace-file-operator"}),
-        "The four operator overlays name their surface in the fourth word (browser tasks, terminal "
-        "commands, live lookups, local file tasks), which is the discriminator a model needs; the "
-        "shared lead says they add policy rather than replace the native tool.",
-    ),
-}
+# Openings that more than one installable skill shares, each with the exact set
+# of skills that share it and why it stands. Empty since every description was
+# rewritten to open on the user's situation: the two groups this once recorded
+# ("hermes adaptation for" and "policy overlay for") now open on what the user
+# is doing. The lint fails when a group gains a member, when a new group
+# appears, and (on the full catalog) when a recorded member no longer shares
+# its opening.
+REVIEWED_SHARED_INDEX_OPENINGS: dict[str, tuple[frozenset[str], str]] = {}
 
 _WORD_EDGE_PUNCTUATION = string.punctuation + "\u2014\u2013"
 

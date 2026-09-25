@@ -428,18 +428,27 @@ class IndexOpeningLintTests(unittest.TestCase):
         assert isinstance(violations, list)
         self.assertEqual({item["rule"] for item in violations}, {self.RULE})
 
+    # The tree carries no reviewed group, so these two record one of their own.
+    _SYNTHETIC_REASON = "A synthetic reviewed group for this test, long enough to read as a reason and not a label."
+
     def test_a_reviewed_group_gaining_a_member_fails(self) -> None:
-        payload = skill_structure_lint_payload(
-            definitions=self._with_descriptions(**{"code-review": "Hermes adaptation for reviewing a diff."})
-        )
+        reviewed = {"quokka lemur tapir": (frozenset({"plan", "ralplan"}), self._SYNTHETIC_REASON)}
+        with mock.patch.object(skill_index, "REVIEWED_SHARED_INDEX_OPENINGS", reviewed):
+            payload = skill_structure_lint_payload(
+                definitions=self._with_descriptions(
+                    **{
+                        "plan": "Quokka lemur tapir planning lane.",
+                        "ralplan": "Quokka lemur tapir consensus lane.",
+                        "code-review": "Quokka lemur tapir review lane.",
+                    }
+                )
+            )
         details = self._rule_details(payload)
         self.assertEqual(len(details), 1, details)
         self.assertIn("'code-review'", details[0])
 
     def test_a_stale_record_fails_on_the_full_catalog(self) -> None:
-        reviewed = dict(skill_index.REVIEWED_SHARED_INDEX_OPENINGS)
-        skills, reason = reviewed["policy overlay for"]
-        reviewed["policy overlay for"] = (skills | {"code-review"}, reason)
+        reviewed = {"quokka lemur tapir": (frozenset({"plan", "code-review"}), self._SYNTHETIC_REASON)}
         with mock.patch.object(skill_index, "REVIEWED_SHARED_INDEX_OPENINGS", reviewed):
             payload = skill_structure_lint_payload()
         details = self._rule_details(payload)

@@ -294,7 +294,11 @@ class RouterContentTests(unittest.TestCase):
         # 23,800 -> 25,000: the six default-installed `jev-*` skills add six
         # name-and-hook index lines (24,317 measured); one line per new
         # skill, ~2.8% headroom kept.
-        self.assertLess(len(rendered.encode("utf-8")), 25_000)
+        # 25,000 -> 27,700: every description now opens on the user's
+        # situation before what the skill produces (26,904 measured), so the
+        # shortlist says when each skill applies; about 20 bytes per line,
+        # ~2.9% headroom kept.
+        self.assertLess(len(rendered.encode("utf-8")), 27_700)
         for line in rendered.splitlines():
             self.assertLess(len(line.encode("utf-8")), 400, line)
 
@@ -4795,14 +4799,14 @@ class RouterContentTests(unittest.TestCase):
 
         definitions = {definition.name: definition for definition in builtin_definitions()}
         expected = {
-            "finance-analysis": ("operations", "operator", "Turn finance and accounting inputs into a decision-ready variance, cash, and close-risk brief.", "operations-data", "operations", "ops-review"),
-            "people-ops": ("operations", "operator", "Turn hiring and people context into a fair, structured recruiting or people-operations brief.", "operations-data", "operations", "ops-review"),
-            "legal-compliance-review": ("review", "reviewer", "Surface contract and compliance risks, questions, and escalation points before a legal decision or action.", "delivery-quality", "review", "critic"),
-            "support-operations": ("triage", "operator", "Turn a support case into a clear customer reply, severity path, and owned next step.", "operations-data", "operations", "ops-review"),
-            "curriculum-design": ("planning", "planner", "Turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.", "product-planning", "planning", "planning"),
-            "localization-review": ("review", "reviewer", "Make a product or content release locale-ready with terminology, cultural-fit, and quality-review guidance.", "delivery-quality", "review", "critic"),
-            "sales-development": ("strategy", "operator", "Turn an account or market opportunity into a focused discovery, qualification, and next-step brief.", "operations-data", "operations", "ops-review"),
-            "product-brief": ("planning", "planner", "Turn product evidence into a decision-ready PRD, prioritization frame, and roadmap brief.", "product-planning", "planning", "planning"),
+            "finance-analysis": ("operations", "operator", "Budget overruns, cash risk, or close issues: turn finance and accounting inputs into a decision-ready variance, cash, and close-risk brief.", "operations-data", "operations", "ops-review"),
+            "people-ops": ("operations", "operator", "Hiring or people-process decisions: turn hiring and people context into a fair, structured recruiting or people-operations brief.", "operations-data", "operations", "ops-review"),
+            "legal-compliance-review": ("review", "reviewer", "Contract, NDA, or policy with legal exposure: surface contract and compliance risks, questions, and escalation points before a legal decision or action.", "delivery-quality", "review", "critic"),
+            "support-operations": ("triage", "operator", "Customer support case needs a reply or escalation: turn a support case into a clear customer reply, severity path, and owned next step.", "operations-data", "operations", "ops-review"),
+            "curriculum-design": ("planning", "planner", "Teaching goal that needs a course or syllabus: turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.", "product-planning", "planning", "planning"),
+            "localization-review": ("review", "reviewer", "Translated product or content release: make a product or content release locale-ready with terminology, cultural-fit, and quality-review guidance.", "delivery-quality", "review", "critic"),
+            "sales-development": ("strategy", "operator", "Prospect or account worth pursuing: turn an account or market opportunity into a focused discovery, qualification, and next-step brief.", "operations-data", "operations", "ops-review"),
+            "product-brief": ("planning", "planner", "PRD or roadmap priorities to decide: turn product evidence into a decision-ready PRD, prioritization frame, and roadmap brief.", "product-planning", "planning", "planning"),
         }
         expected_trigger_counts = {
             "finance-analysis": 7,
