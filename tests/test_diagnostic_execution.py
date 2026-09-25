@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier, Event, Lock
+from threading import Barrier, Event, Lock, Semaphore
 import unittest
 
 from omh.coding.diagnostic_execution import (
@@ -36,6 +37,21 @@ from omh.coding.diagnostic_providers import DiagnosticProviderConfig, ProviderCa
 # (1835.4s vs 1239.0s for the same 6370 tests) puts the failing attempt at 48%
 # slower than the passing one on the same runner class. 60s comfortably clears
 # that measured overrun with margin for worse contention still to come.
+#
+# The third failure (#1790: 60s, Linux, a branch touching nothing near this
+# code) was not margin at all. `_observe` took the global slot before the
+# provider slot, so a request queued behind a busy provider held a global slot
+# while it waited: when both requests reached pyright first, the two global
+# slots were pyright-running and pyright-waiting, and ruff could not start
+# although nothing ran in its place. The barrier below waits for two runners on
+# different providers at one instant, which that order only delivered on
+# interleavings the test did not control -- 29 of 30 runs on a loaded host. The
+# engine now takes the provider slot first, so a global slot is held only by a
+# runner that is executing and the overlap is guaranteed rather than scheduled;
+# `test_a_request_queued_behind_a_busy_provider_does_not_hold_a_global_slot`
+# forces the interleaving that hung. The deadline stays: it bounds a genuinely
+# stuck engine, and a failure now reports the observed `active` map rather than
+# `False is not true`.
 _THREAD_DEADLINE_SECONDS = 60
 
 
@@ -72,6 +88,25 @@ class _Runner:
             self.barrier.wait(timeout=_THREAD_DEADLINE_SECONDS)
         diagnostics = () if revision == "base-1" else (_item(provider_id),)
         return ProviderObservation.completed(files, diagnostics)
+
+
+class _ObservedSlot:
+    """Wrap one of the engine's semaphores and report every acquisition attempt.
+
+    The attempt is reported before the acquire blocks, so a test can tell that a
+    thread has reached the slot even while it waits there.
+    """
+
+    def __init__(self, inner: Semaphore, on_attempt: Callable[[], None]) -> None:
+        self.inner = inner
+        self.on_attempt = on_attempt
+
+    def __enter__(self) -> bool:
+        self.on_attempt()
+        return self.inner.__enter__()
+
+    def __exit__(self, *exc: object) -> None:
+        self.inner.__exit__(*exc)
 
 
 def _item(provider: str) -> dict[str, object]:
@@ -306,12 +341,87 @@ class BoundedExecutionTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(engine.execute, DiagnosticExecutionRequest("wrapper", "local/one", "base", "HEAD"))
             second = pool.submit(engine.execute, DiagnosticExecutionRequest("wrapper", "local/two", "base", "HEAD"))
-            self.assertTrue(two_running.wait(timeout=_THREAD_DEADLINE_SECONDS))
+            overlapped = two_running.wait(timeout=_THREAD_DEADLINE_SECONDS)
+            with lock:
+                observed = dict(active)
+            # Release whether or not the barrier formed: a failure reports the
+            # observation now, not after every remaining runner has waited out
+            # its own deadline (eight runners, six minutes, when it failed here).
             release.set()
             first.result(timeout=_THREAD_DEADLINE_SECONDS)
             second.result(timeout=_THREAD_DEADLINE_SECONDS)
-        self.assertEqual(maximum_total[0], 2)
-        self.assertLessEqual(max(maximum.values()), 1)
+        self.assertTrue(
+            overlapped,
+            f"two runners never overlapped before the deadline: active={observed} "
+            f"maximum={dict(maximum)} maximum_total={maximum_total[0]}",
+        )
+        self.assertEqual(maximum_total[0], 2, dict(maximum))
+        self.assertLessEqual(max(maximum.values()), 1, dict(maximum))
+
+    def test_a_request_queued_behind_a_busy_provider_does_not_hold_a_global_slot(self) -> None:
+        # The interleaving that hung the test above (#1790): both requests
+        # reach pyright before either reaches ruff. The second pyright thread
+        # queues on pyright's slot; if it held a global slot while it waited,
+        # both global slots would be pyright's and ruff could never start.
+        two_running, release, pyright_queued = Event(), Event(), Event()
+        active: dict[str, int] = defaultdict(int)
+        maximum: dict[str, int] = defaultdict(int)
+        maximum_total = [0]
+        pyright_attempts = [0]
+        lock = Lock()
+
+        class Runner:
+            def run(self, provider: str, workspace: str, revision: str, files: tuple[str, ...], timeout: int,
+                    cancelled: object) -> ProviderObservation:
+                with lock:
+                    active[provider] += 1
+                    maximum[provider] = max(maximum[provider], active[provider])
+                    maximum_total[0] = max(maximum_total[0], sum(active.values()))
+                    if sum(active.values()) == 2:
+                        two_running.set()
+                release.wait(timeout=_THREAD_DEADLINE_SECONDS)
+                with lock:
+                    active[provider] -= 1
+                return ProviderObservation.completed(files, ())
+
+        class GatedEngine(DiagnosticExecutionEngine):
+            def _observe_pair(self, request: DiagnosticExecutionRequest, capability: ProviderCapability,
+                              files: tuple[str, ...], baseline: str, end: str,
+                              execution_workspace: str) -> tuple[ProviderObservation, ProviderObservation]:
+                if capability.provider_id == "ruff":
+                    pyright_queued.wait(timeout=_THREAD_DEADLINE_SECONDS)
+                return super()._observe_pair(request, capability, files, baseline, end, execution_workspace)
+
+        def pyright_attempted() -> None:
+            with lock:
+                pyright_attempts[0] += 1
+                if pyright_attempts[0] == 2:
+                    pyright_queued.set()
+
+        engine = GatedEngine(
+            config=_config("pyright", "ruff"), resolver=_Resolver(), revisions=_Revisions(("end-1",) * 4),
+            runner=Runner(), settings=DiagnosticExecutionSettings(max_global_concurrency=2, max_provider_concurrency=1),
+        )
+        # The slots are the engine's own; nothing public sits between the two
+        # acquisitions, and this test exists to pin their order.
+        engine._provider_slots["pyright"] = _ObservedSlot(engine._provider_slots["pyright"], pyright_attempted)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(engine.execute, DiagnosticExecutionRequest("wrapper", "local/one", "base", "HEAD"))
+            second = pool.submit(engine.execute, DiagnosticExecutionRequest("wrapper", "local/two", "base", "HEAD"))
+            overlapped = two_running.wait(timeout=_THREAD_DEADLINE_SECONDS)
+            with lock:
+                observed = dict(active)
+                attempts = pyright_attempts[0]
+            release.set()
+            first.result(timeout=_THREAD_DEADLINE_SECONDS)
+            second.result(timeout=_THREAD_DEADLINE_SECONDS)
+        self.assertTrue(
+            overlapped,
+            f"ruff never ran beside pyright: active={observed} pyright_slot_attempts={attempts} "
+            f"maximum={dict(maximum)} maximum_total={maximum_total[0]}",
+        )
+        self.assertEqual(maximum_total[0], 2, dict(maximum))
+        self.assertLessEqual(max(maximum.values()), 1, dict(maximum))
 
 
 if __name__ == "__main__":
