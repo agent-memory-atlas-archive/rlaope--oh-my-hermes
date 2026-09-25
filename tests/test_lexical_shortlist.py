@@ -29,6 +29,17 @@ class LexicalRankingTests(unittest.TestCase):
     def test_terms_drop_function_words_and_fold_inflections(self) -> None:
         self.assertEqual(sorted(lexical_terms("the failing tests in my reports")), ["fail", "report", "test"])
 
+    def test_the_stemmer_joins_forms_and_leaves_exceptions(self) -> None:
+        from omh.routing.lexical_shortlist import stem
+
+        for left, right in (("caches", "cache"), ("issues", "issue"), ("pages", "page"), ("services", "service"), ("styling", "style")):
+            with self.subTest(pair=(left, right)):
+                self.assertEqual(stem(left), stem(right))
+        for word in ("series", "goes", "does", "news"):
+            with self.subTest(word=word):
+                self.assertEqual(stem(word), word)
+        self.assertEqual(stem("notes"), "note")
+
     def test_the_ranking_is_reproducible_and_ordered(self) -> None:
         first = lexical_ranking("our spending spreadsheet needs a cash forecast")
         self.assertEqual(first, lexical_ranking("our spending spreadsheet needs a cash forecast"))

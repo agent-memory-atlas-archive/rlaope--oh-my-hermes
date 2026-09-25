@@ -217,8 +217,9 @@ def _lexical_shortlist(
             continue
         # The winner the gate declined to dispatch always leads: the router
         # was confident in it, and declining means asking, not dropping it.
+        own = own_evidence_score([str(label) for label in labels or ()])
         declined_winner = declined_dispatch and index == 0 and int(recommendation.get("score", 0) or 0) > 0
-        if declined_winner or own_evidence_score([str(label) for label in labels or ()]) >= SCORED_OWN_EVIDENCE_FLOOR:
+        if declined_winner or own >= SCORED_OWN_EVIDENCE_FLOOR:
             candidates.append(_candidate(recommendation))
     named = {str(candidate.get("skill") or "") for candidate in candidates}
     definitions = {definition.name: definition for definition in routable_definitions()}

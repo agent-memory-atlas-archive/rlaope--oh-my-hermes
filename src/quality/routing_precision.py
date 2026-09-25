@@ -2299,7 +2299,7 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "refactor-plan",
     ),
-    # Shortlist-first follow-up: the negative half of each request shape and
+    # Shortlist-first follow-up: the negative half of each canonical request and
     # narrowed guard. Every sentence here is written for the rule, not taken
     # from a tuning probe.
     RoutingPrecisionCase(
@@ -2341,8 +2341,8 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "a-style-guide-question-is-not-a-frontend-change",
         "A question about a style guide is not an appearance edit",
         "what style guide does the team use for the site?",
-        "answer_clarification",
-        "",
+        "answer_directly",
+        "direct_answer",
     ),
     RoutingPrecisionCase(
         "an-office-setup-is-not-a-missing-tool",
@@ -2355,6 +2355,43 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "plan-before-a-plain-noun-is-not-an-invocation",
         "`plan` before a plain noun is a verb, not the plan skill",
         "plan meals for the week",
+        "answer_clarification",
+        "",
+    ),
+    # Everyday sentences from the re-review of the removed dispatch shapes:
+    # a shape built from vocabulary dispatched each of these.
+    RoutingPrecisionCase(
+        "lint-roller-is-not-a-build-failure",
+        "A broken lint roller is not a build",
+        "my lint roller is broken again",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "promotion-to-production-manager-is-not-a-deploy",
+        "Promoting a person is not a deploy",
+        "promote Sarah to production manager",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "releasing-doves-is-not-a-release",
+        "Releasing doves live is not a release",
+        "release the doves live at the wedding",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "app-icon-color-on-a-phone-is-not-frontend",
+        "A phone's app icon color is not a UI change to build",
+        "change the color of the app icon on my phone",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "an-accountants-commits-are-not-a-code-review",
+        "Commits to a ledger are not a change set to review",
+        "look over the commits my accountant made to the ledger",
         "answer_clarification",
         "",
     ),
@@ -6396,24 +6433,28 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "completion_objection_check",
         "jev-done-check",
     ),
+    # Re-pinned to clarify (shortlist-first; request shapes removed 2026-09-26): `review` is a
+    # token, so the route asks; code-review, the declined winner, leads the shortlist.
     RoutingInterventionCase(
         "jev-mention-review-stays-code-review",
         "Reviewing a PR about a Jev plugin stays code-review; nobody asked Jev",
         "review the jev plugin PR before merge",
-        "dispatch",
-        "code-review",
-        "prepare_review_or_followup_handoff",
-        "review_check",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "code-review",
     ),
+    # Re-pinned to clarify (shortlist-first; request shapes removed 2026-09-26): `review` is a
+    # token, so the route asks; code-review, the declined winner, leads the shortlist.
     RoutingInterventionCase(
         "jev-tool-name-review-stays-code-review",
         "A diff that adds omh_jev_ask stays code-review; the tool name is not an address",
         "review this diff that adds the omh_jev_ask tool",
-        "dispatch",
-        "code-review",
-        "prepare_review_or_followup_handoff",
-        "review_check",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "code-review",
     ),
     RoutingInterventionCase(
@@ -6555,14 +6596,16 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "handoff",
         "code-review",
     ),
+    # Re-pinned to clarify (shortlist-first; request shapes removed 2026-09-26): `review` is a
+    # token, so the route asks; code-review, the declined winner, leads the shortlist.
     RoutingInterventionCase(
         "jev-skill-file-review-stays-code-review",
         "Reviewing a Jev skill's SKILL.md diff is ordinary code review, like any skill file",
         "review the omh-jev-action-check SKILL.md diff",
-        "dispatch",
-        "code-review",
-        "prepare_review_or_followup_handoff",
-        "review_check",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "code-review",
     ),
     RoutingInterventionCase(
@@ -7091,14 +7134,16 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # skill (a review verb on a change set), and the guards tightened alongside
     # the gate still dispatch theirs: a code object under a code-edit verb, a
     # recurring check with a cadence, a named coding agent asked to deliver.
+    # Re-pinned to clarify (shortlist-first; request shapes removed 2026-09-26): `review` is a
+    # token, so the route asks; code-review, the declined winner, leads the shortlist.
     RoutingInterventionCase(
-        "review-my-change-dispatches-code-review",
-        "A review verb on a change set dispatches code-review by shape, not by the `review` token",
+        "review-my-change-asks-with-code-review-first",
+        "A review verb on a change set asks, with code-review first on the shortlist",
         "review my change for the export feature",
-        "dispatch",
-        "code-review",
-        "prepare_review_or_followup_handoff",
-        "review_check",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "code-review",
     ),
     RoutingInterventionCase(
@@ -7144,46 +7189,44 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # Moved from the negative controls: "check" plus a diff is a review
     # request with its object named, so it dispatches code-review through the
     # review-object shape -- not verification-gate on `before` and `merge`.
+    # Re-pinned to clarify (shortlist-first; request shapes removed): `check`, `before`, and
+    # `merge` are tokens, so the route asks; verification-gate, the declined winner, leads the
+    # shortlist, with code-review allowed as the owner by the coordinator's decision.
     RoutingInterventionCase(
-        "check-diff-before-merge-reaches-code-review",
-        "A check verb on a diff is a code review, not a verification-gate token match",
+        "check-diff-before-merge-asks-with-a-review-lane-first",
+        "A check verb on a diff asks, with verification-gate first on the shortlist",
         "check this diff before I merge it",
-        "dispatch",
-        "code-review",
-        "prepare_review_or_followup_handoff",
-        "review_check",
-        "code-review",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "verification-gate",
     ),
-    # Shortlist-first follow-up, the positive half: each request shape and
-    # narrowed guard still dispatches its own request.
+    # Shortlist-first follow-up, the positive half: canonical requests that
+    # carry no phrase of their own ask, with the intended skill FIRST on the
+    # shortlist; the cadence rule still dispatches the scheduler.
+    # Shortlist-first, request shapes removed: a canonical request without a phrase of its own
+    # asks, and build-failure-triage must be the FIRST candidate.
     RoutingInterventionCase(
-        "review-object-shape-dispatches-code-review",
-        "A review verb on the changes in a PR dispatches code-review",
-        "could you look over the changes in this PR",
-        "dispatch",
-        "code-review",
-        "prepare_review_or_followup_handoff",
-        "review_check",
-        "code-review",
-    ),
-    RoutingInterventionCase(
-        "build-failure-shape-dispatches-triage",
-        "A failing build on a release branch dispatches build-failure triage",
+        "failing-release-build-asks-with-triage-first",
+        "A failing build on a release branch asks, with build-failure-triage first",
         "the nightly build is failing on the release branch",
-        "dispatch",
-        "build-failure-triage",
-        "prepare_build_failure_triage",
-        "build_failure_triage",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "build-failure-triage",
     ),
+    # Shortlist-first, request shapes removed: a canonical request without a phrase of its own
+    # asks, and deploy-and-monitor must be the FIRST candidate.
     RoutingInterventionCase(
-        "deploy-target-shape-dispatches-deploy-and-monitor",
-        "A deploy command to production dispatches deploy-and-monitor",
+        "deploy-to-production-asks-with-deploy-and-monitor-first",
+        "A deploy command to production asks, with deploy-and-monitor first",
         "ship the new checkout service to production",
-        "dispatch",
-        "deploy-and-monitor",
-        "prepare_deploy_monitor_plan",
-        "deploy_monitor_plan",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "deploy-and-monitor",
     ),
     RoutingInterventionCase(
@@ -7196,25 +7239,17 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "github_issue_intake",
         "github-issue-intake",
     ),
+    # Shortlist-first, request shapes removed: a canonical request without a phrase of its own
+    # asks, and ultrawork must be the FIRST candidate.
     RoutingInterventionCase(
-        "repair-verb-on-a-worker-dispatches-delivery",
-        "A repair command on a running part of the system is a code edit",
+        "repair-on-a-worker-asks-with-delivery-first",
+        "A repair command on a running part of the system asks, with ultrawork first",
         "fix the noisy logs in the billing worker",
-        "dispatch",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "ultrawork",
-        "choose_executor",
-        "handoff",
-        "ultrawork",
-    ),
-    RoutingInterventionCase(
-        "appearance-change-shape-dispatches-frontend",
-        "An edit verb on how a page looks dispatches frontend, not the browser operator",
-        "restyle the settings page header to match our theme",
-        "dispatch",
-        "frontend",
-        "prepare_frontend_handoff",
-        "frontend_handoff",
-        "frontend",
     ),
     RoutingInterventionCase(
         "recurring-issue-recap-reaches-the-scheduler",

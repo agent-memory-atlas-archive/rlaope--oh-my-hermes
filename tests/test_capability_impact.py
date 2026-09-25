@@ -48,9 +48,7 @@ class RepresentativeRoutingTests(unittest.TestCase):
     def test_near_neighbor_requests_keep_their_existing_workflows(self) -> None:
         cases = (
             ("Write an article about testing best practices", "web-research"),
-            # A review verb on a pull request dispatches code-review by shape
-            # (routing/request_shapes.py); it was ultrawork on a token score.
-            ("Review this pull request code", "code-review"),
+            ("Do a code review of this pull request", "code-review"),
             ("Analyze this CSV dataset", "data-analysis"),
             ("Make a quick implementation plan", "plan"),
             ("Summarize this product demo video with timestamps", "media-input-operator"),

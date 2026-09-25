@@ -14,13 +14,6 @@ from .domain_signals import (
     specialist_domain_route_signal,
 )
 from .intent import scrub_diagnostic_status_text
-from .request_shapes import (
-    appearance_change_shape,
-    build_failure_shape,
-    code_review_shape,
-    deploy_shape,
-    issue_filing_shape,
-)
 from .reference_regions import executable_routing_text
 from .localization import (
     normalized_phrase,
@@ -41,6 +34,7 @@ from .trigger_language_packs import (
     shipped_trigger_language_packs,
 )
 from .policy import (
+    appearance_edit_request,
     KOREAN_NOUN_PARTICLES,
     PUBLIC_PLUGIN_CONNECTOR_ALIAS_PHRASES,
     PUBLIC_PLUGIN_CONNECTOR_READINESS_CONTEXT_PHRASES,
@@ -2213,6 +2207,23 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # mobile app?"); the lexical shortlist reads this table too, so the word no
     # longer admits lifecycle-growth by itself.
     "lifecycle-growth": frozenset({"improve"}),
+    # Shortlist-first: under the dispatch gate these single words no longer
+    # dispatch anything, but they still decide which skill LEADS a clarify's
+    # shortlist. Each is a word the skill uses inside a phrase and that, alone,
+    # names another lane's request:
+    # - `deploy`, `production`, `app`, `ship` are idea-to-deploy's only in "idea to
+    #   deploy", "ship this idea to production", "app delivery loop"; deploying
+    #   an existing app is deploy-and-monitor's.
+    # - `production` is production-audit's inside "production audit/readiness"
+    #   (and credited again beside a readiness word); alone it is where a
+    #   deploy lands.
+    # - `style` is content-operator's inside "style guide rewrite"; alone it is
+    #   how a page looks.
+    # - `page` is connector-operator's inside "notion page"; alone it is a web page.
+    "idea-to-deploy": frozenset({"deploy", "production", "app", "ship"}),
+    "production-audit": frozenset({"production"}),
+    "content-operator": frozenset({"style"}),
+    "connector-operator": frozenset({"page"}),
     # The continuous-watch phrasings split the same way, one word short of the
     # line: "watching", "monitoring", and "continuously" all say the thing is
     # ongoing, while the bare verbs "keep", "watch", and "monitor" are one-off
@@ -3089,6 +3100,15 @@ def _score_definition(
         trigger_token_matches -= {"index", "refresh", "stale", "갱신"}
     if definition.name == "external-connector-readiness" and not ecosystem_identity_connector_match:
         trigger_token_matches -= _ECOSYSTEM_IDENTITY_CONNECTOR_TRIGGER_NOISE
+    # `production` is held back for production-audit (see
+    # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`) and credited again only beside a
+    # readiness or audit word ("production readiness audit").
+    if (
+        definition.name == "production-audit"
+        and "production" in query_tokens
+        and _PRODUCTION_AUDIT_CONTEXT_TOKENS & query_tokens
+    ):
+        trigger_token_matches.add("production")
     if not matched and not (trigger_token_matches - _GENERIC_TRIGGER_TOKENS):
         trigger_token_matches -= _GENERIC_TRIGGER_TOKENS
     trigger_token_matches.discard(self_name)
@@ -3172,23 +3192,6 @@ def _score_definition(
     ):
         score += 28
         matched.add("direct:fixed_or_pass_verification")
-    # Request shapes (routing/request_shapes.py): an imperative verb acting on
-    # the object the skill owns. Strong evidence for the dispatch gate.
-    if definition.name == "code-review" and code_review_shape(normalized_query):
-        score += 30
-        matched.add("direct:review_object_shape")
-    if definition.name == "build-failure-triage" and build_failure_shape(query_tokens):
-        score += 30
-        matched.add("direct:build_failure_shape")
-    if definition.name == "deploy-and-monitor" and deploy_shape(normalized_query):
-        score += 30
-        matched.add("direct:deploy_target_shape")
-    if definition.name == "github-issue-intake" and issue_filing_shape(normalized_query):
-        score += 30
-        matched.add("direct:issue_filing_shape")
-    if definition.name == "frontend" and appearance_change_shape(normalized_query):
-        score += 30
-        matched.add("direct:appearance_change_shape")
 
     if score <= 0:
         return None
@@ -3214,6 +3217,11 @@ def _score_definition(
         wrapper_guidance=policy.wrapper_guidance,
         suggested_prompt=_suggested_prompt(definition.name, original_query),
     )
+
+
+_PRODUCTION_AUDIT_CONTEXT_TOKENS = frozenset(
+    {"audit", "readiness", "ready", "launch", "preflight", "checklist", "go-live", "rollback"}
+)
 
 
 def _codegraph_refresh_token_context(normalized_query: str, query_tokens: set[str]) -> bool:
@@ -4239,6 +4247,9 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
 # as blockers upstream and keep that phrasing in the wrappers above rather than
 # being rewritten, so the predicates here are the same ones as before.
 _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
+    # Changing how a page looks is not operating a browser on it, even when
+    # the page is named by a browser phrase ("login page").
+    "browser-operator": lambda normalized_query, query_tokens: not appearance_edit_request(query_tokens),
     "apple-design": _apple_design_offers_itself,
     "codebase-uml": _codebase_uml_offers_itself,
     "context": _context_alignment_offers_itself,

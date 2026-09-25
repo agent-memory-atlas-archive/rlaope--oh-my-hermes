@@ -21,6 +21,15 @@ import unittest
 from omh.routing.chat import route_chat_message
 from _route_owner import route_owner
 
+# Rows re-pinned to a clarify by shortlist-first routing (dispatch only on
+# strong evidence). Only these rows may pass as a clarify whose first
+# candidate is the expected skill; every other row must still dispatch.
+_REPINNED_NEGATIVE_CONTROLS_STAY_OUT_OF_THE_RESEARCH_LANE = frozenset(
+    {
+        "evaluate agent performance on the benchmark suite",
+    }
+)
+
 
 DISPATCH_CASES: tuple[tuple[str, str], ...] = (
     ("이 문제 해결을 위해 참고할만한 데이터 찾아줘", "source-finder"),
@@ -115,8 +124,8 @@ class ResearchRoutingMatrixTest(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 decision = route_chat_message(prompt)
                 # A weak-evidence clarify names its owner as the candidate.
-                self.assertEqual(route_owner(decision, allow_clarify=True), expected_skill, decision)
-                self.assertNotIn(route_owner(decision, allow_clarify=True), RESEARCH_SKILLS, decision)
+                self.assertEqual(route_owner(decision, allow_clarify=prompt in _REPINNED_NEGATIVE_CONTROLS_STAY_OUT_OF_THE_RESEARCH_LANE), expected_skill, decision)
+                self.assertNotIn(route_owner(decision, allow_clarify=prompt in _REPINNED_NEGATIVE_CONTROLS_STAY_OUT_OF_THE_RESEARCH_LANE), RESEARCH_SKILLS, decision)
 
     def test_deliverables_lane_still_reachable_after_trigger_cleanup(self) -> None:
         decision = route_chat_message("자료 첨부해줘")

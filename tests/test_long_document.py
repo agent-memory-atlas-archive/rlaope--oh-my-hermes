@@ -29,6 +29,15 @@ from omh.workflows.long_document import (
 from omh.wrapper.contract import build_chat_interaction_payload
 from _route_owner import route_owner
 
+# Rows re-pinned to a clarify by shortlist-first routing (dispatch only on
+# strong evidence). Only these rows may pass as a clarify whose first
+# candidate is the expected skill; every other row must still dispatch.
+_REPINNED_SHARED_WORDS_IN_WRITING_UPLOADING_OR_REVIEWING_REQUESTS_ROUT = frozenset(
+    {
+        "can you review this contract for compliance risk",
+    }
+)
+
 
 class LongDocumentContractTests(unittest.TestCase):
     def test_pages_per_range_follows_the_read_budget(self) -> None:
@@ -265,7 +274,7 @@ class LongDocumentRoutingTests(unittest.TestCase):
                     # dispatched; the scored field below still keeps the skill out.
                     self.assertNotEqual(route["action"], "dispatch")
                 else:
-                    self.assertEqual(route_owner(route, allow_clarify=True), expected)
+                    self.assertEqual(route_owner(route, allow_clarify=message in _REPINNED_SHARED_WORDS_IN_WRITING_UPLOADING_OR_REVIEWING_REQUESTS_ROUT), expected)
                 self.assertNotIn("long-document-reading", [rec["skill"] for rec in route["recommendations"]])
                 self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "long-document-reading")
 

@@ -75,27 +75,43 @@ STOPWORDS: frozenset[str] = frozenset(
 )
 
 
-def stem(token: str) -> str:
-    """Fold common English inflections so a word's forms meet.
+# Words whose final s or es is not an inflection.
+_STEM_EXCEPTIONS = frozenset({"series", "species", "news", "does", "goes", "yes", "this", "thus", "bus", "gas", "lens", "atlas"})
 
-    `issues`/`issue`, `pages`/`page`, `services`/`service`, `notes`/`note`,
-    `queries`/`query`, `fixes`/`fix`, `failing`/`failed`/`fail`,
-    `running`/`run`. A word ending in -ss, -us, or -is keeps its `s`
-    (`class`, `status`, `analysis`). It is a light stemmer, not a
-    lemmatizer: `making` and `make` still differ.
+
+def stem(token: str) -> str:
+    """Fold common English inflections so a word's forms meet; the stem need not be a word.
+
+    Rules, in order:
+    1. exceptions stay as they are (`series`, `news`, `does`, `goes`);
+    2. `-ies` -> `-y` (`queries` -> `query`);
+    3. `-es` after s/x/z/ch/sh is stripped (`caches` -> `cach`, `fixes` -> `fix`);
+    4. a plain `-s` is stripped unless the word ends in -ss, -us, or -is
+       (`pages` -> `page`, `class`, `status`, `analysis` stay);
+    5. `-ing` / `-ed` are stripped, with a doubled final consonant undone
+       (`running` -> `run`, `failed` -> `fail`);
+    6. a final silent `e` is dropped from words longer than four letters, so
+       `cache`/`caches`, `style`/`styling`, `service`/`services`,
+       `issue`/`issues` meet, while short words (`note`, `page`) keep it.
+    A light stemmer, not a lemmatizer: `make` and `making` still differ.
     """
+    if token in _STEM_EXCEPTIONS:
+        return token
     if len(token) > 4 and token.endswith("ies"):
         return token[:-3] + "y"
-    if len(token) > 4 and token.endswith(("sses", "xes", "ches", "shes", "zes")):
-        return token[:-2]
+    if len(token) > 4 and token.endswith(("sses", "xes", "zes", "ches", "shes")):
+        token = token[:-2]
+    elif len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        token = token[:-1]
     for suffix in ("ing", "ed"):
         if len(token) > len(suffix) + 3 and token.endswith(suffix):
             base = token[: -len(suffix)]
             if len(base) > 2 and base[-1] == base[-2] and base[-1] not in "lsz":
                 base = base[:-1]
-            return base
-    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
-        return token[:-1]
+            token = base
+            break
+    if len(token) > 4 and token.endswith("e") and not token.endswith("ee"):
+        token = token[:-1]
     return token
 
 

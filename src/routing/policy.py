@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 from functools import lru_cache
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from .request_shapes import command_words
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS,
@@ -6306,6 +6307,28 @@ def _deep_interview_guard_applies(normalized_query: str, query_tokens: set[str])
     return (interview or clarify) and before_plan
 
 
+# The words of a message from its command verb on, after an optional courtesy
+# opener ("please", "can you") or an address to the assistant ("omh").
+# Used only to NARROW guards: an edit verb that is not the command verb does
+# not make a request an edit.
+_COURTESY_OPENERS = (
+    "please ", "pls ", "can you ", "could you ", "would you ", "will you ", "can we ", "could we ",
+    "kindly ", "hey ", "ok ", "okay ", "now ", "omh ", "hermes ", "hermes, ",
+)
+
+
+def _command_words(normalized_query: str) -> list[str]:
+    text = normalized_query.strip()
+    changed = True
+    while changed:
+        changed = False
+        for opener in _COURTESY_OPENERS:
+            if text.startswith(opener):
+                text = text[len(opener) :].lstrip(" ,")
+                changed = True
+    return re.findall(r"[a-z0-9#][a-z0-9#+.-]*", text)
+
+
 # Code-shaped objects: the nouns a code edit acts on. The direct code-edit
 # guard needs one; `_CODE_UNIT_TOKENS`, the units of source code among them,
 # is what the file-operation guard declines a file named by.
@@ -6317,13 +6340,9 @@ _CODE_OBJECT_TOKENS = frozenset(
     }
 )
 _CODE_UNIT_TOKENS = frozenset({"class", "component", "function", "method", "module", "variable"})
-_REPAIR_VERBS = frozenset({"fix", "repair", "patch"})
 _UI_BUILD_SURFACES = frozenset({"page", "pages", "screen", "screens", "sidebar", "dashboard", "form", "landing", "site", "website"})
 _DIRECT_CODING_EDIT_VERBS = frozenset(
     {"add", "adjust", "build", "change", "delete", "edit", "fix", "implement", "make", "patch", "remove", "rename", "set", "tweak", "update"}
-)
-_RUNTIME_OBJECT_TOKENS = frozenset(
-    {"log", "logs", "logging", "output", "worker", "workers", "job", "jobs", "handler", "script", "query", "crash"}
 )
 _CADENCE_TIME_WORDS = frozenset(
     {
@@ -6375,7 +6394,7 @@ def _direct_coding_task_guard_applies(
     # A delegation to a named coding agent ("have codex fix ...") puts the
     # edit verb after the agent; that is still the command.
     if normalized_query.isascii() and not _contains_named_coding_agent_phrase(normalized_query):
-        words = command_words(normalized_query)
+        words = _command_words(normalized_query)
         # The command verb, a verb introduced as the task ("use X to fix",
         # "help me fix"), or a second command joined by "and"/"then".
         commanded = set(words[:1]) | {words[i] for i in range(1, len(words)) if words[i - 1] in {"to", "me", "and", "then"}}
@@ -6423,12 +6442,8 @@ def _direct_coding_task_guard_applies(
     object_tokens = (
         query_tokens - {"api"} if _contains_phrase(normalized_query, ("api key", "api keys")) else query_tokens
     )
-    # A repair verb in command position ("fix", "repair", "patch") takes a
-    # running part of the system as its object too: its logs, output, a
-    # worker, a job, a handler.
-    repair_request = bool(command_words(normalized_query)[:1]) and command_words(normalized_query)[0] in _REPAIR_VERBS
     concrete_surface = bool(
-        (_CODE_OBJECT_TOKENS | {"로그", "출력", "테스트"} | (_RUNTIME_OBJECT_TOKENS if repair_request else frozenset()))
+        (_CODE_OBJECT_TOKENS | {"로그", "출력", "테스트"})
         & object_tokens
     ) or _contains_phrase(
         normalized_query,
@@ -6563,7 +6578,7 @@ def _feedback_before_coding_guard_applies(
     if _REPLY_VERBS & query_tokens or (_FILING_TARGETS & query_tokens and _FILING_ACTIONS & query_tokens):
         return False
     # A test command is QA, and memory that grows or leaks is performance.
-    if command_words(normalized_query)[:1] == ["test"]:
+    if _command_words(normalized_query)[:1] == ["test"]:
         return False
     if "memory" in query_tokens and (_SYSTEM_MEMORY_WORDS | {"grow", "grows", "growing"}) & query_tokens:
         return False
@@ -9196,6 +9211,11 @@ _APPEARANCE_NOUNS = frozenset(
 )
 
 
+def appearance_edit_request(query_tokens: set[str]) -> bool:
+    """An edit verb plus an appearance noun: a change to how something looks."""
+    return bool(_EDIT_VERBS & query_tokens) and bool(_APPEARANCE_NOUNS & query_tokens)
+
+
 def _browser_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _BROWSER_OPERATOR_LIVE_INCIDENT_BLOCKERS):
         return False
@@ -9208,7 +9228,7 @@ def _browser_operator_guard_applies(normalized_query: str, query_tokens: set[str
     # Changing how a page looks is a frontend change, not operating a browser
     # on it: an edit verb plus an appearance noun hands the request on. A
     # named SaaS app is the connector lane's, not a page to operate.
-    if _EDIT_VERBS & query_tokens and _APPEARANCE_NOUNS & query_tokens:
+    if appearance_edit_request(query_tokens):
         return False
     if _CONNECTOR_OPERATOR_CONTEXT_TOKENS & query_tokens:
         return False
@@ -9311,7 +9331,7 @@ def _connector_operator_guard_applies(normalized_query: str, query_tokens: set[s
     # release, not an action in a connected app.
     if has_cadence(normalized_query, query_tokens):
         return False
-    if command_words(normalized_query)[:1] and command_words(normalized_query)[0] in {"deploy", "ship", "release"}:
+    if _command_words(normalized_query)[:1] and _command_words(normalized_query)[0] in {"deploy", "ship", "release"}:
         return False
     # Preparing provider or profile configuration is posture, not an action
     # in a connected app.
@@ -9558,6 +9578,9 @@ def _delivery_cycle_guard_applies(
     visual_summary_applies: bool | None = None,
 ) -> bool:
     if _cached_visual_summary_applies(normalized_query, query_tokens, visual_summary_applies):
+        return False
+    # Reviewing a pull request is a review, not a request to deliver one.
+    if _command_words(normalized_query)[:1] == ["review"]:
         return False
     return _delivery_cycle_terms(normalized_query, query_tokens) and _contains_phrase(
         normalized_query,

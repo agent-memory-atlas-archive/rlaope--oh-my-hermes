@@ -114,9 +114,18 @@ class WeakEvidenceRouteTests(unittest.TestCase):
         # The declined winner leads the shortlist.
         self.assertEqual(route["candidate_handoff"]["candidates"][0]["skill"], route["candidate_skill"])
 
-    def test_the_declined_winner_always_leads_the_shortlist(self) -> None:
-        route = self._assert_weak_clarify("refactor the auth module")
-        self.assertIn("ai-slop-cleaner", [c["skill"] for c in route["candidate_handoff"]["candidates"]])
+    def test_the_declined_winner_leads_even_where_the_ranking_would_not(self) -> None:
+        from omh.routing.lexical_shortlist import lexical_ranking
+        from omh.routing.recommend import recommend_skills
+
+        message = "refactor the auth module"
+        declined_winner = recommend_skills(message, limit=1)[0]["skill"]
+        lexical_first = lexical_ranking(message)[0][0]
+        # The case is only a test of the rule when the two disagree.
+        self.assertNotEqual(declined_winner, lexical_first)
+        route = self._assert_weak_clarify(message)
+        self.assertEqual(route["candidate_handoff"]["candidates"][0]["skill"], declined_winner)
+        self.assertEqual(route["candidate_skill"], declined_winner)
 
     def test_last_time_does_not_carry_a_live_information_guard(self) -> None:
         # `what` plus `time` fired the live-information guard for +42 on a
@@ -161,44 +170,40 @@ class NarrowedGuardTests(unittest.TestCase):
         self.assertEqual(route["selected_skill"], "ultrawork")
 
 
-class RequestShapeTests(unittest.TestCase):
-    """Canonical requests dispatch by shape; the same words out of shape ask."""
+class CanonicalRequestsAskWithTheRightSkillFirstTests(unittest.TestCase):
+    """Shortlist-first: a canonical request without a phrase of its own asks,
+    and the intended skill is the FIRST candidate -- pinned by position."""
 
-    def _dispatch(self, message: str) -> str:
-        route = route_chat_message(message, source="discord")
-        self.assertEqual(route["action"], "dispatch", message)
-        return str(route["selected_skill"])
+    CASES = (
+        ("the CI build is failing on main", "build-failure-triage"),
+        ("deploy the app to production", "deploy-and-monitor"),
+        ("file this bug on GitHub for the team", "github-issue-intake"),
+        ("change the login page style to match the brand", "frontend"),
+        ("review PR 1234", "code-review"),
+    )
 
-    def _no_dispatch(self, message: str) -> None:
-        self.assertNotEqual(route_chat_message(message, source="discord")["action"], "dispatch", message)
-
-    def test_review_verb_on_a_change_set(self) -> None:
-        for message in ("review PR 1234", "can you review this pull request", "look over my changes before release"):
+    def test_each_asks_with_the_intended_skill_first(self) -> None:
+        for message, skill in self.CASES:
             with self.subTest(message=message):
-                self.assertEqual(self._dispatch(message), "code-review")
-        self._no_dispatch("the review of our budget changes is due friday")
+                route = route_chat_message(message, source="discord")
+                self.assertEqual(route["action"], "clarify")
+                self.assertEqual(route["candidate_skill"], skill)
+                self.assertEqual(route["candidate_handoff"]["candidates"][0]["skill"], skill)
 
-    def test_build_failure_in_a_code_context(self) -> None:
-        for message in ("the CI build is failing on main", "npm run build throws a bunch of TypeScript warnings"):
+    def test_everyday_sentences_with_the_same_words_do_not_dispatch(self) -> None:
+        for message in (
+            "my lint roller is broken again",
+            "promote Sarah to production manager",
+            "release the doves live at the wedding",
+            "change the color of the app icon on my phone",
+            "look over the commits my accountant made to the ledger",
+        ):
             with self.subTest(message=message):
-                self.assertEqual(self._dispatch(message), "build-failure-triage")
-        self._no_dispatch("the office build is failing its inspection")
+                self.assertNotEqual(route_chat_message(message, source="discord")["action"], "dispatch")
 
-    def test_deploy_to_production(self) -> None:
-        self.assertEqual(self._dispatch("deploy the app to production"), "deploy-and-monitor")
-        self._no_dispatch("who approved the deploy to production last week?")
-
-    def test_file_a_defect_on_github(self) -> None:
-        self.assertEqual(self._dispatch("file this bug on GitHub for the team"), "github-issue-intake")
-        self._no_dispatch("the bug I filed on GitHub last week got closed")
-
-    def test_repair_a_running_part(self) -> None:
-        self.assertEqual(self._dispatch("fix the broken log output in the worker"), "ultrawork")
-        self._no_dispatch("fix the dinner schedule for the week")
-
-    def test_appearance_change_is_frontend_not_the_browser(self) -> None:
-        self.assertEqual(self._dispatch("change the login page style to match the brand"), "frontend")
-        self.assertEqual(self._dispatch("open the login page and fill the form"), "browser-operator")
+    def test_opening_a_page_is_still_the_browser(self) -> None:
+        route = route_chat_message("open the login page and fill the form", source="discord")
+        self.assertEqual(route["selected_skill"], "browser-operator")
 
     def test_system_memory_is_not_the_memory_store(self) -> None:
         route = route_chat_message("investigate why memory usage keeps growing in prod", source="discord")

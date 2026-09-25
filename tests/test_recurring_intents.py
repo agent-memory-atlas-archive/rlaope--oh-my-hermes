@@ -32,6 +32,15 @@ from omh.workflows.recurring_intents import (
 )
 from _route_owner import dispatched_or_asked, route_owner, route_owner_harness
 
+# Rows re-pinned to a clarify by shortlist-first routing (dispatch only on
+# strong evidence). Only these rows may pass as a clarify whose first
+# candidate is the expected skill; every other row must still dispatch.
+_REPINNED_NATURAL_LANGUAGE_RECURRING_REQUEST_REACHES_THE_RECURRING_LAN = frozenset(
+    {
+        "every weekday morning at 9am sweep stale pull requests and send a Slack digest only if something changed",
+    }
+)
+
 
 REQUEST = "every weekday morning at 9am sweep stale pull requests and send a Slack digest only if something changed"
 
@@ -77,9 +86,9 @@ class RecurringIntentPreparationTests(unittest.TestCase):
 
                 # Shortlist-first: a request carried by words rather than a
                 # phrase asks, with automation-blueprint leading the shortlist.
-                self.assertTrue(dispatched_or_asked(route, allow_clarify=True))
-                self.assertEqual(route_owner(route, allow_clarify=True), "automation-blueprint")
-                self.assertEqual(route_owner_harness(route, allow_clarify=True), "scheduled-ops-blueprint")
+                self.assertTrue(dispatched_or_asked(route, allow_clarify=message in _REPINNED_NATURAL_LANGUAGE_RECURRING_REQUEST_REACHES_THE_RECURRING_LAN))
+                self.assertEqual(route_owner(route, allow_clarify=message in _REPINNED_NATURAL_LANGUAGE_RECURRING_REQUEST_REACHES_THE_RECURRING_LAN), "automation-blueprint")
+                self.assertEqual(route_owner_harness(route, allow_clarify=message in _REPINNED_NATURAL_LANGUAGE_RECURRING_REQUEST_REACHES_THE_RECURRING_LAN), "scheduled-ops-blueprint")
 
     def test_one_off_requests_do_not_become_recurring_intents(self) -> None:
         for message in (

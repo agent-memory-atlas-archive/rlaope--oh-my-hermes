@@ -7,10 +7,10 @@ All notable changes will be documented here.
 - **Shortlist first: the router dispatches only on strong evidence and
   otherwise hands Hermes the shortlist.** A confident score dispatches only
   on an explicit or named invocation, the winner's own trigger phrase (unless
-  another skill said an equal phrase), a request shape -- a review verb on a
-  pull request or diff, a failing build in a code context, a deploy to
-  production, a filing verb on a GitHub bug, an edit verb on how a page
-  looks -- or a trusted intent guard. Every guard is classified in
+  another skill said an equal phrase), or a trusted intent guard.
+  Canonical requests without a phrase of their own ("the CI build is failing
+  on main", "review PR 1234", "deploy the app to production") ask, with the
+  intended skill first on the shortlist, for Hermes or the user to confirm. Every guard is classified in
   `GUARD_DISPATCH_TRUST`, trusted only where its predicate is intent-shaped
   and its measured record supports it; guard fast paths answer to the same
   table. Everything else -- trigger tokens, a one-word name, a context-only
@@ -24,9 +24,10 @@ All notable changes will be documented here.
   narrowed with vocabulary-level rules and negative cases (failure-outcome
   words, check verbs, a cadence of a frequency word before a time, code-unit
   nouns, own-skill inventory questions, system memory, bare verb names before
-  a plain noun). Measured in-sample on the 501-message tuning set these rules
+  a plain noun), and single words that only mean a skill inside its phrase
+  are held back so they stop deciding which skill leads the shortlist. Measured in-sample on the 501-message tuning set these rules
   were checked against: wrong dispatch 30.9% -> 9.8%, intended skill
-  dispatched or shortlisted 34.3% -> 62.9% (English: 7.9% and 69.7%). On the
+  dispatched or shortlisted 34.3% -> 62.7% (English: 7.9% and 69.5%). On the
   owner's held-out English set, before the follow-up that removed
   tuning-probe wording from the predicates, wrong dispatch went 40.4% ->
   25.3% and reach 43.2% -> 62.2%; the reach target of 85% is not met.

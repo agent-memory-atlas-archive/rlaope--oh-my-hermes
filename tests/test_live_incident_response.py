@@ -13,6 +13,20 @@ from omh.skills.packaging import builtin_skill_reference_templates, builtin_skil
 from omh.wrapper.contract import build_chat_interaction_payload
 from _route_owner import route_owner
 
+# Rows re-pinned to a clarify by shortlist-first routing (dispatch only on
+# strong evidence). Only these rows may pass as a clarify whose first
+# candidate is the expected skill; every other row must still dispatch.
+_REPINNED_A_CLOSED_INCIDENT_STAYS_WITH_THE_RETROSPECTIVE_LANE = frozenset(
+    {
+        "review the incident notes and the postmortem for last week's outage",
+    }
+)
+_REPINNED_THE_SUPPORT_CASE_AND_THE_RELEASE_WATCH_KEEP_THEIR_LANES = frozenset(
+    {
+        "the deploy is healthy, monitor the error rate for an hour",
+    }
+)
+
 SKILL = "live-incident-response"
 RETROSPECTIVE_SIBLING = "reliability-review"
 SUPPORT_SIBLING = "support-operations"
@@ -142,7 +156,7 @@ class LiveIncidentRoutingTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
-                self.assertEqual(route_owner(route, allow_clarify=True), RETROSPECTIVE_SIBLING)
+                self.assertEqual(route_owner(route, allow_clarify=message in _REPINNED_A_CLOSED_INCIDENT_STAYS_WITH_THE_RETROSPECTIVE_LANE), RETROSPECTIVE_SIBLING)
                 self.assertNotIn(SKILL, [rec["skill"] for rec in route["recommendations"][:1]])
 
     def test_the_support_case_and_the_release_watch_keep_their_lanes(self) -> None:
@@ -155,7 +169,7 @@ class LiveIncidentRoutingTests(unittest.TestCase):
             ("is this release ready for production", "production-audit"),
         ):
             with self.subTest(message=message):
-                self.assertEqual(route_owner(route_chat_message(message, source="discord"), allow_clarify=True), expected)
+                self.assertEqual(route_owner(route_chat_message(message, source="discord"), allow_clarify=message in _REPINNED_THE_SUPPORT_CASE_AND_THE_RELEASE_WATCH_KEEP_THEIR_LANES), expected)
 
     def test_generic_words_in_another_sense_never_reach_the_skill(self) -> None:
         # "incident", "response", "commander", "severity", "outage",
