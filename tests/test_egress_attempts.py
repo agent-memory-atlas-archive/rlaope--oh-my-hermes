@@ -9,7 +9,7 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.plugin_bundle.omh.egress_attempts import Guard, PRIVATE_TOKEN, Target
+from omh.plugin_bundle.omh.egress_attempts import Guard, PRIVATE_ARGUMENT_KEY, Target
 
 
 class Entry:
@@ -32,22 +32,22 @@ class GuardTests(unittest.TestCase):
     def _pre(self, call: str = "call-1"):
         directive = self.guard.pre(tool_name="send_probe", session_id="session-1", tool_call_id=call)
         self.assertEqual(directive["action"], "modify")
-        return directive["args"][PRIVATE_TOKEN]
+        return directive["args"][PRIVATE_ARGUMENT_KEY]
 
     def test_final_args_are_durable_before_one_handler_and_private_token_is_stripped(self) -> None:
         token = self._pre()
         token, forwarded, error = self.guard.before_handler(
-            "send_probe", {"channel": "private-room", "body": "rewritten", PRIVATE_TOKEN: token},
+            "send_probe", {"channel": "private-room", "body": "rewritten", PRIVATE_ARGUMENT_KEY: token},
             {"session_id": "session-1"},
         )
         self.assertIsNone(error)
         self.assertEqual(forwarded, {"channel": "private-room", "body": "rewritten"})
         _, _, duplicate = self.guard.before_handler(
-            "send_probe", {"channel": "private-room", "body": "rewritten", PRIVATE_TOKEN: token},
+            "send_probe", {"channel": "private-room", "body": "rewritten", PRIVATE_ARGUMENT_KEY: token},
             {"session_id": "session-1"},
         )
         self.assertIn("BLOCKED", duplicate)
-        self.guard.post(tool_name="send_probe", args={PRIVATE_TOKEN: token}, session_id="session-1",
+        self.guard.post(tool_name="send_probe", args={PRIVATE_ARGUMENT_KEY: token}, session_id="session-1",
                         tool_call_id="call-1", status="ok")
         rows = __import__("omh.plugin_bundle.omh.egress_attempt_receipts", fromlist=["AttemptStore"]).AttemptStore(
             self.temp.name
@@ -61,11 +61,11 @@ class GuardTests(unittest.TestCase):
     def test_forged_cross_tool_or_identity_never_consumes_or_dispatches_a_token(self) -> None:
         token = self._pre()
         _, _, error = self.guard.before_handler(
-            "other_tool", {"channel": "x", "body": "y", PRIVATE_TOKEN: token}, {"session_id": "session-1"}
+            "other_tool", {"channel": "x", "body": "y", PRIVATE_ARGUMENT_KEY: token}, {"session_id": "session-1"}
         )
         self.assertIn("BLOCKED", error)
         _, forwarded, error = self.guard.before_handler(
-            "send_probe", {"channel": "x", "body": "y", PRIVATE_TOKEN: token}, {"session_id": "session-1"}
+            "send_probe", {"channel": "x", "body": "y", PRIVATE_ARGUMENT_KEY: token}, {"session_id": "session-1"}
         )
         self.assertIsNone(error)
         self.assertEqual(forwarded["body"], "y")
@@ -73,14 +73,14 @@ class GuardTests(unittest.TestCase):
     def test_duplicate_forged_posts_do_not_write_a_terminal_and_real_post_writes_one(self) -> None:
         token = self._pre()
         _, _, error = self.guard.before_handler(
-            "send_probe", {"channel": "x", "body": "y", PRIVATE_TOKEN: token}, {"session_id": "session-1"}
+            "send_probe", {"channel": "x", "body": "y", PRIVATE_ARGUMENT_KEY: token}, {"session_id": "session-1"}
         )
         self.assertIsNone(error)
-        self.guard.post(tool_name="send_probe", args={PRIVATE_TOKEN: token}, session_id="forged",
+        self.guard.post(tool_name="send_probe", args={PRIVATE_ARGUMENT_KEY: token}, session_id="forged",
                         tool_call_id="call-1", status="ok")
-        self.guard.post(tool_name="send_probe", args={PRIVATE_TOKEN: token}, session_id="session-1",
+        self.guard.post(tool_name="send_probe", args={PRIVATE_ARGUMENT_KEY: token}, session_id="session-1",
                         tool_call_id="call-1", status="error")
-        self.guard.post(tool_name="send_probe", args={PRIVATE_TOKEN: token}, session_id="session-1",
+        self.guard.post(tool_name="send_probe", args={PRIVATE_ARGUMENT_KEY: token}, session_id="session-1",
                         tool_call_id="call-1", status="ok")
         rows = __import__("omh.plugin_bundle.omh.egress_attempt_receipts", fromlist=["AttemptStore"]).AttemptStore(
             self.temp.name

@@ -314,6 +314,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
             )
         )
     latest_plugin_active = latest_plugin_readiness == "active_runtime_observed"
+    host_managed = bool(plugin["plugin_host_managed"])
     plugin_expected = bool(plugin["plugin_dir_installed"]) or bool(state and state.get("last_plugin_distribution"))
     if not plugin_expected:
         checks.append(Check("plugin_bundle", True, f"managed OMH plugin bridge is not installed yet at {paths.hermes_plugin_dir}"))
@@ -321,17 +322,23 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         checks.extend(
             [
                 Check("plugin_bundle", bool(plugin["plugin_dir_installed"]), f"{paths.hermes_plugin_dir}"),
-                Check("plugin_manifest", bool(plugin["plugin_manifest_valid"]), str(plugin["plugin_manifest_path"])),
+                Check(
+                    "plugin_manifest",
+                    bool(plugin["plugin_manifest_valid"]) or host_managed,
+                    _plugin_host_managed_message(plugin) if host_managed else str(plugin["plugin_manifest_path"]),
+                ),
                 Check(
                     "plugin_bundle_current",
-                    bool(plugin["plugin_manifest_current"]),
+                    bool(plugin["plugin_manifest_current"]) or host_managed,
                     (
-                        "installed plugin bundle matches the current OMH package"
+                        _plugin_host_managed_message(plugin)
+                        if host_managed
+                        else "installed plugin bundle matches the current OMH package"
                         if plugin["plugin_manifest_current"]
                         else _plugin_bridge_message(plugin)
                     ),
-                    remediation="" if plugin["plugin_manifest_current"] else _plugin_bridge_remediation(plugin),
-                    next_action="" if plugin["plugin_manifest_current"] else _plugin_bridge_next_action(plugin),
+                    remediation="" if plugin["plugin_manifest_current"] or host_managed else _plugin_bridge_remediation(plugin),
+                    next_action="" if plugin["plugin_manifest_current"] or host_managed else _plugin_bridge_next_action(plugin),
                 ),
                 Check(
                     "plugin_import_smoke",
@@ -2471,13 +2478,27 @@ def _hook_integrity_check(paths: OmhPaths) -> Check:
     )
 
 
+def _plugin_host_managed_message(plugin: dict) -> str:
+    host = plugin.get("plugin_host_install") or {}
+    revision = str(host.get("revision", ""))[:8] or "unknown revision"
+    return (
+        f"{plugin['plugin_dir']} was installed by Hermes ({host.get('installer', 'hermes')} @ {revision}); "
+        f"OMH leaves it in place and manages skills and config only; update the plugin with "
+        f"`{host.get('update_command', 'hermes plugins update omh')}`"
+    )
+
+
 def _plugin_bridge_remediation(plugin: dict) -> str:
+    if plugin.get("plugin_host_managed"):
+        return "Run `hermes plugins update omh`; OMH does not write a plugin directory Hermes installed."
     if plugin.get("plugin_bundle_stale"):
         return "Run `omh setup` to refresh the managed plugin bridge from the current OMH package."
     return "Run `omh setup`; use `omh setup --force` only if replacing local plugin edits is intended."
 
 
 def _plugin_bridge_next_action(plugin: dict) -> str:
+    if plugin.get("plugin_host_managed"):
+        return "Run `hermes plugins update omh`, then `omh doctor` again."
     if plugin.get("plugin_bundle_stale"):
         return "Run `omh setup`, then `omh doctor` again."
     return "Run `omh setup --force`, then `omh doctor` again."

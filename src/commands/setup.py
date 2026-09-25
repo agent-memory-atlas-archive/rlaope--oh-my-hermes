@@ -977,6 +977,12 @@ def _refresh_installed_plugin_bundle(args: argparse.Namespace) -> dict[str, obje
         # An update must not fail over a bundle a later `omh setup --force` can
         # repair; `omh doctor` reports the drift with the instruction to run it.
         return None
+    if result.get("status") == "host_managed":
+        print(
+            f"note: {paths.hermes_plugin_dir} was installed by Hermes; OMH left it in place. "
+            "Update the plugin with `hermes plugins update omh`.",
+            file=sys.stderr,
+        )
     if not args.dry_run:
         update_state(paths, {"last_plugin_distribution": result})
     return result
@@ -5258,10 +5264,34 @@ def _executor_summary(language: str, executor: str) -> str:
 def _plugin_status_label(language: str, status: str) -> str:
     code = normalize_language(language)
     labels = {
-        "en": {"installed": "ready", "would_install": "would be installed", "unchanged": "ready", "updated": "updated"},
-        "ko": {"installed": "준비됨", "would_install": "설치 예정", "unchanged": "준비됨", "updated": "업데이트됨"},
-        "ja": {"installed": "準備完了", "would_install": "インストール予定", "unchanged": "準備完了", "updated": "更新済み"},
-        "zh": {"installed": "已就绪", "would_install": "将安装", "unchanged": "已就绪", "updated": "已更新"},
+        "en": {
+            "installed": "ready",
+            "would_install": "would be installed",
+            "unchanged": "ready",
+            "updated": "updated",
+            "host_managed": "managed by Hermes; update with `hermes plugins update omh`",
+        },
+        "ko": {
+            "installed": "준비됨",
+            "would_install": "설치 예정",
+            "unchanged": "준비됨",
+            "updated": "업데이트됨",
+            "host_managed": "Hermes가 관리함; `hermes plugins update omh`로 업데이트",
+        },
+        "ja": {
+            "installed": "準備完了",
+            "would_install": "インストール予定",
+            "unchanged": "準備完了",
+            "updated": "更新済み",
+            "host_managed": "Hermes が管理; `hermes plugins update omh` で更新",
+        },
+        "zh": {
+            "installed": "已就绪",
+            "would_install": "将安装",
+            "unchanged": "已就绪",
+            "updated": "已更新",
+            "host_managed": "由 Hermes 管理; 使用 `hermes plugins update omh` 更新",
+        },
     }
     return labels.get(code, labels["en"]).get(status, status)
 

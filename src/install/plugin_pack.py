@@ -11,7 +11,15 @@ from typing import Any, Mapping
 
 from ..version import __version__
 from ..hashutil import sha256_file, sha256_text
-from ..local_store import atomic_write_json, discard_path, ensure_dir, is_directory_link, read_json_object, utc_now
+from ..local_store import (
+    atomic_write_json,
+    discard_path,
+    ensure_dir,
+    is_directory_link,
+    read_json_object,
+    read_json_object_result,
+    utc_now,
+)
 from ..paths import OmhPaths
 from ..plugin_bundle.omh.host_compat import HERMES_RANGE_FIELD, parse_range
 from ..plugin_bundle.omh.metadata import PROVIDED_HOOKS, PROVIDED_TOOLS, REQUIRED_HOOKS
@@ -20,6 +28,15 @@ PLUGIN_NAME = "omh"
 PLUGIN_SCHEMA_VERSION = "plugin_distribution/v1"
 PLUGIN_MANAGED_MANIFEST = ".omh-plugin-manifest.json"
 PLUGIN_ENABLE_HINT = "Hermes may require `hermes plugins enable omh` after the bundle is installed."
+# Hermes' own records of a plugin that `hermes plugins install` put in place:
+# the profile-wide sidecar `<plugins>/.install-metadata.json` keyed by plugin
+# name (hermes_cli/plugins_cmd.py `_install_metadata_path`,
+# `_install_plugin_core`) and, for a curated-catalog install, the provenance
+# file inside the plugin directory (hermes_cli/plugins_cmd_catalog.py
+# `CATALOG_SIDECAR`). Read only; OMH never writes either.
+HERMES_INSTALL_METADATA = ".install-metadata.json"
+HERMES_CATALOG_SIDECAR = ".hermes-catalog.json"
+HERMES_PLUGIN_UPDATE_COMMAND = "hermes plugins update omh"
 
 # The enforcement probe's vocabulary (issue #1561). Every name here is
 # fabricated: no host serves a tool by either name and `PROVIDED_TOOLS` lists
@@ -124,9 +141,52 @@ def validate_tool_definitions(tool_definitions: list[dict[str, object]]) -> list
     return failures
 
 
+def host_managed_plugin(target: Path) -> dict[str, str] | None:
+    """Hermes' own record that `hermes plugins install` put *target* in place, or None.
+
+    Both installers replace the whole directory, so the one that wrote last
+    owns it: an OMH manifest inside means OMH wrote it, whatever Hermes'
+    metadata still says; without one, a Hermes install-metadata entry or a
+    catalog sidecar means Hermes did. That plugin is updated by Hermes
+    (`hermes plugins update omh` re-pins a catalog install to its reviewed
+    SHA), so OMH neither overwrites it nor reports it as drift -- even under
+    `--force`, which would leave Hermes' pin recorded against files it no
+    longer describes. Switching back is `hermes plugins remove omh`, then
+    `omh setup`.
+    """
+    if not target.is_dir() or read_plugin_manifest(target) is not None:
+        return None
+    metadata, _ = read_json_object_result(target.parent / HERMES_INSTALL_METADATA)
+    entry = metadata.get(target.name) if isinstance(metadata, dict) else None
+    entry = entry if isinstance(entry, dict) else None
+    sidecar, _ = read_json_object_result(target / HERMES_CATALOG_SIDECAR)
+    sidecar = sidecar if isinstance(sidecar, dict) and sidecar.get("catalog_name") else None
+    if entry is None and sidecar is None:
+        return None
+    return {
+        "installer": "hermes_catalog" if sidecar is not None else "hermes_git",
+        "source": str((sidecar or {}).get("repo") or (entry or {}).get("source") or ""),
+        "revision": str((sidecar or {}).get("sha") or (entry or {}).get("revision") or ""),
+        "update_command": HERMES_PLUGIN_UPDATE_COMMAND,
+    }
+
+
 def install_plugin_bundle(paths: OmhPaths, *, force: bool = False, dry_run: bool = False) -> dict[str, Any]:
     target = paths.hermes_plugin_dir
     source_records = bundled_plugin_records()
+    host_install = host_managed_plugin(target)
+    if host_install is not None:
+        result = _plugin_distribution_payload(
+            paths, dry_run=dry_run, observed=not dry_run, changed=False, file_records=source_records, dirty_files=[]
+        )
+        result.update(
+            {
+                "status": "host_managed",
+                "host_install": host_install,
+                "observed_scope": "Hermes installed this plugin directory; OMH wrote nothing to it",
+            }
+        )
+        return result
     existing_manifest = read_plugin_manifest(target)
     dirty = plugin_local_modifications(existing_manifest, target)
     # `is_directory_link` as well as `exists`: `Path.exists` follows the link,
@@ -168,6 +228,7 @@ def install_plugin_bundle(paths: OmhPaths, *, force: bool = False, dry_run: bool
 def inspect_plugin_bundle(paths: OmhPaths) -> dict[str, Any]:
     target = paths.hermes_plugin_dir
     manifest = read_plugin_manifest(target)
+    host_install = host_managed_plugin(target)
     bundled_records = bundled_plugin_records()
     manifest_file_map = _manifest_file_map(manifest)
     bundled_file_map = _record_file_map(bundled_records)
@@ -177,11 +238,11 @@ def inspect_plugin_bundle(paths: OmhPaths) -> dict[str, Any]:
     errors: list[str] = []
     if target.exists() and not target.is_dir():
         errors.append(f"{target} is not a directory")
-    if target.exists() and not manifest:
+    if target.exists() and not manifest and host_install is None:
         errors.append(f"{target / PLUGIN_MANAGED_MANIFEST} is missing or unreadable")
     manifest_valid = _manifest_valid(manifest, target)
     manifest_current = manifest_valid and manifest_file_map == bundled_file_map
-    if target.exists() and not manifest_valid:
+    if target.exists() and not manifest_valid and host_install is None:
         errors.append("plugin manifest is invalid or managed files changed")
     if target.exists() and manifest_valid and not manifest_current:
         errors.append("plugin bundle is stale relative to the installed OMH package; run `omh setup` to refresh it")
@@ -229,6 +290,8 @@ def inspect_plugin_bundle(paths: OmhPaths) -> dict[str, Any]:
         "plugin_manifest_valid": manifest_valid,
         "plugin_manifest_current": manifest_current,
         "plugin_bundle_stale": target.exists() and manifest_valid and not manifest_current,
+        "plugin_host_managed": host_install is not None,
+        "plugin_host_install": host_install or {},
         "plugin_yaml_present": plugin_yaml.exists(),
         "plugin_manifest_conformance": conformance,
         "plugin_import_smoke": import_smoke,
@@ -244,7 +307,7 @@ def inspect_plugin_bundle(paths: OmhPaths) -> dict[str, Any]:
         "tool_schema_failures": schema_failures,
         "plugin_distribution_ready": bool(
             target.exists()
-            and manifest_current
+            and (manifest_current or host_install is not None)
             and conformance["ok"]
             and import_smoke
             and register_smoke
