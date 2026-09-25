@@ -14,7 +14,8 @@ be a user learning to type "load OMH" by hand. This records the one fact that
 distinguishes those worlds.
 
 The ledger observes the `pre_llm_call` hook returning injection content, and
-the `omh.awareness` system prompt section rendering the primer. It is
+that hook leaving the primer to the `omh.awareness` system prompt section
+(counted once per session). It is
 not host-consumption acknowledgement and does not prove a model received,
 processed, or acted on that content.
 

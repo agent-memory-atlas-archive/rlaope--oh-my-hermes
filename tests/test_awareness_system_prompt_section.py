@@ -1,6 +1,6 @@
 """The awareness primer as a Hermes system prompt section, with its fallback.
 
-Hermes 0.20.4 (tag v2026.8.18) added `register_system_prompt_section`: text
+Hermes 0.20.2 (tag v2026.8.16) added `register_system_prompt_section`: text
 rendered once per new session and frozen into its system prompt. The primer is
 session-stable, so on such a host it is registered there and `pre_llm_call`
 stops carrying it for the sessions the section rendered for. A host without
@@ -112,7 +112,7 @@ class RegistrationTests(SectionTestCase):
         self.assertLessEqual(int(section["max_chars"]), _HOST_MAX_SECTION_CHARS)
         content = section["content"]
         self.assertTrue(callable(content))
-        text = content(_session_info("s-1"), omh_home=str(self.omh_home))
+        text = content(_session_info("s-1"))
         self.assertEqual(text, awareness_primer_context())
         self.assertLessEqual(len(text), AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT)
         self.assertLessEqual(len(text), int(section["max_chars"]))
@@ -138,7 +138,7 @@ class RegistrationTests(SectionTestCase):
 
 class FrozenContentTests(SectionTestCase):
     def test_the_rendered_text_carries_no_session_or_turn_data(self) -> None:
-        a = llm_hooks.awareness_system_prompt_section(_session_info("session-alpha-123"), omh_home=str(self.omh_home))
+        a = llm_hooks.awareness_system_prompt_section(_session_info("session-alpha-123"))
         b = llm_hooks.awareness_system_prompt_section(
             _session_info(
                 "session-beta-456",
@@ -148,7 +148,6 @@ class FrozenContentTests(SectionTestCase):
                 profile_name="miku",
                 cwd="/srv/other-checkout",
             ),
-            omh_home=str(self.omh_home),
         )
         self.assertEqual(a, b)
         for value in ("session-alpha-123", "gpt-6-astra", "/tmp/project-a", "cli", "default"):
@@ -158,19 +157,19 @@ class FrozenContentTests(SectionTestCase):
     def test_the_rendered_text_is_the_same_after_a_turn_ran(self) -> None:
         # A turn writes its own state (delivery ledger, plan counters); the
         # section reads none of it.
-        before = llm_hooks.awareness_system_prompt_section(_session_info("s-state"), omh_home=str(self.omh_home))
+        before = llm_hooks.awareness_system_prompt_section(_session_info("s-state"))
         self.first_turn_context("s-state")
-        after = llm_hooks.awareness_system_prompt_section(_session_info("s-state"), omh_home=str(self.omh_home))
+        after = llm_hooks.awareness_system_prompt_section(_session_info("s-state"))
         self.assertEqual(before, after)
 
 
 class PerTurnDeliveryTests(SectionTestCase):
     def test_a_session_the_section_rendered_for_gets_no_per_turn_primer(self) -> None:
-        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"), omh_home=str(self.omh_home))
+        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"))
         self.assertNotIn(awareness_primer_context(), self.first_turn_context("s-sectioned"))
 
     def test_a_session_the_section_did_not_render_for_still_gets_it(self) -> None:
-        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"), omh_home=str(self.omh_home))
+        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"))
         self.assertIn(awareness_primer_context(), self.first_turn_context("s-resumed-after-restart"))
 
     def test_a_primer_the_host_would_skip_is_not_recorded_as_delivered(self) -> None:
@@ -178,11 +177,11 @@ class PerTurnDeliveryTests(SectionTestCase):
         # rendering it, so the session must keep the per-turn primer.
         oversized = "p" * (llm_hooks.AWARENESS_SECTION_MAX_CHARS + 1)
         with mock.patch.object(llm_hooks, "awareness_primer_context", return_value=oversized):
-            llm_hooks.awareness_system_prompt_section(_session_info("s-oversized"), omh_home=str(self.omh_home))
+            llm_hooks.awareness_system_prompt_section(_session_info("s-oversized"))
             self.assertIn(oversized, self.first_turn_context("s-oversized"))
 
     def test_an_empty_session_id_is_never_recorded(self) -> None:
-        llm_hooks.awareness_system_prompt_section(_session_info(""), omh_home=str(self.omh_home))
+        llm_hooks.awareness_system_prompt_section(_session_info(""))
         self.assertIn(awareness_primer_context(), self.first_turn_context(""))
 
 
@@ -204,31 +203,73 @@ class DoctorDeliveryTests(SectionTestCase):
     def _check(self, paths):
         return _awareness_delivery_check(paths, now=datetime(2026, 8, 1, tzinfo=UTC))
 
-    def test_a_section_render_counts_as_a_delivery(self) -> None:
+    def later_turn(self, session_id: str) -> str:
+        payload = llm_hooks.pre_llm_call(
+            omh_home=str(self.omh_home),
+            hermes_home=str(self.hermes_home),
+            session_id=session_id,
+            user_message="thanks",
+            is_first_turn=False,
+        )
+        return str((payload or {}).get("context", ""))
+
+    def test_a_section_session_turn_counts_one_delivery(self) -> None:
         paths = self._attempted_long_ago()
-        llm_hooks.awareness_system_prompt_section(_session_info("s-doctor"), omh_home=str(self.omh_home))
-        # The session's turns now inject nothing, which is the case at issue.
+        llm_hooks.awareness_system_prompt_section(_session_info("s-doctor"))
+        # The session's first turn injects nothing: the case at issue.
         self.assertEqual(self.first_turn_context("s-doctor"), "")
         record = read_awareness_delivery(str(self.omh_home))
         self.assertEqual(record["delivery_count"], 1)
         self.assertEqual(record["last_context_chars"], len(awareness_primer_context()))
+        # Counted once per session, not once per turn.
+        self.first_turn_context("s-doctor")
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 1)
         check = self._check(paths)
         self.assertTrue(check.ok)
         self.assertEqual(check.severity, "ok")
 
-    def test_no_section_and_no_payload_still_warns(self) -> None:
+    def test_a_render_without_a_turn_is_not_a_delivery(self) -> None:
+        # `hermes prompt-size` and a routed review fork render the section
+        # without a `pre_llm_call` for that id.
         paths = self._attempted_long_ago()
-        # Neither render records: no session id, and a primer the host would drop.
-        llm_hooks.awareness_system_prompt_section(_session_info(""), omh_home=str(self.omh_home))
-        oversized = "p" * (llm_hooks.AWARENESS_SECTION_MAX_CHARS + 1)
-        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value=oversized):
-            llm_hooks.awareness_system_prompt_section(_session_info("s-dropped"), omh_home=str(self.omh_home))
+        llm_hooks.awareness_system_prompt_section(_session_info("prompt-size-inspection"))
         self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 0)
         check = self._check(paths)
         self.assertFalse(check.ok)
         self.assertEqual(check.severity, "warning")
         self.assertIn("for at least 7 days", check.message)
 
+    def test_no_section_and_no_payload_still_warns(self) -> None:
+        paths = self._attempted_long_ago()
+        # A later turn with nothing to inject, in a session no section rendered for.
+        self.assertEqual(self.later_turn("s-plain"), "")
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 0)
+        check = self._check(paths)
+        self.assertFalse(check.ok)
+        self.assertEqual(check.severity, "warning")
+
+
+class SessionBoundTests(SectionTestCase):
+    def test_recorded_sessions_are_bounded_oldest_first(self) -> None:
+        cap = llm_hooks._AWARENESS_SECTION_SESSION_CAP
+        for index in range(cap + 1):
+            llm_hooks.awareness_system_prompt_section(_session_info(f"s-{index}"))
+        self.assertEqual(len(llm_hooks._awareness_section_sessions), cap)
+        # The evicted session falls back to the per-turn primer; the newest keeps the section.
+        self.assertIn(awareness_primer_context(), self.first_turn_context("s-0"))
+        self.assertNotIn(awareness_primer_context(), self.first_turn_context(f"s-{cap}"))
+
+    def test_a_later_turn_keeps_the_section(self) -> None:
+        # Hermes fires `on_session_end` at every turn's end; nothing at a turn
+        # boundary may forget the session.
+        llm_hooks.awareness_system_prompt_section(_session_info("s-turns"))
+        self.first_turn_context("s-turns")
+        from omh.plugin_bundle.omh.hooks.session_hooks import on_session_end
+
+        on_session_end(
+            session_id="s-turns", omh_home=str(self.omh_home), hermes_home=str(self.hermes_home)
+        )
+        self.assertNotIn(awareness_primer_context(), self.first_turn_context("s-turns"))
 
 if __name__ == "__main__":
     unittest.main()

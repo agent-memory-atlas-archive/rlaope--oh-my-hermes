@@ -203,7 +203,7 @@ def _record_delivery(
 
 # The primer is the one part of this hook's output that never depends on the
 # turn, so on a host that offers `register_system_prompt_section` (Hermes
-# 0.20.4, tag v2026.8.18) it lives in the system prompt instead: rendered once
+# 0.20.2, tag v2026.8.16) it lives in the system prompt instead: rendered once
 # per new session, frozen there, and rendered again at a compaction boundary.
 # In the user message it went out on the first turn and again after any
 # compaction that dropped it, and it sat behind the fence's "NOT the person's
@@ -212,56 +212,70 @@ def _record_delivery(
 # The host renders the callable, then may still skip the text: over
 # `max_chars`, empty, or past the 8,000-char budget shared by every plugin's
 # sections. The first two are checked here before the session is recorded.
-# The shared budget cannot be seen from here, so a session that loses it gets
-# no primer; the host logs a warning when that happens.
+# The shared budget cannot be seen from here, and the host spends it in
+# sorted-id order (`render_system_prompt_sections`), so a plugin whose section
+# id sorts before `omh.awareness` is charged first. A session that loses it
+# gets no primer; the host logs a warning when that happens.
 #
-# A session this process did not render -- an older host, or a resume after a
-# restart, where the host restores the section from the persisted prompt
-# without calling this -- is not recorded, and `pre_llm_call` delivers the
-# primer as it did before. For a restored session that can mean the primer
-# twice, once in each place; it never means zero.
+# Every prompt the host builds renders the callable, not only a live
+# session's: `hermes prompt-size` builds an inspection agent, and a routed
+# background-review fork builds its own prompt. Both now carry the primer.
+# Neither runs `pre_llm_call` for its id, so a render alone is not counted as
+# a delivery; the first `pre_llm_call` that leaves the primer out for a
+# recorded session is (`_claim_section_delivery`).
+#
+# A session this process did not render for keeps the per-turn primer, and
+# can then carry it twice, once in each place, but never zero times:
+# - an older host, or a section the host refused;
+# - a resume after a restart, where the host restores the section from the
+#   persisted prompt without calling this;
+# - a legacy compaction that rotates the session id: the host rebuilds the
+#   prompt (`_rebuild_system_prompt_at_boundary`) before it assigns the new id
+#   (`agent.session_id = new_session_id` in `conversation_compression.py`), so
+#   the render records the old id and the next turn runs under the new one;
+# - an id evicted past `_AWARENESS_SECTION_SESSION_CAP`.
 AWARENESS_SECTION_ID = "omh.awareness"
 # The host's per-section ceiling (`MAX_SYSTEM_PROMPT_SECTION_CHARS`). The
 # primer's own budget is `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT`, far below it.
 AWARENESS_SECTION_MAX_CHARS = 4000
+# Recorded sessions, oldest first, each mapped to whether its section delivery
+# was counted. Bounded rather than cleared at a lifecycle hook: Hermes fires
+# `on_session_end` at every turn's end, so clearing there would put the
+# primer back into the next turn. An evicted id falls back to the per-turn
+# primer, the safe direction.
+_AWARENESS_SECTION_SESSION_CAP = 1024
 _awareness_section_lock = threading.Lock()
-_awareness_section_sessions: set[str] = set()
+_awareness_section_sessions: dict[str, bool] = {}
 
 
-def awareness_system_prompt_section(session_info: object, *, omh_home: str | None = None) -> str:
+def awareness_system_prompt_section(session_info: object) -> str:
     """The primer, for Hermes to freeze into a new session's system prompt.
 
     The text is the same for every session. `session_info` is read only for
     the session id, to record that this session's prompt carries the primer.
-    The host passes no `omh_home`; the store is resolved the way the hooks
-    resolve it.
     """
     primer = awareness_primer_context()
     session_id = str(session_info.get("session_id") or "") if isinstance(session_info, Mapping) else ""
     if session_id and 0 < len(primer.strip()) <= AWARENESS_SECTION_MAX_CHARS:
         with _awareness_section_lock:
-            _awareness_section_sessions.add(session_id)
-        # The primer no longer rides a `pre_llm_call` payload for this
-        # session, so the render is the delivery `omh doctor` counts; without
-        # it a quiet install reads as a dead hook. The host may still drop the
-        # section past its shared budget, and nothing it exposes says so.
-        try:
-            home = str(runtime_paths.plugin_home(omh_home))
-        except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
-            return primer
-        _record_delivery(
-            delivered=True,
-            route_hint=False,
-            context_chars=len(primer),
-            omh_home=home,
-            session_id=session_id,
-        )
+            _awareness_section_sessions.setdefault(session_id, False)
+            while len(_awareness_section_sessions) > _AWARENESS_SECTION_SESSION_CAP:
+                del _awareness_section_sessions[next(iter(_awareness_section_sessions))]
     return primer
 
 
 def _awareness_section_carries_primer(session_id: str) -> bool:
     with _awareness_section_lock:
         return bool(session_id) and session_id in _awareness_section_sessions
+
+
+def _claim_section_delivery(session_id: str) -> bool:
+    """True once per recorded session: the turn that counts its section delivery."""
+    with _awareness_section_lock:
+        if _awareness_section_sessions.get(session_id) is not False:
+            return False
+        _awareness_section_sessions[session_id] = True
+        return True
 
 
 def _reset_awareness_section_state() -> None:
@@ -462,6 +476,7 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     route_hint_context = ""
     route_hint_payload: dict[str, object] | None = None
     route_fingerprint = ""
+    section_primer_chars = 0
     session_id = str(kwargs.get("session_id", "") or "")
     # Read once per turn and handed to every surface that branches on it, so
     # the plan line, the claim-finding suppression and the router cannot
@@ -574,9 +589,13 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     )
     if should_include_awareness:
         primer = awareness_primer_context()
-        if not _awareness_section_carries_primer(session_id) and not _primer_already_in_api_history(
-            kwargs.get("conversation_history"), primer
-        ):
+        if _awareness_section_carries_primer(session_id):
+            # The primer is in this session's system prompt. The first turn
+            # that relies on it is the section's delivery for `omh doctor`,
+            # counted below whether or not anything else is injected.
+            if _claim_section_delivery(session_id):
+                section_primer_chars = len(primer)
+        elif not _primer_already_in_api_history(kwargs.get("conversation_history"), primer):
             context_parts.append(primer)
         payload["omh_context_brief"] = build_context_brief(
             request_message,
@@ -757,6 +776,14 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         and not status.get("active_executors")
         and not show_running_work
     ):
+        if section_primer_chars:
+            _record_delivery(
+                delivered=True,
+                route_hint=False,
+                context_chars=section_primer_chars,
+                omh_home=omh_home,
+                session_id=session_id,
+            )
         return None
 
     if status.get("active_executors"):

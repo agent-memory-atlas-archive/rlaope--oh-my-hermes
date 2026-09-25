@@ -230,7 +230,7 @@ raw user message or prove a workflow executed. For capability/catalog questions,
 the context brief adds `omh_catalog_question_hint/v1` so Hermes can show the
 workflow picker or capability summary without shell approval. The
 session-stable awareness primer is not part of that per-turn payload on a host
-with `register_system_prompt_section` (Hermes 0.20.4 and later): the plugin
+with `register_system_prompt_section` (Hermes 0.20.2 and later): the plugin
 registers it as the `omh.awareness` system prompt section, which Hermes freezes
 into each new session's system prompt, and `pre_llm_call` delivers it only for a
 session the section did not render for. The `pre_tool_call`

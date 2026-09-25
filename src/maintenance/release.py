@@ -171,11 +171,18 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 59258
 # bounds the primer alone.
 # 6260 -> 5214: the awareness primer (1044 chars plus its "\n\n" join) leaves
 # the fenced context for the `omh.awareness` system prompt section, which
-# every admitted host (Hermes >= 0.20.4) freezes into a new session's system
+# every admitted host (Hermes >= 0.20.2) freezes into a new session's system
 # prompt. The scenarios now measure that host; the primer's own limit above
 # bounds the section, far under the host's 4,000-char per-section cap.
 # Re-derived from the producer.
 PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5214
+# The same scenario set on the fallback: a session the awareness section did
+# not render for (a restart resume, a legacy id-rotating compaction, a refused
+# section, an older host) still gets the primer in the fenced context, so its
+# largest turn is `all_surfaces_without_section`. Landed at the value the
+# producer measured (6260, the pre-section ceiling), so the fallback cannot
+# grow unseen behind the lower section-host limit above.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6260
 # 340000 -> 349637: three capability-skill sections were added by the domain
 # skill pack (`backend`, `rust`, `native-debugging`), on top of the
 # `llm-app-dev` section that landed on main under the old ceiling. Each section

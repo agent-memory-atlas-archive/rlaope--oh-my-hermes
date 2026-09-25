@@ -2077,8 +2077,10 @@ def recommended_next_action(checks: list[Check]) -> str:
 def _awareness_delivery_check(paths: OmhPaths, *, now: datetime | None = None) -> Check:
     """Has OMH's primer and route hint hook returned content for model input?
 
-    A render of the `omh.awareness` system prompt section counts too: on a
-    host that renders it, the primer is not in any hook payload.
+    The awareness system prompt section counts too, once per session, on the
+    first `pre_llm_call` that leaves the primer to it: on a host that renders
+    it the primer is in no hook payload. A render with no turn behind it
+    (`hermes prompt-size`, a routed review fork) counts nothing.
 
     Reported, never blocking. A fresh install has legitimately delivered
     nothing, and Hermes may not have been restarted since the bundle changed, so
@@ -2144,7 +2146,7 @@ def _awareness_delivery_check(paths: OmhPaths, *, now: datetime | None = None) -
         "awareness_delivery",
         True,
         (
-            f"{delivered} awareness hook payload(s) or system prompt section render(s) returned, "
+            f"{delivered} awareness hook payload(s) or system prompt section deliveries returned, "
             f"{int(record.get('route_hint_count', 0) or 0)} with a route hint; "
             f"last at {record.get('last_delivered_at', 'unknown')}"
         ),

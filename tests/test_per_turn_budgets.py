@@ -36,6 +36,7 @@ from omh.maintenance.release import (
     FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS,
     PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
     PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
+    PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
     SKILL_INDEX_CHAR_LIMIT,
     SKILL_INDEX_LINE_CHAR_LIMIT,
 )
@@ -54,6 +55,7 @@ PER_REQUEST_BUDGETS = (
     "skill_index_line_max_chars",
     "plugin_tool_schema_chars",
     "pre_llm_call_context_chars_max",
+    "pre_llm_call_context_fallback_chars_max",
 )
 
 
@@ -68,6 +70,7 @@ class PerRequestBudgetRegistryTests(unittest.TestCase):
             "skill_index_line_max_chars": SKILL_INDEX_LINE_CHAR_LIMIT,
             "plugin_tool_schema_chars": PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
             "pre_llm_call_context_chars_max": PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
+            "pre_llm_call_context_fallback_chars_max": PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
         }
         for metric in budget_metrics():
             if metric.name in limits:
@@ -487,6 +490,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
                     "active_workflow",
                     "running_work_board",
                     "all_surfaces",
+                    "all_surfaces_without_section",
                 ]
             ),
         )
@@ -500,6 +504,24 @@ class PreLlmCallScenarioTests(unittest.TestCase):
         for name in ("route_hint", "role_marker", "active_workflow", "running_work_board"):
             with self.subTest(scenario=name):
                 self.assertLess(scenarios[name], scenarios["all_surfaces"])
+
+    def test_the_fallback_maximum_is_all_surfaces_with_the_primer(self) -> None:
+        scenarios = per_turn_context.pre_llm_call_context_scenario_chars()
+        self.assertEqual(
+            per_turn_context.pre_llm_call_context_fallback_chars_max(), scenarios["all_surfaces_without_section"]
+        )
+        # The fallback differs from the section host by exactly the primer and
+        # its join, so the fallback limit gates the primer's own growth there.
+        self.assertEqual(
+            scenarios["all_surfaces_without_section"] - scenarios["all_surfaces"],
+            len(awareness_primer_context()) + len("\n\n"),
+        )
+
+    def test_a_larger_primer_moves_the_fallback_maximum(self) -> None:
+        before = per_turn_context.pre_llm_call_context_fallback_chars_max()
+        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value="p" * 2000):
+            after = per_turn_context.pre_llm_call_context_fallback_chars_max()
+        self.assertEqual(after - before, 2000 - len(awareness_primer_context()))
 
     def test_two_runs_measure_the_same(self) -> None:
         self.assertEqual(
@@ -527,7 +549,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
         with mock.patch.object(llm_hooks, "awareness_primer_context", return_value="p" * 2000):
             after = per_turn_context.pre_llm_call_context_scenario_chars()
         for name in before:
-            if name == "first_turn_without_section":
+            if name.endswith("_without_section"):
                 continue
             with self.subTest(scenario=name):
                 self.assertEqual(after[name], before[name])

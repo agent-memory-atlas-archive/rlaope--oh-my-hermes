@@ -25,7 +25,7 @@ All notable changes will be documented here.
   record is still refused.
   The documented install is unchanged.
 - **The OMH awareness primer now lives in the session's system prompt, not in
-  the first user message.** Hermes 0.20.4 (tag v2026.8.18) added
+  the first user message.** Hermes 0.20.2 (tag v2026.8.16) added
   `register_system_prompt_section`: text rendered once per new session and
   frozen into its system prompt. Every Hermes the plugin admits (0.21.1 and
   later) has it. The plugin registers the primer (1,044 chars, the same text
@@ -33,19 +33,29 @@ All notable changes will be documented here.
   4,000-char per-section cap. `pre_llm_call` no longer carries it for a
   session the section rendered for. Before, the primer went into the fenced
   user-message context on the first turn and again after a compaction dropped
-  it. A host without the API, a section the host refuses, and a session
-  resumed after a restart (where the host restores the section without
-  calling the plugin) keep the old per-turn path. The largest measured
-  `pre_llm_call` context drops from 6,260 to 5,214 chars, and
-  `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT` is re-derived to match. Everything else
-  the hook sends depends on the turn and stays where it was. A section render
-  counts as an awareness delivery, so `omh doctor` does not warn about zero
-  deliveries on an install whose primer only goes out through the section; an
-  install with neither a render nor a hook payload still warns. Known limit:
-  Hermes drops sections past an 8,000-char budget shared by every plugin,
-  after rendering them, and exposes no signal a plugin can read afterwards.
-  A session that loses that budget gets no primer (the host logs a warning)
-  and is still counted as delivered.
+  it. Four cases keep the old per-turn path and can carry the primer twice,
+  never zero times: a host without the API or a section the host refuses; a
+  session resumed after a restart, where the host restores the section
+  without calling the plugin; a legacy compaction that rotates the session
+  id, where Hermes rebuilds the prompt before assigning the new id
+  (`conversation_compression.py`); and an id evicted from the plugin's
+  1,024-session record. The largest measured `pre_llm_call` context on a
+  section host drops from 6,260 to 5,214 chars
+  (`PRE_LLM_CALL_CONTEXT_CHAR_LIMIT`); the fallback keeps its own gate at
+  6,260 (`PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT`, scenario
+  `all_surfaces_without_section`). Everything else the hook sends depends on
+  the turn and stays where it was. Every prompt Hermes builds now carries the
+  primer, including `hermes prompt-size` inspection builds and routed
+  background-review forks. `omh doctor` counts a section delivery once per
+  session, on the first `pre_llm_call` that leaves the primer to the section,
+  so a working install does not read as zero deliveries; a render with no
+  turn behind it (prompt-size, a review fork) counts nothing, and an install
+  with neither still warns. Known limit: Hermes renders sections in sorted-id
+  order against an 8,000-char budget shared by every plugin, so a plugin whose
+  id sorts before `omh.awareness` spends it first; a section dropped past that
+  budget is dropped after rendering, with no signal a plugin can read. Such a
+  session gets no primer (the host logs a warning) and is still counted as
+  delivered.
 
 - **The product A/B lane measures honestly where it contradicted itself.**
   `benchmarks/product-ab/v1` gave the OMH arm a file scope (`src/`, `tests/`)

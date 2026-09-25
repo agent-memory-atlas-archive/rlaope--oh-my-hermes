@@ -146,9 +146,7 @@ def _run_pre_llm_call(
             omh_home.mkdir()
             hermes_home.mkdir()
             if section:
-                llm_hooks.awareness_system_prompt_section(
-                    {"session_id": _SCENARIO_SESSION}, omh_home=str(omh_home)
-                )
+                llm_hooks.awareness_system_prompt_section({"session_id": _SCENARIO_SESSION})
             for seed in seeds:
                 seed(omh_home)
             payload = llm_hooks.pre_llm_call(
@@ -174,10 +172,12 @@ def _largest_role(message_suffix: str, seeds: tuple[Callable[[Path], None], ...]
 def pre_llm_call_context_scenario_chars() -> dict[str, int]:
     """Fenced `pre_llm_call` context size per named scenario.
 
-    Every scenario but one runs as on a host that rendered the awareness
-    system prompt section for the session (Hermes 0.20.4 and later, so every
-    host the plugin admits), where the primer is in the system prompt and not
-    here:
+    Every scenario but the two `*_without_section` ones runs as on a host that
+    rendered the awareness system prompt section for the session (Hermes
+    0.20.2 and later, so every host the plugin admits), where the primer is in
+    the system prompt and not here. The `*_without_section` pair measures the
+    fallback, which still runs for a session the section did not render for
+    (a restart resume, a legacy id-rotating compaction, a refused section):
 
     - `first_turn_without_section`: a session's first turn on a request with
       no OMH vocabulary, on a host that did not render the section (the primer
@@ -187,6 +187,8 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
       largest shipped role.
     - `active_workflow`: a later turn while a workflow is active.
     - `running_work_board`: a later turn with a full running-work board.
+    - `all_surfaces_without_section`: `all_surfaces` on the fallback, primer
+      included; the fallback's maximum.
     - `all_surfaces`: all of the above in one first turn. The parts add, so
       this is the largest of the seeded scenarios; it is not a bound on every
       turn, because the parts listed below are not seeded.
@@ -226,17 +228,35 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
             (_seed_active_workflow, _seed_running_board),
             is_first_turn=True,
         ),
+        "all_surfaces_without_section": _largest_role(
+            _ROUTED_REQUEST,
+            (_seed_active_workflow, _seed_running_board),
+            section=False,
+            is_first_turn=True,
+        ),
     }
 
 
+_WITHOUT_SECTION = "_without_section"
+
+
 def pre_llm_call_context_chars_max() -> int:
-    return max(pre_llm_call_context_scenario_chars().values())
+    """The largest scenario on a host that rendered the awareness section."""
+    scenarios = pre_llm_call_context_scenario_chars()
+    return max(chars for name, chars in scenarios.items() if not name.endswith(_WITHOUT_SECTION))
+
+
+def pre_llm_call_context_fallback_chars_max() -> int:
+    """The largest scenario for a session the awareness section did not render for."""
+    scenarios = pre_llm_call_context_scenario_chars()
+    return max(chars for name, chars in scenarios.items() if name.endswith(_WITHOUT_SECTION))
 
 
 __all__ = [
     "plugin_tool_schema_chars",
     "plugin_tool_schema_chars_by_tool",
     "pre_llm_call_context_chars_max",
+    "pre_llm_call_context_fallback_chars_max",
     "pre_llm_call_context_scenario_chars",
     "registered_tool_schemas",
 ]

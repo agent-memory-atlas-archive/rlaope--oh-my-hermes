@@ -221,6 +221,12 @@ def _pre_llm_call_context_chars_max() -> int:
     return pre_llm_call_context_chars_max()
 
 
+def _pre_llm_call_context_fallback_chars_max() -> int:
+    from .per_turn_context import pre_llm_call_context_fallback_chars_max
+
+    return pre_llm_call_context_fallback_chars_max()
+
+
 def _full_skill_context_cost_profile() -> SkillContextCostProfile:
     from ..skills.context_cost import skill_context_cost_payload
 
@@ -464,6 +470,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
         FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS,
         PLUGIN_TOOL_SCHEMA_CHAR_LIMIT,
         PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
+        PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
         SKILL_INDEX_CHAR_LIMIT,
         SKILL_INDEX_LINE_CHAR_LIMIT,
         STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT,
@@ -501,6 +508,13 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
             describe="Per turn, replayed in history: largest fenced pre_llm_call context over the named scenarios",
             live=_pre_llm_call_context_chars_max,
             limit=PRE_LLM_CALL_CONTEXT_CHAR_LIMIT,
+            limit_site="src/maintenance/release.py",
+        ),
+        BudgetMetric(
+            name="pre_llm_call_context_fallback_chars_max",
+            describe="Per turn, replayed in history: that context for a session without the awareness section (primer included)",
+            live=_pre_llm_call_context_fallback_chars_max,
+            limit=PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT,
             limit_site="src/maintenance/release.py",
         ),
         BudgetMetric(
