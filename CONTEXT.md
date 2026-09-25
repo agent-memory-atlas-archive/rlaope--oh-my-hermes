@@ -283,10 +283,15 @@ copies `desktop/` to `$HERMES_HOME/desktop-plugins/omh/` beside a
 the backend's `router` at `/api/plugins/omh/` while `omh` is in the host's
 `plugins.enabled` (the registration `omh setup` and `omh update` write, and
 `omh doctor` reports as `plugin_enabled`); `plugin.js` polls
-`GET /api/plugins/omh/hud` and renders `display.line` in the status bar and
-`display.widget_lines` plus `display.todo_lines` in a right-hand `omh` pane,
-the same HUD payload the status widget renders. The route reads the launch
-profile's home: the `profile` query the app appends when it routes a
+`GET /api/plugins/omh/hud` and draws the structured payload in a right-hand
+`omh` pane -- the plan checklist with its phases, glyphs and progress, the
+agent rows with their route identity (`category:name(model:effort)`) and
+metrics, the fanout DAG while one is active -- plus a compact agent and plan
+count in the status bar, in the app's own visual language (theme tokens, the
+bundled panes' typography); the same HUD payload the status widget renders,
+with the same formatters, and the main session's model from the app's own
+state, which the payload carries only per subagent row. The route reads the
+launch profile's home: the `profile` query the app appends when it routes a
 non-primary profile through a shared backend is not honoured, as the host's
 own bundled plugin backends do not honour it (a local non-primary profile has
 its own backend and is unaffected). The half ships OFF: the marker forces it
@@ -298,10 +303,10 @@ it `tab.hidden`, so that dashboard gets no `omh` tab (it still requests the
 manifest's default entry script and logs its absence at console level).
 _Avoid_: reading `desktop-plugins/` as install truth (it is the app's copy;
 the bundle under `plugins/omh/` is what `omh update` refreshes), claiming the
-half is enabled (not observable from OMH), claiming the app's own copy or the
-rendered pane was observed (the status-bar item was observed once, from a
-hand-placed standalone copy; the copy step and the pane are read from the
-app's source), OMH status widget (that is the Modern-TUI surface)
+half is enabled (not observable from OMH), claiming the app's own copy step
+was observed (the pane and the status-bar item were observed from a
+hand-placed standalone copy in an isolated home; the copy step is read from
+the app's source), OMH status widget (that is the Modern-TUI surface)
 
 ### Host surfaces OMH reads
 

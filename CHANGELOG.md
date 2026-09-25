@@ -610,8 +610,8 @@ All notable changes will be documented here.
   failure, and concurrent first polls share one load under a lock. Beside it,
   `desktop/plugin.js` is an uncompiled ESM plugin written for the app's
   disk-plugin loader: it polls that route every 5 s while the gateway is open
-  and puts `display.line` in the status bar and the widget and todo lines in
-  an `omh` pane, verbatim and never a value the reader did not produce; it
+  and draws the payload as a structured `omh` pane and a compact status-bar
+  item (see the entry below), never a value the reader did not produce; it
   ships off, as the app requires of unified-package halves, and the switch is
   under Capabilities -> Plugins. `dashboard/manifest.json` is also read by the
   browser dashboard (`hermes dashboard`), which registers a tab for every
@@ -676,6 +676,54 @@ All notable changes will be documented here.
   ledger line that is not a finite positive number, or bytes that are not
   UTF-8, yield no hint rather than a traceback. No signal, no process
   listing, no subprocess.
+- **The Hermes Desktop pane draws the HUD the way the TUI widget does, in the
+  app's own language.** The first pane dumped `display.widget_lines` and
+  `display.todo_lines` as monospace text: no colour, wrapped mid-token, and
+  no word on which model any agent ran, which the owner set beside the
+  modern-TUI widget and rejected. `desktop/plugin.js` now renders the
+  structured payload: a header with the `⚚ OMH` mark, the version badge and
+  the widget's state label (`ready`, `3 agents · 2 running · 1 blocked`); the
+  main session's model and usage from the app's own state (the payload names
+  a model only per subagent row); the widget's header chips (repeat guard,
+  board counts, `dispatcher not observed`, open tools, yolo, summed tokens)
+  as badges (the parallel-shot badge among them); a full-width hairline;
+  a PLAN section (`PLAN`, the title, `done/total`, a progress bar, the TUI's
+  eight-item window with earlier/later folds, each phase as its own bold
+  header row with its own `done/total` -- the current phase in the label
+  colour -- and its items hanging under it behind a left rule: `●`/`✓`/`○`
+  glyph, the text wrapping under its own start, done items struck through,
+  `waiting: …`/`skipped: …` in warn and `unchanged …` in quaternary each on
+  their own line); a hairline; an AGENTS section that up to 480 px of pane
+  width stacks three lines per agent (state glyph, `sub`/`bot`/`main` tag,
+  8-char id, the action title on one line with an absolute path shortened
+  to `…/last/two` and the full text in a tooltip; the route identity in the
+  widget's own shapes -- `category:architect(model:effort)`,
+  `inherit(model:effort)`, `(codex/maestro model)`, `kanban/assignee` -- with
+  the state word; elapsed · tokens · cost) and past it lays the same cells
+  out as one aligned grid under a row of column labels, 26 px rows with an
+  alternating band; rate, `cache N%`, ctx, `turn N (M tools)` and fallback
+  live in the row's tooltip; the plan column is capped at 640 px; the DAG block
+  while a graph is active; and a quiet footer notice: a reader error record
+  replaces the body with it, a transport failure keeps the last payload
+  under it.
+  The status-bar item is compact -- `⚚ 3 agents · 2 running · 1 blocked ·
+  3/6`, `⚚ ready` when idle, the detail in its tooltip -- and reveals the
+  pane on click; it renders nothing before the first answer, like the Kanban
+  count. Every colour is a theme token through a stylesheet the plugin
+  appends on register and removes on dispose (Tailwind never scans a disk
+  plugin), and the mono cells (ids, route identity, chips, version badge)
+  name the app's bundled JetBrains Mono ahead of the theme's mono stack;
+  the route identity wraps only at its grammar's seams, never
+  inside a model name; the formatters (`tokenCountText`, `elapsedText`,
+  `costSegmentText`, `routeIdentity`, `hudStateLabel`) are the widget's,
+  ported and pinned against its examples; the poll keeps the previous answer
+  while refetching. Observed: node drove the file with the SDK, React and
+  JSX shims replaced by recording fakes, and the built Hermes Desktop app,
+  launched against an isolated home whose recorded session held a six-item
+  plan declared for it, one running delegation child seeded from the
+  recorded one, and a two-task board another teammate had placed there,
+  showed the structured pane at 330, 667 and 900 px and the status-bar
+  count with no boundary error.
 
 ## 2.0.5 - 2026-09-22
 
