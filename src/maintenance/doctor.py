@@ -64,6 +64,7 @@ from ..plugin_observations import (
     read_plugin_host_observations,
 )
 from ..plugin_pack import PLUGIN_NAME, inspect_plugin_bundle
+from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, host_managed_plugin
 from ..runtime.artifacts import read_state, read_state_error
 from ..skill_pack import CORE_SKILLS, builtin_skill_templates
 from ..system.security_posture import SECURITY_POSTURE_ENV_VAR, STRICT_POSTURE, resolve_security_posture
@@ -2177,7 +2178,11 @@ def _plugin_desktop_half_check(paths: OmhPaths) -> Check:
         True,
         f"installed bundle predates the Hermes Desktop half (missing {', '.join(missing)})",
         severity="warning",
-        next_action="run `omh update` to refresh the managed plugin bundle",
+        next_action=(
+            f"run `{HERMES_PLUGIN_UPDATE_COMMAND}`; Hermes installed this bundle and OMH does not write it"
+            if host_managed_plugin(plugin_dir) is not None
+            else "run `omh update` to refresh the managed plugin bundle"
+        ),
     )
 
 
@@ -2466,6 +2471,31 @@ def _hook_integrity_check(paths: OmhPaths) -> Check:
     )
     if not excluded and status["revocation_ledger"] != "unreadable":
         return Check("plugin_hook_integrity", True, summary)
+    # A tree `hermes plugins install` wrote carries the hook bytes of the
+    # commit Hermes pinned, which lags or leads the installed OMH package after
+    # either side updates. A digest mismatch there is version skew, not
+    # tampering, and `omh setup --force` does not write that tree; only a
+    # revocation, a missing review, or an unreadable ledger still fails.
+    untrusted = [record for record in records if not record["trusted"]]
+    skew_only = all(
+        record["digest"] in {"changed", "missing"}
+        and record["revocation"] != "revoked"
+        and record["review"] != "unreviewed"
+        for record in untrusted
+    )
+    if host_managed_plugin(paths.hermes_plugin_dir) is not None and skew_only and status["revocation_ledger"] != "unreadable":
+        skewed = ", ".join(str(record["name"]) for record in untrusted)
+        return Check(
+            "plugin_hook_integrity",
+            True,
+            (
+                f"{summary}; the plugin was installed by Hermes and its hooks ({skewed}) differ from the "
+                "installed OMH package's reviewed digests: version skew between the Hermes pin and OMH, "
+                "not a local edit OMH can repair"
+            ),
+            severity="warning",
+            next_action=f"Run `{HERMES_PLUGIN_UPDATE_COMMAND}` (or `omh update`) so the two versions meet, then rerun `omh doctor`.",
+        )
     detail = "; ".join(str(item["repair"]) for item in excluded)
     if status["revocation_ledger"] == "unreadable":
         detail = f"{status['revocation_ledger_path']} is unreadable" + (f"; {detail}" if detail else "")
@@ -2483,8 +2513,13 @@ def _plugin_host_managed_message(plugin: dict) -> str:
     revision = str(host.get("revision", ""))[:8] or "unknown revision"
     return (
         f"{plugin['plugin_dir']} was installed by Hermes ({host.get('installer', 'hermes')} @ {revision}); "
-        f"OMH leaves it in place and manages skills and config only; update the plugin with "
-        f"`{host.get('update_command', 'hermes plugins update omh')}`"
+        + (
+            "its files match the installed OMH package; "
+            if plugin.get("plugin_host_matches_package")
+            else "its files differ from the installed OMH package (version skew between the Hermes pin and OMH); "
+        )
+        + "OMH leaves it in place and manages skills and config only; update the plugin with "
+        + f"`{host.get('update_command', 'hermes plugins update omh')}`"
     )
 
 

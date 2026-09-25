@@ -28,6 +28,24 @@ CATALOG_SHA = "0123456789abcdef0123456789abcdef01234567"
 SOURCE = "https://github.com/rlaope/oh-my-hermes.git#src/plugin_bundle/omh"
 
 
+def become_hermes_install(plugin_dir: Path, *, catalog: bool = True) -> None:
+    """Reproduce what `hermes plugins install omh` leaves behind: the bundle
+    tree with no OMH manifest, a metadata entry, and (catalog) the sidecar."""
+    (plugin_dir / PLUGIN_MANAGED_MANIFEST).unlink()
+    (plugin_dir / "installed_by_hermes.txt").write_text("hermes\n", encoding="utf-8")
+    metadata = {"omh": {"pinned": catalog, "revision": CATALOG_SHA, "source": SOURCE}}
+    (plugin_dir.parent / ".install-metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    if catalog:
+        sidecar = {"catalog_name": "omh", "repo": "https://github.com/rlaope/oh-my-hermes", "sha": CATALOG_SHA}
+        (plugin_dir / ".hermes-catalog.json").write_text(json.dumps(sidecar), encoding="utf-8")
+
+
+def skew_one_hook(plugin_dir: Path) -> None:
+    """A Hermes pin one commit away from the installed package: one hook file differs."""
+    hook = plugin_dir / "hooks" / "llm_hooks.py"
+    hook.write_text(hook.read_text(encoding="utf-8") + "\n# a line from another OMH commit\n", encoding="utf-8", newline="")
+
+
 class HostManagedPluginTests(unittest.TestCase):
     def setUp(self) -> None:
         temp = TemporaryDirectory()
@@ -41,15 +59,7 @@ class HostManagedPluginTests(unittest.TestCase):
         self.marker = self.plugin_dir / "installed_by_hermes.txt"
 
     def _become_hermes_install(self, *, catalog: bool = True) -> None:
-        """Reproduce what `hermes plugins install omh` leaves behind: the bundle
-        tree with no OMH manifest, a metadata entry, and (catalog) the sidecar."""
-        (self.plugin_dir / PLUGIN_MANAGED_MANIFEST).unlink()
-        self.marker.write_text("hermes\n", encoding="utf-8")
-        metadata = {"omh": {"pinned": catalog, "revision": CATALOG_SHA, "source": SOURCE}}
-        (self.plugin_dir.parent / ".install-metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
-        if catalog:
-            sidecar = {"catalog_name": "omh", "repo": "https://github.com/rlaope/oh-my-hermes", "sha": CATALOG_SHA}
-            (self.plugin_dir / ".hermes-catalog.json").write_text(json.dumps(sidecar), encoding="utf-8")
+        become_hermes_install(self.plugin_dir, catalog=catalog)
 
     def _assert_untouched(self) -> None:
         self.assertTrue(self.marker.is_file())
@@ -84,6 +94,41 @@ class HostManagedPluginTests(unittest.TestCase):
             self.assertIn("hermes plugins update omh", checks[name]["message"])
         self.assertTrue(checks["plugin_import_smoke"]["ok"], checks["plugin_import_smoke"])
         self.assertEqual(status, 0, [c for c in checks.values() if not c["ok"]])
+
+    def test_doctor_reports_hook_skew_in_a_catalog_install_as_a_warning_not_tampering(self) -> None:
+        self._become_hermes_install()
+        skew_one_hook(self.plugin_dir)
+        status, stdout, _ = run_cli(self.base + ["doctor"])
+        checks = {check["name"]: check for check in json.loads(stdout)["checks"]}
+        hooks = checks["plugin_hook_integrity"]
+        self.assertTrue(hooks["ok"], hooks)
+        self.assertEqual(hooks["severity"], "warning")
+        self.assertIn("version skew", hooks["message"])
+        self.assertIn("pre_llm_call", hooks["message"])
+        self.assertIn("hermes plugins update omh", hooks["next_action"])
+        self.assertNotIn("omh setup --force", hooks["message"] + hooks["next_action"])
+        self.assertIn("differ from the installed OMH package", checks["plugin_bundle_current"]["message"])
+        self.assertEqual(status, 0, [c for c in checks.values() if not c["ok"]])
+
+    def test_the_same_hook_edit_in_an_omh_install_still_fails_integrity(self) -> None:
+        # Negative control: OMH wrote this tree, so a changed hook is a local
+        # edit `omh setup --force` repairs, and it still fails.
+        skew_one_hook(self.plugin_dir)
+        status, stdout, _ = run_cli(self.base + ["doctor"])
+        checks = {check["name"]: check for check in json.loads(stdout)["checks"]}
+        self.assertFalse(checks["plugin_hook_integrity"]["ok"])
+        self.assertIn("omh setup --force", checks["plugin_hook_integrity"]["message"])
+        self.assertNotEqual(status, 0)
+
+    def test_uninstall_keeps_a_hermes_install_even_with_force(self) -> None:
+        self._become_hermes_install()
+        metadata = (self.plugin_dir.parent / ".install-metadata.json").read_text(encoding="utf-8")
+        for extra in ([], ["--force"]):
+            status, stdout, stderr = run_cli(self.base + ["uninstall", "--keep-command", *extra])
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("hermes plugins remove omh", stdout)
+            self._assert_untouched()
+        self.assertEqual((self.plugin_dir.parent / ".install-metadata.json").read_text(encoding="utf-8"), metadata)
 
     def test_a_git_install_recorded_only_in_hermes_metadata_is_host_managed(self) -> None:
         self._become_hermes_install(catalog=False)
@@ -123,6 +168,27 @@ class HostManagedPluginTests(unittest.TestCase):
         (self.plugin_dir / PLUGIN_MANAGED_MANIFEST).unlink()
         (self.plugin_dir / ".hermes-catalog.json").write_text(json.dumps({"sha": CATALOG_SHA}), encoding="utf-8")
         self.assertIsNone(host_managed_plugin(self.plugin_dir))
+
+
+class HostManagedProfilePluginTests(unittest.TestCase):
+    def test_a_profile_row_reports_a_hermes_install_instead_of_refreshed(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
+            profile = root / ".hermes" / "profiles" / "politehelper"
+            profile.mkdir(parents=True)
+            status, _, stderr = run_cli(base + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            plugin_dir = profile / "plugins" / "omh"
+            become_hermes_install(plugin_dir)
+            skew_one_hook(plugin_dir)
+            status, stdout, stderr = run_cli(base + ["setup", "--force"])
+            self.assertEqual(status, 0, stderr)
+            row = json.loads(stdout)["hermes_profiles"][0]
+            self.assertEqual(row["status"], "host_managed", row)
+            self.assertEqual(row["plugin_update_command"], "hermes plugins update omh")
+            self.assertTrue((plugin_dir / "installed_by_hermes.txt").is_file())
+            self.assertFalse((plugin_dir / PLUGIN_MANAGED_MANIFEST).exists())
 
 
 if __name__ == "__main__":

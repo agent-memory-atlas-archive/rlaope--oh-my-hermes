@@ -106,6 +106,7 @@ from ..plugin_bundle.omh.provider_detection import (
     env_row_is_covered,
 )
 from ..plugin_pack import PLUGIN_NAME, PluginPackError, install_plugin_bundle
+from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND
 from ..probe import probe_capabilities
 from ..release import (
     RELEASE_CHANNELS,
@@ -597,7 +598,14 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             "retired_external_dirs": [],
         }
         try:
-            install_plugin_bundle(profile_paths, force=bool(getattr(args, "force", False)), dry_run=bool(args.dry_run))
+            plugin = install_plugin_bundle(
+                profile_paths, force=bool(getattr(args, "force", False)), dry_run=bool(args.dry_run)
+            )
+            if plugin.get("status") == "host_managed":
+                # Hermes installed this profile's plugin; OMH wrote nothing to
+                # it, so "refreshed" would claim an update that did not happen.
+                entry["status"] = "host_managed"
+                entry["plugin_update_command"] = HERMES_PLUGIN_UPDATE_COMMAND
             install_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
             install_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
             applied = _apply_result(clone)
@@ -692,6 +700,7 @@ def _uninstall_hermes_profiles(
 _PROFILE_STATUS_LABELS = {
     "bootstrapped": "set up",
     "refreshed": "refreshed",
+    "host_managed": "refreshed; plugin managed by Hermes (`hermes plugins update omh`)",
     "unregistered_kept": "left unregistered",
     "failed": "failed",
     "cleared": "cleared",

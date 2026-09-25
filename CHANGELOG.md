@@ -14,9 +14,15 @@ All notable changes will be documented here.
   the `.hermes-catalog.json` sidecar): a `plugins/omh` that
   `hermes plugins install` wrote, and OMH did not write after it, is reported
   as host-managed and not overwritten, `--force` included, while skills and
-  config are still managed; `omh doctor` reports it as installed by Hermes
-  with `hermes plugins update omh` as the update path instead of as drift. A
-  directory with neither OMH's manifest nor a Hermes record is still refused.
+  config are still managed, and a bot profile's row says `host_managed`
+  instead of `refreshed`. `omh uninstall` keeps that tree, `--force`
+  included, and names `hermes plugins remove omh`. `omh doctor` reports it as
+  installed by Hermes, says whether its files match the installed OMH
+  package, and reports a hook whose bytes differ from the package's reviewed
+  digest as version skew (a warning naming `hermes plugins update omh`), not
+  tampering; the hook-integrity record is read only by doctor, so nothing
+  changed at runtime. A directory with neither OMH's manifest nor a Hermes
+  record is still refused.
   The documented install is unchanged.
 
 - **The product A/B lane measures honestly where it contradicted itself.**

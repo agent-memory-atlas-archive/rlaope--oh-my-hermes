@@ -292,6 +292,10 @@ def inspect_plugin_bundle(paths: OmhPaths) -> dict[str, Any]:
         "plugin_bundle_stale": target.exists() and manifest_valid and not manifest_current,
         "plugin_host_managed": host_install is not None,
         "plugin_host_install": host_install or {},
+        # `plugin_distribution_ready` below cannot hold a Hermes-pinned tree
+        # to the package's file map, so the skew is stated here instead.
+        "plugin_host_matches_package": host_install is not None
+        and not plugin_local_modifications({"files": bundled_records}, target),
         "plugin_yaml_present": plugin_yaml.exists(),
         "plugin_manifest_conformance": conformance,
         "plugin_import_smoke": import_smoke,
