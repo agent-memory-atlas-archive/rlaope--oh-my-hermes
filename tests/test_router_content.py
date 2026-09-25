@@ -4230,14 +4230,15 @@ class RouterContentTests(unittest.TestCase):
         # hero, Hermes executor card, footer) plus two product captures --
         # the terminal boot banner and the /omh-model chain picker under
         # Recommended chains -- and nothing else. The exact count keeps
-        # decorative images off the page; the three surface demos are
-        # <video> elements.
+        # decorative images off the page; the three surface demos (the TUI
+        # ultrawork run, the Desktop run, the messenger card) are <video>
+        # elements.
         self.assertEqual(site.count("<img"), 6)
         self.assertEqual(site.count('src="assets/omh-character-mask.png"'), 4)
         self.assertEqual(site.count('src="assets/omh-terminal-boot-banner.png"'), 1)
         self.assertEqual(site.count('src="assets/omh-model-tui.png"'), 1)
         self.assertEqual(site.count("<video"), 3)
-        for stem in ("omh-setup", "hermes-desktop", "hermes-messenger"):
+        for stem in ("hermes-cli", "hermes-desktop", "hermes-messenger"):
             self.assertEqual(site.count(f'src="assets/{stem}.webm"'), 1)
             self.assertEqual(site.count(f'src="assets/{stem}.mp4"'), 1)
         # site/assets is self-contained; the Pages build must copy the whole
