@@ -313,8 +313,32 @@ def _resolve_changed_path(repo_root: Path, raw: str) -> dict[str, Any]:
         return {"path": text, "resolved_path": lexical, "unresolvable": f"{type(exc).__name__}: {exc}", "notes": []}
     if resolved is None:
         raise ValueError(f"changed path is outside the repository root: {text}")
-    notes = [] if lexical == resolved else [f"resolved through a symlink to {resolved}"]
+    notes: list[str] = []
+    if lexical != resolved:
+        # `resolve()` also canonicalises letter case on a case-insensitive
+        # filesystem (Windows returns the on-disk spelling), so a differing
+        # result is a symlink only when a component on the way is one.
+        if _crosses_symlink(repo_root, target):
+            notes.append(f"resolved through a symlink to {resolved}")
+        elif lexical is not None and lexical.lower() == resolved.lower():
+            notes.append(f"spelled differently from the scanned path {resolved}")
+        else:
+            notes.append(f"resolved to {resolved}")
     return {"path": text, "resolved_path": resolved, "unresolvable": "", "notes": notes}
+
+
+def _crosses_symlink(repo_root: Path, target: Path) -> bool:
+    """True when the lexical path or any of its parents inside the repo is a symlink."""
+    probe = Path(os.path.normpath(str(target)))
+    while True:
+        try:
+            if probe.is_symlink():
+                return True
+        except OSError:
+            return False
+        if probe == repo_root or probe.parent == probe:
+            return False
+        probe = probe.parent
 
 
 def _relative_or_none(repo_root: Path, target: Path, text: str) -> str | None:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from _cli_harness import run_cli
+from omh.codegraph.selection import _resolve_changed_path
 from omh.codegraph import (
     TEST_SELECTION_BLIND_SPOTS,
     build_codegraph,
@@ -364,6 +366,34 @@ class TestSelectionTests(unittest.TestCase):
         self.assertEqual(stderr, "")
         self.assertNotIn("Traceback", stdout)
         self.assertIn("src/pkg/loop.py: ", stdout)
+
+    def test_case_canonicalising_resolve_is_a_spelling_note_not_a_symlink(self) -> None:
+        # Windows' Path.resolve() returns the on-disk letter case, so a
+        # case-variant spelling resolves to a different string without any
+        # symlink on the way; the note must say so instead of claiming one.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _sample_repo(root)
+            repo = root.resolve()
+            canonical = (root / "src" / "pkg" / "leaf.py").resolve()
+            original = Path.resolve
+
+            def case_folding_resolve(self: Path, strict: bool = False) -> Path:
+                if str(self).lower().endswith("src/pkg/leaf.py"):
+                    return canonical
+                return original(self, strict=strict)
+
+            with mock.patch.object(Path, "resolve", case_folding_resolve):
+                entry = _resolve_changed_path(repo, "SRC/pkg/leaf.py")
+            self.assertEqual(entry["resolved_path"], "src/pkg/leaf.py")
+            self.assertEqual(entry["notes"], ["spelled differently from the scanned path src/pkg/leaf.py"])
+            link = root / "src" / "pkg" / "alias.py"
+            try:
+                link.symlink_to(root / "src" / "pkg" / "leaf.py")
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable here: {exc}")
+            entry = _resolve_changed_path(repo, "src/pkg/alias.py")
+            self.assertEqual(entry["notes"], ["resolved through a symlink to src/pkg/leaf.py"])
 
     def test_case_variant_and_backslash_spellings_map_to_the_scanned_path(self) -> None:
         with TemporaryDirectory() as tmp:
