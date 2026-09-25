@@ -1615,7 +1615,12 @@ class EfficiencyContractTests(unittest.TestCase):
             with self.subTest(message=message):
                 decision = chat_module.route_chat_message(message, source="discord")
 
-                self.assertEqual(decision["selected_skill"], expected_skill)
+                # "a plan and implementation" wins plan on `plan` and
+                # `implementation`, tokens ralplan also lists, so the
+                # dispatch-evidence gate asks with plan as the candidate; the
+                # product-shaping fast path still does not steal it.
+                weak = decision.get("ambiguity_kind") == "weak_dispatch_evidence"
+                self.assertEqual(decision["candidate_skill" if weak else "selected_skill"], expected_skill)
                 self.assertEqual(decision["recommendations"][0]["next_action"], expected_action)
                 self.assertNotIn("product_shaping_fast_path", decision["recommendations"][0]["matched"])
 

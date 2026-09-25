@@ -92,7 +92,11 @@ class IssueWorkflowRoutingTests(unittest.TestCase):
                 route = route_chat_message(message, source="generic")
 
                 self.assertEqual(recommendation["skill"], expected_skill)
-                self.assertEqual(route["selected_skill"], expected_skill)
+                # The social-post request wins content-operator on `social`,
+                # `post`, and `product`, a set another skill also lists, so
+                # the dispatch-evidence gate asks with it as the candidate.
+                weak = route.get("ambiguity_kind") == "weak_dispatch_evidence"
+                self.assertEqual(route["candidate_skill" if weak else "selected_skill"], expected_skill)
                 self.assertNotIn(recommendation["skill"], new_workflows)
                 self.assertNotIn(route["selected_skill"], new_workflows)
 

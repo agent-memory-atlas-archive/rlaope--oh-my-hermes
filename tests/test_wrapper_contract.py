@@ -4150,7 +4150,9 @@ class WrapperContractTests(unittest.TestCase):
                 "ops_observability",
             ),
             (
-                "refresh the codegraph and prepare a handoff for routing changes",
+                # Sigilled: this test is about the card's copy, and in bare
+                # words the request now asks first (shortlist-first routing).
+                "$codegraph-refresh refresh the codegraph and prepare a handoff for routing changes",
                 "codegraph-refresh",
                 "prepare_codegraph_refresh",
                 "repo root",

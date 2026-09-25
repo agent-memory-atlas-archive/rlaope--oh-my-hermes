@@ -19,6 +19,7 @@ from __future__ import annotations
 import unittest
 
 from omh.routing.chat import route_chat_message
+from _route_owner import route_owner
 
 
 DISPATCH_CASES: tuple[tuple[str, str], ...] = (
@@ -113,8 +114,9 @@ class ResearchRoutingMatrixTest(unittest.TestCase):
         for prompt, expected_skill in NEGATIVE_CONTROLS:
             with self.subTest(prompt=prompt):
                 decision = route_chat_message(prompt)
-                self.assertEqual(decision.get("selected_skill"), expected_skill, decision)
-                self.assertNotIn(decision.get("selected_skill"), RESEARCH_SKILLS, decision)
+                # A weak-evidence clarify names its owner as the candidate.
+                self.assertEqual(route_owner(decision), expected_skill, decision)
+                self.assertNotIn(route_owner(decision), RESEARCH_SKILLS, decision)
 
     def test_deliverables_lane_still_reachable_after_trigger_cleanup(self) -> None:
         decision = route_chat_message("자료 첨부해줘")

@@ -4,6 +4,31 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Shortlist first: the router dispatches only on strong evidence and
+  otherwise hands Hermes the shortlist.** A confident score now dispatches
+  only on an explicit or named invocation, the winner's own trigger phrase
+  (unless another skill said an equal phrase), or a trusted intent guard;
+  every guard is classified in `GUARD_DISPATCH_TRUST`. Everything else --
+  trigger tokens however rare, a single-word name, a context-only guard --
+  clarifies with reason `weak_dispatch_evidence`. The clarify carries up to
+  four candidates: scored skills with evidence of their own, then a BM25
+  ranking over each skill's name, triggers, situations, description, and
+  use_when, admitted on a non-common anchor word. The route's candidate is
+  the shortlist's first entry, and the clarify card tells the model to pick
+  the workflow whose situation matches, naming each by the situation its
+  description opens on; `route_question` asks the same shortlist. Guards and
+  fast paths that fired on a word used in passing were narrowed, each with a
+  negative case: direct code edits need a code-shaped object, `recurring`
+  needs a cadence, feedback triage no longer reads `report` or `build`,
+  `setup` alone is not a missing tool, a bare `plan` or `loop` before a plain
+  noun is a verb, "learn this week" is not a learning request, the materials
+  lane needs a production verb, live lookups need a live cue, a command whose
+  outcome is an error is a failure, and installed-skill questions are not a
+  catalog browse. A Jev-addressed message picks a Jev sibling by the same
+  ranking only on a clear lead. On the 501-message tuning set wrong
+  dispatches fell from 30.9% to 11.8% and the intended skill was dispatched
+  or shortlisted for 60.3% (66.4% of English messages), up from 34.3%; the
+  85% reach target is not met.
 - **The plugin admits a Hermes git checkout by the release it resolves, not
   the install stamp's placeholder.** Released Hermes through 0.21.5 hard-codes
   `hermes_cli.__version__`; hermes-agent main now serves it from the install
@@ -22,8 +47,9 @@ All notable changes will be documented here.
   "<situation the user is in>: <what the skill produces>" (for example
   "Remember a fact for future sessions: ..."), and no two skills share a
   three-word opening. `SkillDefinition` gains `situations`, 5-10 plain English
-  phrases per skill in the words a user would use; nothing scores or renders
-  it yet. Routing results on both precision corpora are unchanged.
+  phrases per skill in the words a user would use; the lexical shortlist
+  reads it and nothing scores or renders it. Routing results on both
+  precision corpora are unchanged.
 - **The plugin bundle passes `hermes plugins validate`, and a plugin Hermes
   installed is left to Hermes.** The Hermes install scanner read the dict-key
   constant `PRIVATE_TOKEN = "__omh_egress_attempt_token"` as a hardcoded

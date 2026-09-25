@@ -30,6 +30,7 @@ from omh.workflows.recurring_intents import (
     validate_recurring_intent_store,
     write_recurring_intent,
 )
+from _route_owner import dispatched_or_asked, route_owner, route_owner_harness
 
 
 REQUEST = "every weekday morning at 9am sweep stale pull requests and send a Slack digest only if something changed"
@@ -74,9 +75,11 @@ class RecurringIntentPreparationTests(unittest.TestCase):
             with self.subTest(message=message):
                 route = route_chat_message(message)
 
-                self.assertEqual(route["action"], "dispatch")
-                self.assertEqual(route["selected_skill"], "automation-blueprint")
-                self.assertEqual(route["selected_harness"], "scheduled-ops-blueprint")
+                # Shortlist-first: a request carried by words rather than a
+                # phrase asks, with automation-blueprint leading the shortlist.
+                self.assertTrue(dispatched_or_asked(route))
+                self.assertEqual(route_owner(route), "automation-blueprint")
+                self.assertEqual(route_owner_harness(route), "scheduled-ops-blueprint")
 
     def test_one_off_requests_do_not_become_recurring_intents(self) -> None:
         for message in (

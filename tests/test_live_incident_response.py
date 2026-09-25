@@ -11,6 +11,7 @@ from omh.routing.chat import route_chat_message
 from omh.skills.catalog import builtin_definitions
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
 from omh.wrapper.contract import build_chat_interaction_payload
+from _route_owner import route_owner
 
 SKILL = "live-incident-response"
 RETROSPECTIVE_SIBLING = "reliability-review"
@@ -141,7 +142,7 @@ class LiveIncidentRoutingTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
-                self.assertEqual(route["selected_skill"], RETROSPECTIVE_SIBLING)
+                self.assertEqual(route_owner(route), RETROSPECTIVE_SIBLING)
                 self.assertNotIn(SKILL, [rec["skill"] for rec in route["recommendations"][:1]])
 
     def test_the_support_case_and_the_release_watch_keep_their_lanes(self) -> None:
@@ -154,7 +155,7 @@ class LiveIncidentRoutingTests(unittest.TestCase):
             ("is this release ready for production", "production-audit"),
         ):
             with self.subTest(message=message):
-                self.assertEqual(route_chat_message(message, source="discord")["selected_skill"], expected)
+                self.assertEqual(route_owner(route_chat_message(message, source="discord")), expected)
 
     def test_generic_words_in_another_sense_never_reach_the_skill(self) -> None:
         # "incident", "response", "commander", "severity", "outage",

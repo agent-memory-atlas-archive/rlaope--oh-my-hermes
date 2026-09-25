@@ -271,7 +271,11 @@ class JitLearnRoutingAndCardContractTests(unittest.TestCase):
         for case_id in JIT_LEARN_POSITIVE_CASE_IDS:
             self.assertEqual(cases[case_id].expected_workflow, "jit-learn")
         for case_id, incumbent in JIT_LEARN_NEGATIVE_WORKFLOWS.items():
-            self.assertEqual(cases[case_id].expected_workflow, incumbent)
+            # A case the dispatch-evidence gate re-pinned to clarify names its
+            # incumbent as the expected candidate instead.
+            case = cases[case_id]
+            owner = case.expected_candidate if case.expected_route_action == "clarify" else case.expected_workflow
+            self.assertEqual(owner, incumbent)
 
     def test_korean_curriculum_requests_never_reach_jit_learn(self) -> None:
         """A curriculum request keeps its sibling boundary even when it names a learning topic.
@@ -434,8 +438,15 @@ class JitLearnRoutingAndCardContractTests(unittest.TestCase):
                 self.assertEqual(observed[case_id]["observed"]["response_kind"], "jit_learn")
         for case_id, incumbent in JIT_LEARN_NEGATIVE_WORKFLOWS.items():
             with self.subTest(case_id=case_id):
-                self.assertEqual(observed[case_id]["observed"]["route_workflow"], incumbent)
-                self.assertTrue(observed[case_id]["passed"], observed[case_id]["issues"])
+                row = observed[case_id]
+                # A gate-made clarify keeps the incumbent as its candidate.
+                owner = (
+                    row["expected"]["candidate"]
+                    if row["observed"]["route_action"] == "clarify"
+                    else row["observed"]["route_workflow"]
+                )
+                self.assertEqual(owner, incumbent)
+                self.assertTrue(row["passed"], row["issues"])
 
     def test_chat_card_names_skill_kind_phase_next_action_and_visible_actions(self) -> None:
         case = next((case for case in CHAT_CARD_COVERAGE_CASES if case.id == "jit-learn"), None)

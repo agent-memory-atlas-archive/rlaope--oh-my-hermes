@@ -256,9 +256,16 @@ _EXPLICIT_OMH_CAPABILITY_PHRASES = (
 )
 _OMH_CONTEXT_MARKERS = ("omh", "oh-my-hermes", "oh my hermes")
 _CONTEXT_MARKERS = _OMH_CONTEXT_MARKERS + ("hermes", "헤르메스")
+# `use` only as using OMH itself: bare, it also matched "which model to use"
+# in a question about how OMH picks models, which is a docs question.
 _CONTEXT_CAPABILITY_MARKERS = (
     "help",
-    "use",
+    "use omh",
+    "use it",
+    "use this",
+    "can i use",
+    "can we use",
+    "should i use",
     "useful",
     "support",
     "helpful",
@@ -268,6 +275,7 @@ _CONTEXT_CAPABILITY_MARKERS = (
     "할 수",
     "가능",
 )
+_INSTALLED_SKILL_MARKERS = ("skills i have installed", "installed skills", "skills installed")
 _MISSED_WORKFLOW_MARKERS = (
     "did not use",
     "didn't use",
@@ -651,6 +659,10 @@ def is_skill_catalog_question(message: str) -> bool:
     if _is_missed_workflow_feedback(search_texts):
         return False
     if _is_workflow_learning_feedback(search_texts):
+        return False
+    # The skills this machine has installed are an inventory and health
+    # question for the skill manager, not a request to browse the catalog.
+    if _contains_catalog_token(search_texts, _INSTALLED_SKILL_MARKERS):
         return False
     if is_native_entrypoint_question(message):
         return True

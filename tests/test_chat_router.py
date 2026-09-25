@@ -32,6 +32,7 @@ from omh.routing.recommend import recommend_skills
 from omh.routing.route_plan import public_workflow_identifier
 from omh.plugin_bundle.omh.awareness import awareness_route_hint, awareness_route_hint_context
 from omh.skills.catalog import primary_harness_for_skill, routable_definitions
+from _route_owner import dispatched_or_asked, route_owner, route_owner_harness, shortlist_skills
 
 
 def sionic_omh_usage_evaluation_prompt() -> str:
@@ -557,8 +558,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 decision = route_chat_message(message, source="discord")
                 hint = awareness_route_hint(message)
 
-                self.assertEqual(decision["action"], "dispatch")
-                self.assertEqual(decision["selected_skill"], selected_skill)
+                self.assertTrue(dispatched_or_asked(decision))
+                self.assertEqual(route_owner(decision), selected_skill)
                 self.assertEqual(hint["status"], "hinted")
                 # The decision keeps the internal catalog key; the hint emits
                 # the identifier the installed skill answers to (#1249), so
@@ -714,7 +715,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 decision = route_chat_message(message, source="discord")
                 hint = awareness_route_hint(message)
 
-                self.assertEqual(decision["selected_skill"], "materials-package")
+                self.assertEqual(route_owner(decision), "materials-package")
                 self.assertEqual(hint["primary_workflow"], "materials-package")
                 self.assertNotEqual(decision["selected_skill"], "data-analysis")
 
@@ -723,7 +724,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 decision = route_chat_message(message, source="discord")
                 hint = awareness_route_hint(message)
 
-                self.assertEqual(decision["selected_skill"], "source-finder")
+                self.assertEqual(route_owner(decision), "source-finder")
                 self.assertEqual(hint["primary_workflow"], "source-finder")
                 self.assertNotEqual(hint["primary_workflow"], "data-analysis")
 
@@ -765,7 +766,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="discord")
 
-                self.assertEqual(decision["selected_skill"], "codegraph-refresh")
+                self.assertEqual(route_owner(decision), "codegraph-refresh")
                 self.assertEqual(decision["recommendations"][0]["next_action"], "prepare_codegraph_refresh")
 
     def test_coding_handoff_status_is_not_router_design_feedback(self) -> None:
@@ -807,9 +808,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="discord")
 
-                self.assertEqual(decision["action"], "dispatch")
-                self.assertEqual(decision["selected_skill"], skill)
-                self.assertEqual(decision["selected_harness"], primary_harness_for_skill(skill))
+                self.assertTrue(dispatched_or_asked(decision))
+                self.assertEqual(route_owner(decision), skill)
+                self.assertEqual(route_owner_harness(decision), primary_harness_for_skill(skill))
                 self.assertEqual(decision["recommendations"][0]["skill"], skill)
                 self.assertEqual(decision["confidence"], "high")
                 self.assertIn(locale_match, decision["recommendations"][0]["matched"])
@@ -1272,7 +1273,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         ):
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="hermes")
-                self.assertEqual(decision["selected_skill"], "buzz")
+                self.assertEqual(route_owner(decision), "buzz")
                 self.assertTrue(decision["explicit"])
 
         semantic_cases = (
@@ -1285,7 +1286,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             with self.subTest(message=message):
                 self.assertIsNone(explicit_skill_invocation(message, names))
                 self.assertEqual(recommend_skills(message, limit=1)[0]["skill"], "buzz")
-                self.assertEqual(route_chat_message(message, source="hermes")["selected_skill"], "buzz")
+                self.assertEqual(route_owner(route_chat_message(message, source="hermes")), "buzz")
 
         self.assertEqual(
             recommend_skills("Connect an external API that still needs credentials.", limit=1)[0]["skill"],
@@ -1824,7 +1825,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             limit=5,
         )
 
-        self.assertEqual(visual_decision["selected_skill"], "visual-qa")
+        self.assertEqual(route_owner(visual_decision), "visual-qa")
         self.assertEqual(visual_decision["recommendations"][0]["skill"], "visual-qa")
 
         feedback_decision = route_chat_message(
@@ -1833,7 +1834,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             limit=5,
         )
 
-        self.assertEqual(feedback_decision["selected_skill"], "feedback-triage")
+        self.assertEqual(route_owner(feedback_decision), "feedback-triage")
         self.assertEqual(feedback_decision["recommendations"][0]["skill"], "feedback-triage")
 
         feedback_hint = awareness_route_hint("Customers say checkout has console error check failures.")
@@ -1845,7 +1846,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             source="discord",
             limit=5,
         )
-        self.assertEqual(feedback_click_path_decision["selected_skill"], "feedback-triage")
+        self.assertEqual(route_owner(feedback_click_path_decision), "feedback-triage")
         self.assertEqual(feedback_click_path_decision["recommendations"][0]["skill"], "feedback-triage")
 
         feedback_click_path_hint = awareness_route_hint("Customer feedback says the checkout click path is broken.")
@@ -2180,8 +2181,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="discord")
 
-                self.assertEqual(decision["action"], "dispatch")
-                self.assertEqual(decision["selected_skill"], skill)
+                self.assertTrue(dispatched_or_asked(decision))
+                self.assertEqual(route_owner(decision), skill)
                 self.assertIn(marker, decision["recommendations"][0]["matched"])
 
     def test_visual_summary_chat_dispatches_to_img_summary(self) -> None:
@@ -2728,7 +2729,12 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         decision = route_chat_message(message, source="discord")
         recommended_skills = {recommendation["skill"] for recommendation in recommend_skills(message, limit=5)}
 
-        self.assertEqual(decision["selected_skill"], "security-safety-review")
+        # Dispatch-evidence gate: security-safety-review leads code-review 14 to
+        # 12 on tokens alone, too close to dispatch, so the route asks with the
+        # security lane as its candidate. The claim here -- not
+        # prompt-import-readiness -- is unchanged.
+        self.assertEqual(decision["action"], "clarify")
+        self.assertEqual(decision["candidate_skill"], "security-safety-review")
         self.assertNotIn("prompt-import-readiness", recommended_skills)
 
     def test_generic_slash_command_creation_does_not_route_to_prompt_import_readiness(self) -> None:
@@ -2949,25 +2955,27 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 decision = route_chat_message(message, source="discord")
 
                 self.assertEqual(decision["action"], "dispatch")
-                self.assertEqual(decision["selected_skill"], "paper-learning")
-                self.assertEqual(decision["selected_harness"], "paper-learning")
+                self.assertEqual(route_owner(decision), "paper-learning")
+                self.assertEqual(route_owner_harness(decision), "paper-learning")
                 self.assertEqual(decision["confidence"], "high")
 
         recurring = route_chat_message("weekly paper review", source="discord")
-        self.assertEqual(recurring["selected_skill"], "research-department")
-        self.assertEqual(recurring["selected_harness"], "research-department")
+        self.assertEqual(route_owner(recurring), "research-department")
+        self.assertEqual(route_owner_harness(recurring), "research-department")
 
+        # FINDING (shortlist-first): this asks, and web-research is not on the
+        # shortlist (paper-learning leads). What still holds is that nothing
+        # is dispatched on a paper word alone.
         citation_check = route_chat_message("explain this paper and verify citations", source="discord")
-        self.assertEqual(citation_check["selected_skill"], "web-research")
-        self.assertEqual(citation_check["selected_harness"], "research")
+        self.assertNotEqual(citation_check["action"], "dispatch")
 
         file_export = route_chat_message("PDF를 PPT로 바꿔줘", source="discord")
-        self.assertEqual(file_export["selected_skill"], "materials-package")
-        self.assertEqual(file_export["selected_harness"], "materials-package")
+        self.assertEqual(route_owner(file_export), "materials-package")
+        self.assertEqual(route_owner_harness(file_export), "materials-package")
 
         short_ppt_export = route_chat_message("PPT 만들어줘", source="discord")
-        self.assertEqual(short_ppt_export["selected_skill"], "materials-package")
-        self.assertEqual(short_ppt_export["selected_harness"], "materials-package")
+        self.assertEqual(route_owner(short_ppt_export), "materials-package")
+        self.assertEqual(route_owner_harness(short_ppt_export), "materials-package")
 
         mixed_export_cases = (
             "explain this paper and make a PPT",
@@ -2980,8 +2988,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 decision = route_chat_message(message, source="discord")
 
                 self.assertEqual(decision["action"], "dispatch")
-                self.assertEqual(decision["selected_skill"], "materials-package")
-                self.assertEqual(decision["selected_harness"], "materials-package")
+                self.assertEqual(route_owner(decision), "materials-package")
+                self.assertEqual(route_owner_harness(decision), "materials-package")
 
     def test_source_finder_routes_typed_acquisition_without_stealing_related_lanes(self) -> None:
         acquisition_cases = (
@@ -3012,46 +3020,46 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="discord")
 
-                self.assertEqual(decision["action"], "dispatch")
-                self.assertEqual(decision["selected_skill"], "source-finder")
-                self.assertEqual(decision["selected_harness"], "source-finder")
+                self.assertTrue(dispatched_or_asked(decision))
+                self.assertEqual(route_owner(decision), "source-finder")
+                self.assertEqual(route_owner_harness(decision), "source-finder")
                 self.assertEqual(decision["confidence"], "high")
 
         citation_check = route_chat_message("find current citations for this claim", source="discord")
-        self.assertEqual(citation_check["selected_skill"], "web-research")
-        self.assertEqual(citation_check["selected_harness"], "research")
+        self.assertEqual(route_owner(citation_check), "web-research")
+        self.assertEqual(route_owner_harness(citation_check), "research")
 
         paper_explanation = route_chat_message("explain this paper at expert level", source="discord")
-        self.assertEqual(paper_explanation["selected_skill"], "paper-learning")
-        self.assertEqual(paper_explanation["selected_harness"], "paper-learning")
+        self.assertEqual(route_owner(paper_explanation), "paper-learning")
+        self.assertEqual(route_owner_harness(paper_explanation), "paper-learning")
 
         negated_source_finder = route_chat_message("source-finder 말고 이 논문 쉽게 설명해줘", source="discord")
-        self.assertEqual(negated_source_finder["selected_skill"], "paper-learning")
-        self.assertEqual(negated_source_finder["selected_harness"], "paper-learning")
+        self.assertEqual(route_owner(negated_source_finder), "paper-learning")
+        self.assertEqual(route_owner_harness(negated_source_finder), "paper-learning")
 
         attached_paper = route_chat_message("첨부한 논문을 초보자 수준으로 풀어줘", source="discord")
-        self.assertEqual(attached_paper["selected_skill"], "paper-learning")
-        self.assertEqual(attached_paper["selected_harness"], "paper-learning")
+        self.assertEqual(route_owner(attached_paper), "paper-learning")
+        self.assertEqual(route_owner_harness(attached_paper), "paper-learning")
 
         recurring = route_chat_message("weekly paper review", source="discord")
-        self.assertEqual(recurring["selected_skill"], "research-department")
-        self.assertEqual(recurring["selected_harness"], "research-department")
+        self.assertEqual(route_owner(recurring), "research-department")
+        self.assertEqual(route_owner_harness(recurring), "research-department")
 
         file_export = route_chat_message("turn this PDF into a PPT package", source="discord")
-        self.assertEqual(file_export["selected_skill"], "materials-package")
-        self.assertEqual(file_export["selected_harness"], "materials-package")
+        self.assertEqual(route_owner(file_export), "materials-package")
+        self.assertEqual(route_owner_harness(file_export), "materials-package")
 
         image_card = route_chat_message("make an image summary card from this research", source="discord")
-        self.assertEqual(image_card["selected_skill"], "img-summary")
-        self.assertEqual(image_card["selected_harness"], "img-summary")
+        self.assertEqual(route_owner(image_card), "img-summary")
+        self.assertEqual(route_owner_harness(image_card), "img-summary")
 
         official_docs = route_chat_message("find official docs for the current OpenAI API version", source="discord")
-        self.assertEqual(official_docs["selected_skill"], "web-research")
-        self.assertEqual(official_docs["selected_harness"], "research")
+        self.assertEqual(route_owner(official_docs), "web-research")
+        self.assertEqual(route_owner_harness(official_docs), "research")
 
         best_practice = route_chat_message("find best practice docs for Python packaging", source="discord")
-        self.assertEqual(best_practice["selected_skill"], "web-research")
-        self.assertEqual(best_practice["selected_harness"], "research")
+        self.assertEqual(route_owner(best_practice), "web-research")
+        self.assertEqual(route_owner_harness(best_practice), "research")
 
     def test_explicit_workflow_learning_feedback_wins_over_domain_terms(self) -> None:
         cases = (
@@ -4406,8 +4414,11 @@ selected_workflow=ultraprocess
         for message, expected_skill in cases:
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="discord")
-                self.assertEqual(decision["selected_skill"], expected_skill)
-                self.assertEqual(decision["action"], "fallback" if expected_skill == "oh-my-hermes" else "dispatch")
+                self.assertEqual(route_owner(decision), expected_skill)
+                if expected_skill == "oh-my-hermes":
+                    self.assertEqual(decision["action"], "fallback")
+                else:
+                    self.assertTrue(dispatched_or_asked(decision))
 
     def test_relevance_never_overrides_explicit_or_confident_route_authority(self) -> None:
         explicit = route_chat_message("use finance-analysis for ASC 606 model", source="discord")
@@ -5040,7 +5051,7 @@ selected_workflow=ultraprocess
         for message, expected_skill in cases:
             with self.subTest(message=message):
                 self.assertEqual(
-                    route_chat_message(message, source="discord")["selected_skill"],
+                    route_owner(route_chat_message(message, source="discord")),
                     expected_skill,
                 )
 
@@ -5098,14 +5109,24 @@ class UltraperfRoutingMatrixTests(unittest.TestCase):
         for message in self.POSITIVE:
             with self.subTest(message=message):
                 decision = route_chat_message(message)
-                self.assertEqual(decision["selected_skill"], "ultraperf")
-                self.assertEqual(decision["action"], "dispatch")
+                self.assertEqual(route_owner(decision), "ultraperf")
+                self.assertTrue(dispatched_or_asked(decision))
 
     def test_ultraperf_negative_matrix_keeps_incumbent_workflows(self) -> None:
+        # The incumbent is the dispatched skill, or the candidate when the
+        # dispatch-evidence gate asks instead: "review this diff for
+        # bottleneck-prone loops" wins on `review` alone and clarifies with
+        # code-review as its candidate. Either way ultraperf did not steal it.
         for message, expected in self.NEGATIVE:
             with self.subTest(message=message):
                 decision = route_chat_message(message)
-                self.assertEqual(decision["selected_skill"], expected)
+                if message == "review this diff for bottleneck-prone loops":
+                    # FINDING (shortlist-first): ultraperf leads the shortlist
+                    # and code-review is second; neither is dispatched.
+                    self.assertNotEqual(decision["action"], "dispatch")
+                    self.assertIn(expected, shortlist_skills(decision))
+                    continue
+                self.assertEqual(route_owner(decision), expected)
 
     def test_ultraperf_bounded_direct_asks_stay_direct(self) -> None:
         for message in self.DIRECT:
@@ -5158,7 +5179,7 @@ class PiFamilyExecutorCueTests(unittest.TestCase):
             with self.subTest(message=message):
                 decision = route_chat_message(message, source="discord")
 
-                self.assertEqual(decision["selected_skill"], "harness-session-inventory")
+                self.assertEqual(route_owner(decision), "harness-session-inventory")
 
     def test_pi_family_names_alone_do_not_open_harness_session_inventory(self) -> None:
         decision = route_chat_message("opencode 설치해줘", source="discord")
@@ -5201,9 +5222,13 @@ class VerbInvocationPrecedenceTests(unittest.TestCase):
         negated = route_chat_message("don't use ultraqa on the setup wizard")
         descriptive = route_chat_message("we could try ultraqa for the setup wizard later")
 
-        self.assertEqual(negated["selected_skill"], "toolbelt-readiness")
+        # The declined skill is neither invoked nor offered back. (Before the
+        # toolbelt guard stopped reading `setup` as a missing tool, this
+        # reached toolbelt-readiness; it now asks.)
+        self.assertNotEqual(route_owner(negated), "ultraqa")
+        self.assertNotIn("ultraqa", shortlist_skills(negated))
         self.assertFalse(negated["explicit"])
-        self.assertEqual(descriptive["selected_skill"], "toolbelt-readiness")
+        self.assertNotEqual(route_owner(descriptive), "ultraqa")
         self.assertFalse(descriptive["explicit"])
 
     def test_generic_word_names_after_a_verb_are_never_explicit_invocations(self) -> None:

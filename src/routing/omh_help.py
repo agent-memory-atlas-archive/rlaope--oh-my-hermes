@@ -122,7 +122,6 @@ def is_omh_intro_question(message: str) -> bool:
         "how do i use",
         "how should i use",
         "how to use",
-        "how does",
         "explain",
         "overview",
         "getting started",
@@ -139,7 +138,12 @@ def is_omh_intro_question(message: str) -> bool:
         "是什么",
         "怎么用",
     )
-    return any(marker in text for marker in intro_markers)
+    if any(marker in text for marker in intro_markers):
+        return True
+    # "how does OMH work" asks for the mental model; "how does OMH decide
+    # which model to use" asks about one mechanism, which the OMH docs lane
+    # answers from source, so it is not an intro question.
+    return "how does" in text and " work" in text
 
 
 @lru_cache(maxsize=4096)

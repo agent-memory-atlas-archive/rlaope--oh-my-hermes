@@ -1869,6 +1869,27 @@ def recommend_skills(query: str, *, limit: int = 5, apply_guardrails: bool = Tru
     return [recommendation.to_dict() for recommendation in _recommend_skills_cached(query, apply_guardrails)[:limit]]
 
 
+def offers_itself_withheld(query: str, skill: str) -> bool:
+    """True when `skill` has an offers-itself precondition and `query` fails it.
+
+    `_score_definition` drops such a skill before scoring; a reader that ranks
+    the catalog another way asks here so it drops the same skill.
+    """
+    offers_itself = _SKILL_OFFERS_ITSELF.get(skill)
+    if offers_itself is None:
+        return False
+    routing_text = prepare_routing_text(
+        _strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query)))
+    )
+    normalized_query = normalized_phrase(routing_text.scoring_text)
+    return not offers_itself(normalized_query, _tokens(normalized_query))
+
+
+def held_back_trigger_tokens(skill: str) -> frozenset[str]:
+    """Words the router credits to `skill` only inside a whole trigger phrase."""
+    return _trigger_token_holdback_for(skill)
+
+
 def has_strong_named_catalog_owner(query: str) -> bool:
     """Return whether one catalog name and a second semantic signal match."""
 
@@ -2177,7 +2198,14 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # build is running out of disk space", and "hand off the frontend work to a
     # new engineer". The intent is in the complete phrases, which already score
     # +6 each.
-    "context-budget-review": frozenset({"hand", "new", "off", "out", "running", "session", "window"}),
+    # `cache` alone is the npm or browser cache far more often than the prompt
+    # cache ("clear the npm cache", "fix the cache headers"); "prompt cache"
+    # and "cache hygiene" still match whole.
+    "context-budget-review": frozenset({"cache", "hand", "new", "off", "out", "running", "session", "window"}),
+    # `improve` alone is every product request ("how should we improve our
+    # mobile app?"); the lexical shortlist reads this table too, so the word no
+    # longer admits lifecycle-growth by itself.
+    "lifecycle-growth": frozenset({"improve"}),
     # The continuous-watch phrasings split the same way, one word short of the
     # line: "watching", "monitoring", and "continuously" all say the thing is
     # ongoing, while the bare verbs "keep", "watch", and "monitor" are one-off
