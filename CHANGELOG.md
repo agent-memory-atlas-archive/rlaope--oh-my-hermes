@@ -724,6 +724,22 @@ All notable changes will be documented here.
   recorded one, and a two-task board another teammate had placed there,
   showed the structured pane at 330, 667 and 900 px and the status-bar
   count with no boundary error.
+- **The README and site demos show an ultrawork run on both surfaces.** The
+  Hermes Desktop tile now plays a real session: the prompt goes in, the plan is
+  declared, three lanes fan out, and the OMH pane lists each lane's route
+  (`category:writing(kimi-k3:medium)`, `category:deep(gpt-6-sol:medium)`,
+  `category:capable(claude-fable-5-1:medium)`) beside two `bot` rows the
+  kanban board dispatched to a bot profile. The Hermes CLI tile plays the same
+  prompt in the modern TUI, with the `[Plan]` dock above and the HUD rows below.
+  The site's CLI card, which played `omh setup`, now plays the TUI run, and
+  its Desktop card plays the new Desktop session; the `omh setup` video files
+  under `site/assets/` are removed since nothing referenced them any more.
+  Captions on both surfaces (and their ko/ja/zh strings) say what the clips
+  show. The clips were recorded on 2026-09-25 against an isolated Hermes home
+  with the owner's provider; the Fable and Sol routes in the Desktop clip were
+  chosen by the category chains and then re-dispatched on the served model,
+  which the session narrates on screen.
+
 
 ## 2.0.5 - 2026-09-22
 

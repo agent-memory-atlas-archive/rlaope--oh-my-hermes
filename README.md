@@ -366,12 +366,12 @@ What the terminal shows while OMH workflows run:
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/hermes-desktop.gif" alt="Hermes Desktop running an OMH workflow" width="380" height="266"><br>
-      <sub><b>Hermes Desktop, with oh-my-hermes.</b><br>Pick a workflow; Hermes clarifies before it builds.</sub>
+      <img src="assets/hermes-desktop.gif" alt="Hermes Desktop running an ultrawork prompt with the OMH pane showing the plan and each lane's model" width="380" height="266"><br>
+      <sub><b>Hermes Desktop, with oh-my-hermes.</b><br>One ultrawork prompt: the plan, the lanes, and the model each lane runs on, in the OMH pane.</sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/hermes-cli.gif" alt="Hermes CLI running an OMH workflow" width="380" height="266"><br>
-      <sub><b>Hermes CLI, with oh-my-hermes.</b><br>The same workflows, in your terminal.</sub>
+      <img src="assets/hermes-cli.gif" alt="Hermes TUI running an ultrawork lane fan-out with the OMH plan dock and HUD" width="380" height="266"><br>
+      <sub><b>Hermes CLI, with oh-my-hermes.</b><br>The same ultrawork run in the terminal: the plan dock above, each lane's route in the HUD.</sub>
     </td>
   </tr>
   <tr>

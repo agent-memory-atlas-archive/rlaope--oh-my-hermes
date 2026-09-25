@@ -130,16 +130,16 @@ window.OMH_I18N = {
     "plat.cli": { en: "CLI", ko: "CLI", ja: "CLI", zh: "CLI" },
     "plat.desktop": { en: "Desktop", ko: "데스크톱", ja: "デスクトップ", zh: "桌面端" },
     "surf.cli.body": {
-      en: "The control plane.",
-      ko: "컨트롤 플레인.",
-      ja: "コントロールプレーン。",
-      zh: "控制面。"
+      en: "Ultrawork lanes in the terminal: the plan dock above, each lane's route in the HUD.",
+      ko: "터미널의 ultrawork lane: 위에는 plan 도크, HUD에는 lane별 라우팅.",
+      ja: "ターミナルの ultrawork レーン。上に plan ドック、HUD にレーンごとのルート。",
+      zh: "终端里的 ultrawork 车道：上方是 plan 面板，HUD 显示每条车道的路由。"
     },
     "surf.desktop.body": {
-      en: "Same catalog, same evidence rules.",
-      ko: "같은 카탈로그, 같은 증거 규칙.",
-      ja: "同じカタログ、同じエビデンス規則。",
-      zh: "同一份目录，同一套证据规则。"
+      en: "The plan, the lanes, and the model each lane runs on, in one pane.",
+      ko: "계획, lane, lane별 모델을 한 패널에서.",
+      ja: "計画、レーン、レーンごとのモデルを一つのペインで。",
+      zh: "计划、车道与每条车道的模型，尽在一个面板。"
     },
     "surf.messenger.name": { en: "Messenger", ko: "메신저", ja: "メッセンジャー", zh: "即时通讯" },
     "surf.messenger.body": {
