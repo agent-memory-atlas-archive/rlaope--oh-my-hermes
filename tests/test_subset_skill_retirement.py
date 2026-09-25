@@ -36,6 +36,7 @@ from omh.skills.catalog import (
 )
 from omh.skills.catalog_types import omh_skill_display_name
 from omh.wrapper.contract import build_chat_interaction_payload
+from _route_owner import route_owner
 
 # retired canonical name -> target home canonical name.
 RETIRED_INTO = {
@@ -205,6 +206,13 @@ class FoldedCueTests(unittest.TestCase):
             for cue in self._legacy_cues(name):
                 with self.subTest(retired=name, cue=cue):
                     route = build_chat_interaction_payload(cue, source="generic")["route"]
+                    # A bare cue two incumbents score within a point of each
+                    # other (`throughput`: agent-ops-review 10, ultraperf 9)
+                    # now asks through the dispatch-evidence gate, still
+                    # naming an owner; it is not a lost route.
+                    if route.get("ambiguity_kind") == "weak_dispatch_evidence":
+                        self.assertTrue(route.get("candidate_skill"), cue)
+                        continue
                     self.assertEqual(route.get("action"), "dispatch", cue)
                     self.assertTrue(route.get("selected_skill"), cue)
 
@@ -215,7 +223,13 @@ class FoldedCueTests(unittest.TestCase):
                     continue
                 with self.subTest(retired=name, cue=cue):
                     route = build_chat_interaction_payload(cue, source="generic")["route"]
-                    self.assertEqual(route.get("selected_skill"), target, cue)
+                    if cue == "benchmark":
+                        # FINDING (shortlist-first): the bare word now asks and
+                        # agent-evaluation leads the shortlist; the retired
+                        # contract is not reached, which is the claim above.
+                        self.assertNotEqual(route.get("action"), "dispatch", cue)
+                        continue
+                    self.assertEqual(route_owner(route), target, cue)
 
     def test_cues_another_workflow_already_owned_keep_that_owner(self) -> None:
         """Two of `performance-goal`'s bare metric nouns never dispatched it.
@@ -228,7 +242,9 @@ class FoldedCueTests(unittest.TestCase):
         for cue, owner in PRE_EXISTING_INCUMBENTS.items():
             with self.subTest(cue=cue):
                 route = build_chat_interaction_payload(cue, source="generic")["route"]
-                self.assertEqual(route.get("selected_skill"), owner, cue)
+                # A gate-made clarify keeps the incumbent as its candidate.
+                weak = route.get("ambiguity_kind") == "weak_dispatch_evidence"
+                self.assertEqual(route.get("candidate_skill" if weak else "selected_skill"), owner, cue)
 
     def test_no_legacy_cue_still_dispatches_the_retired_contract(self) -> None:
         retired = set(RETIRED_INTO)

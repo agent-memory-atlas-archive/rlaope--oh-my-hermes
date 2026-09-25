@@ -884,9 +884,12 @@ class SkillDefinition:
     host_requires_tools: tuple[str, ...] = ()
     # Short plain-English phrases for the user situations this skill serves,
     # in the words a user who does not know the skill name would use: domain
-    # nouns, symptoms, artifact names. Catalog data only: no scorer, trigger
-    # table, or renderer reads it yet. `tests/test_skill_situations.py` holds
-    # its shape.
+    # nouns, symptoms, artifact names. One reader: `routing/lexical_shortlist.py`
+    # ranks it (with the name, triggers, and description) to fill an undecided
+    # route's candidate shortlist, takes anchor words from it, and picks a Jev
+    # sibling for a Jev-addressed message on a score floor and a clear lead.
+    # No scorer, trigger table, or renderer reads it.
+    # `tests/test_skill_situations.py` holds its shape.
     situations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

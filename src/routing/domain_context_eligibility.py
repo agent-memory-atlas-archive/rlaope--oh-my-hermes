@@ -9,6 +9,7 @@ from typing import Mapping
 DISPATCH_ROUTE = "dispatch_route"
 PROTECTED_ROUTE = "protected_route"
 ELIGIBLE_UNRESOLVED_ROUTE = "eligible_unresolved_route"
+_WEAK_DISPATCH_EVIDENCE = "weak_dispatch_evidence"
 
 _UNRESOLVED_ACTIONS = frozenset({"clarify", "fallback"})
 _ROUTER_SKILL = "oh-my-hermes"
@@ -42,6 +43,11 @@ def classify_domain_context_eligibility(
     if not message.strip() or _has_explicit_invocation_prefix(message):
         return DomainContextEligibility(False, PROTECTED_ROUTE)
     if str(route.get("selected_skill") or "") != _ROUTER_SKILL:
+        return DomainContextEligibility(False, PROTECTED_ROUTE)
+    # A clarify the dispatch-evidence gate made from a confident winner is a
+    # dispatch the router declined, not an unresolved router question; it
+    # stays as ineligible as the dispatch it replaced.
+    if str(route.get("ambiguity_kind") or "") == _WEAK_DISPATCH_EVIDENCE:
         return DomainContextEligibility(False, PROTECTED_ROUTE)
     if route.get("explicit") is not False:
         return DomainContextEligibility(False, PROTECTED_ROUTE)

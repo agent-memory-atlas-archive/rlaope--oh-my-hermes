@@ -39,7 +39,9 @@ REPRESENTATIVE_ROUTE_CASES = (
     # `best-practice-research` retired into `web-research` (#1691); the cited
     # best-practice retrieval this sentence asks for is the target home's job.
     ImpactRouteCase("testing-article", "Write an article about testing best practices", "web-research"),
-    ImpactRouteCase("pull-request-review", "Review this pull request code", "ultrawork"),
+    # Shortlist-first: a bare "review" on a pull request now asks (code-review
+    # first); the representative dispatch uses the skill's own phrase.
+    ImpactRouteCase("pull-request-review", "Do a code review of this pull request", "code-review"),
     ImpactRouteCase("csv-analysis", "Analyze this CSV dataset", "data-analysis"),
     ImpactRouteCase("quick-plan", "Make a quick implementation plan", "plan"),
     ImpactRouteCase("video-summary", "Summarize this product demo video with timestamps", "media-input-operator"),

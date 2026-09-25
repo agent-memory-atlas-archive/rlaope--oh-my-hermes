@@ -223,16 +223,20 @@ class ProjectTermsCharacterizationTests(unittest.TestCase):
             (
                 "definition_only",
                 "A QBR is our quarterly business review.",
-                "dispatch",
-                "code-review",
-                "dispatch_route",
+                # Dispatch-evidence gate: `review` alone no longer dispatches
+                # code-review; the weak-evidence clarify stays ineligible.
+                "clarify",
+                "oh-my-hermes",
+                "protected_route",
             ),
             (
                 "avoid_prose_only",
                 "Say pipeline review, not sales ceremony.",
-                "dispatch",
-                "code-review",
-                "dispatch_route",
+                # Dispatch-evidence gate: `review` alone no longer dispatches
+                # code-review; the weak-evidence clarify stays ineligible.
+                "clarify",
+                "oh-my-hermes",
+                "protected_route",
             ),
         )
 

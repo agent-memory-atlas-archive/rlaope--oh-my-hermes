@@ -132,7 +132,9 @@ class OperatorProductivityTests(unittest.TestCase):
                 "interact",
                 "--source",
                 "discord",
-                "as a manager, show AI agent research coding review quality blockers and throughput",
+                # "manager view" is the lane's own phrase; with bare words alone
+                # the router now asks (shortlist-first) instead of rendering a card.
+                "manager view: show AI agent research coding review quality blockers and throughput",
             ]
         )
 

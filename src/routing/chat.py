@@ -19,7 +19,8 @@ from .catalog_questions import (
 )
 from .compound_intent import distinct_complete_domain_signals
 from .action_copy import next_action_label as _route_next_action_label
-from .candidate_handoff import build_candidate_handoff
+from .candidate_handoff import SHORTLIST_LEXICAL, WEAK_DISPATCH_EVIDENCE, build_candidate_handoff, shortlist_clarification
+from .dispatch_evidence import EVIDENCE_WEAK, GUARD_TRUSTED, dispatch_evidence
 from .decision_contract import build_route_decision_contract
 from .route_question import build_route_question_for_candidate_handoff
 from .domain_signals import (
@@ -60,6 +61,7 @@ from .policy import (
     point_in_time_web_guard_applies,
 )
 from .policy import _doctor_health_guard_applies
+from .policy import asks_to_produce_materials, command_request_is_failure_or_agent_question, guard_label_dispatch_trust
 from .policy import _explicit_skill_candidate_is_negated
 from .policy import _greenfield_project_bootstrap_requested
 from .policy import _hermes_setup_guide_requested
@@ -103,6 +105,10 @@ FILE_LOOKUP_REASON = (
 )
 DIRECT_ANSWER_REASON = (
     "Plain user question; answer directly in chat instead of opening an OMH workflow or picker."
+)
+WEAK_DISPATCH_EVIDENCE_REASON = (
+    "The best match scored high on shared everyday words or a guard boost, not on its own trigger "
+    "phrase; offer the shortlist and let the user or Hermes choose before dispatch."
 )
 ROUTE_EXPLANATION_SCHEMA_VERSION = "route_explanation/v1"
 MULTIPLE_COMPLETE_DOMAIN_INTENTS = "multiple_complete_domain_intents"
@@ -1643,6 +1649,24 @@ def _enriched_route(
     candidate_handoff = build_candidate_handoff(route, matching_message, relevance=relevance)
     if candidate_handoff:
         route["candidate_handoff"] = candidate_handoff
+        # Shortlist first: on a lexical shortlist the route's candidate is the
+        # shortlist's first entry, so the one skill a clarify names is the one
+        # the question offers first.
+        lexical_rows = candidate_handoff.get("candidates")
+        if (
+            candidate_handoff.get("shortlist_source") == SHORTLIST_LEXICAL
+            and not _is_heavy_lane_vagueness_reason(str(route.get("reason") or ""))
+            and isinstance(lexical_rows, list)
+            and lexical_rows
+            and isinstance(lexical_rows[0], dict)
+        ):
+            first_skill = str(lexical_rows[0].get("skill") or "")
+            if first_skill:
+                route["candidate_skill"] = first_skill
+                route["candidate_harness"] = primary_harness_for_skill(first_skill)
+            route["clarification"] = shortlist_clarification(
+                [row for row in lexical_rows if isinstance(row, dict)]
+            )
         # The same shortlist, typed as a question an answerer can answer
         # without reading this repo: one relative Choice over the candidates
         # plus one absolute yes/no per candidate. It is built from the handoff
@@ -1798,6 +1822,17 @@ def public_chat_route_payload(
             min_confidence,
             include_message,
         )
+    )
+
+
+def _names_skill_display_label(message: str, skill: str) -> bool:
+    """The message names `skill` by its rendered label (`ulw-context`, `omh-code-review`)."""
+    if not skill:
+        return False
+    lowered = message.casefold()
+    return any(
+        canonical == skill and contains_cue_phrase(lowered, (display,))
+        for display, canonical in _canonical_skill_by_display_name().items()
     )
 
 
@@ -2206,6 +2241,7 @@ def _route_chat_message_cached(
         candidate_score=candidate_score,
     ) or _is_narration_not_request(routing_message)
 
+    ambiguity_kind = ""
     if explicit_skill and not task_card_overrides_explicit:
         selected_skill = explicit_skill
         action = "dispatch"
@@ -2275,6 +2311,23 @@ def _route_chat_message_cached(
         selected_skill = _ROUTER_SKILL
         action = "clarify"
         reason = "Top catalog matches are tied; ask one concise clarification before dispatch."
+    elif _meets_threshold(candidate_confidence, min_confidence) and (
+        dispatch_evidence(
+            top,
+            full_recommendations[1:],
+            message=routing_message,
+            guard_trust=guard_label_dispatch_trust(),
+            named_surface=_names_skill_display_label(message, str(top.get("skill") or "")),
+        )
+        == EVIDENCE_WEAK
+    ):
+        # Confident on score, thin on evidence: everyday words or a guard boost
+        # carried a skill whose own labels do not name the job. Ask instead of
+        # dispatching; the candidate handoff offers the shortlist.
+        selected_skill = _ROUTER_SKILL
+        action = "clarify"
+        reason = WEAK_DISPATCH_EVIDENCE_REASON
+        ambiguity_kind = WEAK_DISPATCH_EVIDENCE
     elif _meets_threshold(candidate_confidence, min_confidence):
         selected_skill = candidate_skill
         action = "dispatch"
@@ -2296,6 +2349,7 @@ def _route_chat_message_cached(
             action = "clarify"
             reason = heavy_vagueness_reason
             ambiguous = False
+            ambiguity_kind = ""
 
     # Engine-entry gate (#1638): a message whose content is "yes, go" must not
     # start the thing it just approved. `ENGINE_ENTRY_CONFIRMATION_RULE` says
@@ -2355,6 +2409,7 @@ def _route_chat_message_cached(
         candidate_confidence = "high"
         action = "dispatch"
         ambiguous = False
+        ambiguity_kind = ""
         reason = "Explicit learning signal; prepare a reviewable learning candidate card without running Hermes /learn."
         learning_candidate_card = build_learning_candidate_card(
             message,
@@ -2395,6 +2450,7 @@ def _route_chat_message_cached(
         learning_candidate_card=learning_candidate_card,
         recommendations=recommendations,
         route_next_action=route_next_action,
+        ambiguity_kind=ambiguity_kind,
     )
     return decision.to_dict()
 
@@ -4630,6 +4686,10 @@ def _operator_surface_fast_path_decision(
         return None
     if selected_skill == "command-operator" and _is_command_operator_failure_or_coding_request(routing_message):
         return None
+    if selected_skill == "materials-package" and not asks_to_produce_materials(
+        normalized_phrase(routing_message), routing_message.isascii()
+    ):
+        return None
     if selected_skill == "connector-operator" and _is_connector_operator_setup_or_gateway_request(routing_message):
         return None
     if selected_skill == "live-info-operator" and _is_live_info_operator_setup_or_research_request(routing_message):
@@ -5039,6 +5099,8 @@ def _is_paper_learning_materials_request(message: str) -> bool:
 
 def _is_command_operator_failure_or_coding_request(message: str) -> bool:
     normalized = _fast_path_text(message)
+    if command_request_is_failure_or_agent_question(normalized_phrase(message), routing_tokens(normalized_phrase(message))):
+        return True
     return any(
         marker in normalized
         for marker in (
@@ -5423,6 +5485,12 @@ def _guarded_operator_fast_path_decision(
     ):
         return None
     if guard.preferred_skills[0] == "feedback-triage" and _feedback_triage_fast_path_blocked(routing_message):
+        return None
+    # The fast path answers to the same trust table as the scored gate: a
+    # context-only guard does not dispatch from here on an English message.
+    # It falls through to scoring, where it still ranks the field and the
+    # dispatch-evidence gate decides.
+    if routing_message.isascii() and guard_label_dispatch_trust().get(guard.matched_label) != GUARD_TRUSTED:
         return None
     return _routing_guard_fast_path_decision(
         guard,

@@ -314,7 +314,7 @@ def _detect_learning_signal_cached(message: str) -> dict[str, object] | None:
     if workflow_learning_context and not any(phrase in normalized for phrase in _folded_bridge_forcing_signals()):
         return None
     for phrase, folded_phrase in _folded_explicit_learn_signals():
-        if folded_phrase in normalized:
+        if folded_phrase in normalized and not _time_adverbial(normalized, folded_phrase):
             signal_type = "skill_request" if phrase in _SKILL_FORCING_SIGNALS else "explicit_learn_request"
             if phrase in {"next time", "from now on", "다음부터", "다음부터 이렇게", "앞으로는"}:
                 signal_type = "user_correction"
@@ -326,6 +326,26 @@ def _detect_learning_signal_cached(message: str) -> dict[str, object] | None:
                 "source": "user_message",
             }
     return None
+
+
+# "<learn|remember> this <time noun>" is a verb plus a time, not a request to
+# learn or remember THIS; the phrase names nothing to keep.
+_TIME_NOUNS_AFTER_THIS = frozenset(
+    {"week", "weekend", "month", "quarter", "year", "morning", "afternoon", "evening", "semester", "sprint"}
+)
+
+
+def _time_adverbial(normalized: str, folded_phrase: str) -> bool:
+    if not folded_phrase.endswith(" this"):
+        return False
+    start = normalized.find(folded_phrase)
+    while start != -1:
+        rest = normalized[start + len(folded_phrase) :].split(maxsplit=1)
+        following = rest[0].strip(".,!?;:") if rest else ""
+        if following not in _TIME_NOUNS_AFTER_THIS:
+            return False
+        start = normalized.find(folded_phrase, start + 1)
+    return True
 
 
 def _copy_learning_signal(signal: dict[str, object] | None) -> dict[str, object] | None:

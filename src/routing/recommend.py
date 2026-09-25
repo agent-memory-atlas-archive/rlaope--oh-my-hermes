@@ -34,6 +34,7 @@ from .trigger_language_packs import (
     shipped_trigger_language_packs,
 )
 from .policy import (
+    appearance_edit_request,
     KOREAN_NOUN_PARTICLES,
     PUBLIC_PLUGIN_CONNECTOR_ALIAS_PHRASES,
     PUBLIC_PLUGIN_CONNECTOR_READINESS_CONTEXT_PHRASES,
@@ -1869,6 +1870,27 @@ def recommend_skills(query: str, *, limit: int = 5, apply_guardrails: bool = Tru
     return [recommendation.to_dict() for recommendation in _recommend_skills_cached(query, apply_guardrails)[:limit]]
 
 
+def offers_itself_withheld(query: str, skill: str) -> bool:
+    """True when `skill` has an offers-itself precondition and `query` fails it.
+
+    `_score_definition` drops such a skill before scoring; a reader that ranks
+    the catalog another way asks here so it drops the same skill.
+    """
+    offers_itself = _SKILL_OFFERS_ITSELF.get(skill)
+    if offers_itself is None:
+        return False
+    routing_text = prepare_routing_text(
+        _strip_path_like_fragments(scrub_diagnostic_status_text(executable_routing_text(query)))
+    )
+    normalized_query = normalized_phrase(routing_text.scoring_text)
+    return not offers_itself(normalized_query, _tokens(normalized_query))
+
+
+def held_back_trigger_tokens(skill: str) -> frozenset[str]:
+    """Words the router credits to `skill` only inside a whole trigger phrase."""
+    return _trigger_token_holdback_for(skill)
+
+
 def has_strong_named_catalog_owner(query: str) -> bool:
     """Return whether one catalog name and a second semantic signal match."""
 
@@ -2177,7 +2199,31 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # build is running out of disk space", and "hand off the frontend work to a
     # new engineer". The intent is in the complete phrases, which already score
     # +6 each.
-    "context-budget-review": frozenset({"hand", "new", "off", "out", "running", "session", "window"}),
+    # `cache` alone is the npm or browser cache far more often than the prompt
+    # cache ("clear the npm cache", "fix the cache headers"); "prompt cache"
+    # and "cache hygiene" still match whole.
+    "context-budget-review": frozenset({"cache", "hand", "new", "off", "out", "running", "session", "window"}),
+    # `improve` alone is every product request ("how should we improve our
+    # mobile app?"); the lexical shortlist reads this table too, so the word no
+    # longer admits lifecycle-growth by itself.
+    "lifecycle-growth": frozenset({"improve"}),
+    # Shortlist-first: under the dispatch gate these single words no longer
+    # dispatch anything, but they still decide which skill LEADS a clarify's
+    # shortlist. Each is a word the skill uses inside a phrase and that, alone,
+    # names another lane's request:
+    # - `deploy`, `production`, `app`, `ship` are idea-to-deploy's only in "idea to
+    #   deploy", "ship this idea to production", "app delivery loop"; deploying
+    #   an existing app is deploy-and-monitor's.
+    # - `production` is production-audit's inside "production audit/readiness"
+    #   (and credited again beside a readiness word); alone it is where a
+    #   deploy lands.
+    # - `style` is content-operator's inside "style guide rewrite"; alone it is
+    #   how a page looks.
+    # - `page` is connector-operator's inside "notion page"; alone it is a web page.
+    "idea-to-deploy": frozenset({"deploy", "production", "app", "ship"}),
+    "production-audit": frozenset({"production"}),
+    "content-operator": frozenset({"style"}),
+    "connector-operator": frozenset({"page"}),
     # The continuous-watch phrasings split the same way, one word short of the
     # line: "watching", "monitoring", and "continuously" all say the thing is
     # ongoing, while the bare verbs "keep", "watch", and "monitor" are one-off
@@ -3054,6 +3100,15 @@ def _score_definition(
         trigger_token_matches -= {"index", "refresh", "stale", "갱신"}
     if definition.name == "external-connector-readiness" and not ecosystem_identity_connector_match:
         trigger_token_matches -= _ECOSYSTEM_IDENTITY_CONNECTOR_TRIGGER_NOISE
+    # `production` is held back for production-audit (see
+    # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`) and credited again only beside a
+    # readiness or audit word ("production readiness audit").
+    if (
+        definition.name == "production-audit"
+        and "production" in query_tokens
+        and _PRODUCTION_AUDIT_CONTEXT_TOKENS & query_tokens
+    ):
+        trigger_token_matches.add("production")
     if not matched and not (trigger_token_matches - _GENERIC_TRIGGER_TOKENS):
         trigger_token_matches -= _GENERIC_TRIGGER_TOKENS
     trigger_token_matches.discard(self_name)
@@ -3162,6 +3217,11 @@ def _score_definition(
         wrapper_guidance=policy.wrapper_guidance,
         suggested_prompt=_suggested_prompt(definition.name, original_query),
     )
+
+
+_PRODUCTION_AUDIT_CONTEXT_TOKENS = frozenset(
+    {"audit", "readiness", "ready", "launch", "preflight", "checklist", "go-live", "rollback"}
+)
 
 
 def _codegraph_refresh_token_context(normalized_query: str, query_tokens: set[str]) -> bool:
@@ -4187,6 +4247,9 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
 # as blockers upstream and keep that phrasing in the wrappers above rather than
 # being rewritten, so the predicates here are the same ones as before.
 _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
+    # Changing how a page looks is not operating a browser on it, even when
+    # the page is named by a browser phrase ("login page").
+    "browser-operator": lambda normalized_query, query_tokens: not appearance_edit_request(query_tokens),
     "apple-design": _apple_design_offers_itself,
     "codebase-uml": _codebase_uml_offers_itself,
     "context": _context_alignment_offers_itself,

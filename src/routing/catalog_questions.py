@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from functools import lru_cache
 import unicodedata
 
@@ -256,9 +258,16 @@ _EXPLICIT_OMH_CAPABILITY_PHRASES = (
 )
 _OMH_CONTEXT_MARKERS = ("omh", "oh-my-hermes", "oh my hermes")
 _CONTEXT_MARKERS = _OMH_CONTEXT_MARKERS + ("hermes", "헤르메스")
+# `use` only as using OMH itself: bare, it also matched a question about which
+# model or tool OMH picks, which is a docs question about one mechanism.
 _CONTEXT_CAPABILITY_MARKERS = (
     "help",
-    "use",
+    "use omh",
+    "use it",
+    "use this",
+    "can i use",
+    "can we use",
+    "should i use",
     "useful",
     "support",
     "helpful",
@@ -652,6 +661,10 @@ def is_skill_catalog_question(message: str) -> bool:
         return False
     if _is_workflow_learning_feedback(search_texts):
         return False
+    # The skills this machine already has are an inventory and health
+    # question for the skill manager, not a request to browse the catalog.
+    if _is_own_skill_inventory_question(search_texts):
+        return False
     if is_native_entrypoint_question(message):
         return True
     if _contains_catalog_token(search_texts, _EXPLICIT_OMH_CAPABILITY_PHRASES):
@@ -763,6 +776,22 @@ def _is_named_workflow_catalog_question(search_texts: tuple[str, ...]) -> bool:
         and _contains_catalog_token(search_texts, _NAMED_WORKFLOW_MARKERS)
         and _contains_catalog_token(search_texts, _WORKFLOW_EXPLANATION_MARKERS)
     )
+
+
+# An own-skill inventory: a skill noun plus a possession or installation
+# word ("installed", "got", "have", "'ve") and a first-person owner. "What
+# skills are available" has no owner and stays a catalog question.
+_SKILL_NOUNS = frozenset({"skill", "skills"})
+_POSSESSION_WORDS = frozenset({"installed", "install", "got", "have", "ve", "own"})
+_FIRST_PERSON_WORDS = frozenset({"i", "my", "we", "our", "me", "us", "ive", "weve"})
+
+
+def _is_own_skill_inventory_question(search_texts: tuple[str, ...]) -> bool:
+    for text in search_texts:
+        words = set(re.findall(r"[a-z]+", text.replace("'", " ")))
+        if _SKILL_NOUNS & words and _POSSESSION_WORDS & words and _FIRST_PERSON_WORDS & words:
+            return True
+    return False
 
 
 def _is_context_capability_question(search_texts: tuple[str, ...]) -> bool:

@@ -48,7 +48,7 @@ class RepresentativeRoutingTests(unittest.TestCase):
     def test_near_neighbor_requests_keep_their_existing_workflows(self) -> None:
         cases = (
             ("Write an article about testing best practices", "web-research"),
-            ("Review this pull request code", "ultrawork"),
+            ("Do a code review of this pull request", "code-review"),
             ("Analyze this CSV dataset", "data-analysis"),
             ("Make a quick implementation plan", "plan"),
             ("Summarize this product demo video with timestamps", "media-input-operator"),

@@ -25,6 +25,27 @@ from omh.routing.display_names import canonical_display_mentions
 from omh.skills.catalog import historical_skill_display_names, installable_skill_definitions, omh_skill_display_name
 from omh.wrapper.contract import build_chat_interaction_payload
 from omh.wrapper.route_hints import build_chat_route_hint_payload
+from _route_owner import route_owner
+
+# Rows re-pinned to a clarify by shortlist-first routing (dispatch only on
+# strong evidence). Only these rows may pass as a clarify whose first
+# candidate is the expected skill; every other row must still dispatch.
+_REPINNED_EVERY_INSTALLABLE_SKILL_ROUTES_THE_SAME_FROM_EITHER_FORM = frozenset(
+    {
+        "achievements",
+        "ask",
+        "backend",
+        "buzz",
+        "cancel",
+        "doctor",
+        "frontend",
+        "plan",
+        "research",
+        "rust",
+        "skill",
+        "wiki",
+    }
+)
 
 
 class DisplayNamesInBodiesTests(unittest.TestCase):
@@ -158,9 +179,13 @@ class DisplayNameEchoBackRoutingTests(unittest.TestCase):
         for definition in installable_skill_definitions():
             display = omh_skill_display_name(definition.name)
             with self.subTest(skill=definition.name):
+                # Both forms reach the same skill. The rendered label is a named
+                # skill surface and dispatches; a bare one-word name after "use"
+                # is ordinary English, so under shortlist-first routing it may
+                # ask instead, with the same skill leading the shortlist.
                 self.assertEqual(
-                    route_chat_message(f"use {display}")["selected_skill"],
-                    route_chat_message(f"use {definition.name}")["selected_skill"],
+                    route_owner(route_chat_message(f"use {display}"), allow_clarify=definition.name in _REPINNED_EVERY_INSTALLABLE_SKILL_ROUTES_THE_SAME_FROM_EITHER_FORM),
+                    route_owner(route_chat_message(f"use {definition.name}"), allow_clarify=definition.name in _REPINNED_EVERY_INSTALLABLE_SKILL_ROUTES_THE_SAME_FROM_EITHER_FORM),
                 )
 
     def test_route_hint_accepts_the_display_name_it_just_rendered(self) -> None:

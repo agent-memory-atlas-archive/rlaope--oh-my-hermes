@@ -324,7 +324,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The Jev skills add seven: sentences that name Jev as a model, a
             # setting, or among options, or talk about its docs, pricing page,
             # or question format, none of which addresses Jev.
-            expected=289,
+            expected=312,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",
@@ -388,7 +388,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # jev-ask, and sentences about Jev (descriptive, negated,
             # configuration, a maintainer's mention of a skill name, an
             # explicit non-Jev invocation) that keep their ordinary owner.
-            expected=474,
+            expected=485,
             sites=(
                 "tests/test_cli.py",
                 "tests/test_hermes_ux_quality.py",

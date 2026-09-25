@@ -254,7 +254,40 @@ def jev_addressed_skill(message: str, names: Collection[str]) -> str | None:
     sibling = JEV_SIBLING_BY_PARTNER.get(partner)
     if sibling and sibling in names:
         return sibling
+    sibling = _lexical_sibling(message, names)
+    if sibling:
+        return sibling
     return JEV_ASK if JEV_ASK in names else None
+
+
+# A sibling picked by word overlap alone sends the user's data to a preset
+# that judges one kind of thing, so it needs both an absolute score (several
+# content words shared with that sibling's situations and triggers, not one)
+# and a clear lead over the next sibling. Anything less stays with `jev-ask`,
+# the preset that assumes nothing about the question.
+JEV_LEXICAL_SIBLING_FLOOR: Final = 9.0
+JEV_LEXICAL_SIBLING_MARGIN: Final = 5.0
+
+
+def _lexical_sibling(message: str, names: Collection[str]) -> str | None:
+    """The one non-ask sibling this message describes, ranked on catalog text.
+
+    `jev` itself is dropped from the query: every sibling carries it, so it
+    only raises all five scores together.
+    """
+    from .lexical_shortlist import lexical_ranking
+
+    ranked = [
+        (skill, score)
+        for skill, score in lexical_ranking(message, frozenset({"jev"}))
+        if skill in JEV_SKILL_NAMES and skill != JEV_ASK and skill in names
+    ]
+    if not ranked or ranked[0][1] < JEV_LEXICAL_SIBLING_FLOOR:
+        return None
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
+    if ranked[0][1] - runner_up < JEV_LEXICAL_SIBLING_MARGIN:
+        return None
+    return ranked[0][0]
 
 
 __all__ = [

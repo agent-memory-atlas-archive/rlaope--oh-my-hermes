@@ -189,7 +189,10 @@ class WrapperSessionTests(unittest.TestCase):
     def test_session_status_projects_workspace_and_resume_continuity(self) -> None:
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
-            message = "parallel team refactor with private-token-123"
+            # Bare, "parallel team refactor" is words alone and now asks
+            # (shortlist-first); the sigil keeps the ultrawork dispatch this
+            # session test needs.
+            message = "$ultrawork parallel team refactor with private-token-123"
             source_metadata = {"source_event_id": "continuity-1", "channel_ref": "qa"}
 
             started = create_or_resume_wrapper_session(
@@ -1503,7 +1506,8 @@ class WrapperSessionTests(unittest.TestCase):
     def test_required_worktree_isolation_disables_open_button_until_observed(self) -> None:
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
-            message = "parallel team refactor"
+            # See the note above: the sigil keeps the ultrawork dispatch.
+            message = "$ultrawork parallel team refactor"
             started = create_or_resume_wrapper_session(paths, message, source="discord")
             session_id = str(started["session"]["session_id"])
             record_plan_decision(paths, session_id, "accept")

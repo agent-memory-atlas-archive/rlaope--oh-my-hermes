@@ -147,10 +147,13 @@ class CodingLaneTests(unittest.TestCase):
         # still reach no owner (the Korean case above).
         from omh.routing.chat import route_chat_message
 
+        # Shortlist-first (2026-09-26): `implement` alone is a token, so this
+        # now asks. FINDING: ultrawork is not the top shortlist entry here
+        # (the lexical ranking leads with harness-session-inventory on
+        # "document-harness"); what holds is that nothing is dispatched.
         route = route_chat_message("implement the observer lookup for document-harness", source="slack")
-        self.assertEqual(route["action"], "dispatch")
-        self.assertEqual(route["selected_skill"], "ultrawork")
-        self.assertNotIn("candidate_handoff", route)
+        self.assertEqual(route["action"], "clarify")
+        self.assertIn("candidate_handoff", route)
 
     def test_a_domain_request_reaches_its_domain_workflow(self) -> None:
         # The other half of the lane guard. A server-side request now has an
@@ -159,10 +162,11 @@ class CodingLaneTests(unittest.TestCase):
         # back into the generic delivery lane.
         from omh.routing.chat import route_chat_message
 
+        # Shortlist-first: the name `backend` is one word, so this asks, with
+        # backend leading the shortlist rather than the delivery lane.
         route = route_chat_message("implement the backend for observer lookup", source="slack")
-        self.assertEqual(route["action"], "dispatch")
-        self.assertEqual(route["selected_skill"], "backend")
-        self.assertNotIn("candidate_handoff", route)
+        self.assertEqual(route["action"], "clarify")
+        self.assertEqual(route["candidate_skill"], "backend")
 
     def test_a_strong_match_keeps_its_own_shortlist(self) -> None:
         # The lane replaces noise, never signal: a real trigger match must not

@@ -4,6 +4,35 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Shortlist first: the router dispatches only on strong evidence and
+  otherwise hands Hermes the shortlist.** A confident score dispatches only
+  on an explicit or named invocation, the winner's own trigger phrase (unless
+  another skill said an equal phrase), or a trusted intent guard.
+  The pinned canonical requests without a phrase of their own ("the CI build
+  is failing on main", "review PR 1234", "deploy the app to production") ask,
+  with the intended skill first on the shortlist, for Hermes or the user to
+  confirm; paraphrases of them ("restyle the settings screen", "look over this
+  merge request") are not guaranteed the same order. Every guard is classified in
+  `GUARD_DISPATCH_TRUST`, trusted only where its predicate is intent-shaped
+  and its measured record supports it; guard fast paths answer to the same
+  table. Everything else -- trigger tokens, a one-word name, a context-only
+  guard -- clarifies with reason `weak_dispatch_evidence`. The clarify
+  carries up to four candidates: the declined winner first, scored skills
+  with evidence of their own, then a BM25 ranking over each skill's name,
+  triggers, situations, description, and use_when. The clarify card tells the
+  model to pick the workflow whose situation matches, naming each by the
+  situation its description opens on; `route_question` asks the same
+  shortlist. Guards and fast paths that fired on a word used in passing were
+  narrowed with vocabulary-level rules and negative cases (failure-outcome
+  words, check verbs, a cadence of a frequency word before a time, code-unit
+  nouns, own-skill inventory questions, system memory, bare verb names before
+  a plain noun), and single words that only mean a skill inside its phrase
+  are held back so they stop deciding which skill leads the shortlist. Measured in-sample on the 501-message tuning set these rules
+  were checked against: wrong dispatch 30.9% -> 9.8%, intended skill
+  dispatched or shortlisted 34.3% -> 62.7% (English: 7.9% and 69.5%). On the
+  owner's held-out English set, before the follow-up that removed
+  tuning-probe wording from the predicates, wrong dispatch went 40.4% ->
+  25.3% and reach 43.2% -> 62.2%; the reach target of 85% is not met.
 - **The plugin admits a Hermes git checkout by the release it resolves, not
   the install stamp's placeholder.** Released Hermes through 0.21.5 hard-codes
   `hermes_cli.__version__`; hermes-agent main now serves it from the install
@@ -22,8 +51,9 @@ All notable changes will be documented here.
   "<situation the user is in>: <what the skill produces>" (for example
   "Remember a fact for future sessions: ..."), and no two skills share a
   three-word opening. `SkillDefinition` gains `situations`, 5-10 plain English
-  phrases per skill in the words a user would use; nothing scores or renders
-  it yet. Routing results on both precision corpora are unchanged.
+  phrases per skill in the words a user would use; the lexical shortlist
+  reads it and nothing scores or renders it. Routing results on both
+  precision corpora are unchanged.
 - **The plugin bundle passes `hermes plugins validate`, and a plugin Hermes
   installed is left to Hermes.** The Hermes install scanner read the dict-key
   constant `PRIVATE_TOKEN = "__omh_egress_attempt_token"` as a hardcoded

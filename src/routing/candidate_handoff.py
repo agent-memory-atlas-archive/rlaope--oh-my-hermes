@@ -30,8 +30,11 @@ from .domain_signals import (
     ClarificationRelevance,
     classify_clarification_relevance,
 )
+from .dispatch_evidence import OWN_EVIDENCE_FLOOR, own_evidence_score
 from .input_language import SUPPORT_MODEL_SELECTION_REQUIRED
-from .recommend import recommendation_for_definition
+from .lexical_shortlist import LEXICAL_SCORE_FLOOR, lexical_anchor_terms, lexical_ranking, only_held_back_overlap
+from .policy import skill_is_negated
+from .recommend import offers_itself_withheld, recommendation_for_definition
 from ..skills.catalog import routable_definitions
 from ..workflows.hermes_planning import is_coding_shaped_task
 
@@ -64,6 +67,25 @@ MAX_CANDIDATES = 4
 REASON_LOW_CONFIDENCE = "low_confidence"
 REASON_NARROW_SCORE_GAP = "narrow_score_gap"
 REASON_NO_TRIGGER_COVERAGE = "no_trigger_coverage"
+# A high score the winner's own labels do not account for; see
+# `routing/dispatch_evidence.py`. The route carries it as `ambiguity_kind`.
+WEAK_DISPATCH_EVIDENCE = "weak_dispatch_evidence"
+
+# A clarify shortlist keeps at most this many scored candidates, and only ones
+# whose own labels reach `OWN_EVIDENCE_FLOOR` (one trigger phrase or two
+# trigger tokens). A scored candidate below it is the everyday-word overlap the
+# dispatch gate refused; its slot goes to the lexical ranking, which reads the
+# catalog's situations and descriptions instead of the trigger tables.
+MAX_SCORED_CANDIDATES = 2
+# Where a handoff's candidates came from: the scored field alone, or scored
+# candidates with evidence of their own followed by the lexical ranking.
+SHORTLIST_SCORED = "scored"
+SHORTLIST_LEXICAL = "scored_then_lexical"
+SCORED_OWN_EVIDENCE_FLOOR = OWN_EVIDENCE_FLOOR
+LEXICAL_WHY = (
+    "Shares content words with this workflow's situations, triggers, and description; "
+    "a lexical shortlist entry, not a trigger match."
+)
 
 CLAIM_BOUNDARY = (
     "A candidate set is routing input for model selection, not a routing decision. "
@@ -85,6 +107,8 @@ def candidate_handoff_reasons(route: dict[str, object]) -> tuple[str, ...]:
         return ()
 
     reasons: list[str] = []
+    if str(route.get("ambiguity_kind", "")) == WEAK_DISPATCH_EVIDENCE:
+        reasons.append(WEAK_DISPATCH_EVIDENCE)
     input_language = route.get("input_language")
     if isinstance(input_language, dict):
         if input_language.get("trigger_support") == SUPPORT_MODEL_SELECTION_REQUIRED:
@@ -172,6 +196,92 @@ def _relevant_candidates(
     return relevant[:MAX_CANDIDATES]
 
 
+def _lexical_shortlist(
+    recommendations: list[dict[str, object]], message: str, *, declined_dispatch: bool = False
+) -> list[dict[str, object]]:
+    """The declined winner, scored candidates with evidence of their own, then lexical ranks.
+
+    Only for a `clarify`: the router already decided it cannot dispatch, and
+    the shortlist is what Hermes chooses from. After a declined dispatch the
+    declined winner always leads, whatever its own-evidence score. The first
+    entry becomes the route's `candidate_skill`. A `jev-*` skill never enters by word overlap --
+    it sends data off the machine and is reached only through
+    `routing/jev_addressing.py`.
+    """
+    candidates: list[dict[str, object]] = []
+    for index, recommendation in enumerate(recommendations):
+        if len(candidates) >= MAX_SCORED_CANDIDATES:
+            break
+        labels = recommendation.get("matched")
+        if skill_is_negated(message, str(recommendation.get("skill") or "")):
+            continue
+        # The winner the gate declined to dispatch always leads: the router
+        # was confident in it, and declining means asking, not dropping it.
+        own = own_evidence_score([str(label) for label in labels or ()])
+        declined_winner = declined_dispatch and index == 0 and int(recommendation.get("score", 0) or 0) > 0
+        if declined_winner or own >= SCORED_OWN_EVIDENCE_FLOOR:
+            candidates.append(_candidate(recommendation))
+    named = {str(candidate.get("skill") or "") for candidate in candidates}
+    definitions = {definition.name: definition for definition in routable_definitions()}
+    for skill, score in lexical_ranking(message):
+        if len(candidates) >= MAX_CANDIDATES or score < LEXICAL_SCORE_FLOOR:
+            break
+        definition = definitions.get(skill)
+        # A skill the user named in order to decline it ("don't use ultraqa")
+        # is not offered back.
+        if definition is None or skill in named or skill.startswith("jev-") or skill_is_negated(message, skill):
+            continue
+        # After a declined dispatch the ranking is admitted as it stands --
+        # the router was confident enough to have dispatched, and the ranking
+        # is what corrects it -- except a skill whose only shared words are
+        # ones the router credits to it only inside a whole phrase
+        # ("large pdf" is not long-document-reading). An ordinary clarify
+        # also needs an anchor word and the skill's offers-itself precondition.
+        if declined_dispatch:
+            if only_held_back_overlap(message, skill):
+                continue
+        elif not lexical_anchor_terms(message, skill) or offers_itself_withheld(message, skill):
+            continue
+        named.add(skill)
+        candidates.append(
+            _candidate(
+                recommendation_for_definition(
+                    definition,
+                    message,
+                    matched=("lexical_shortlist",),
+                    score=0,
+                    why=LEXICAL_WHY,
+                )
+            )
+        )
+    return candidates
+
+
+def _situation(description: object) -> str:
+    """The situation a skill's description opens on: "[omh] <situation>: <output>"."""
+    text = str(description or "").removeprefix("[omh]").strip()
+    head, colon, _rest = text.partition(":")
+    return head.strip() if colon else text
+
+
+def shortlist_clarification(candidates: list[dict[str, object]]) -> str:
+    """One plain instruction for the model: pick the workflow the user's situation fits.
+
+    Each candidate is named with the situation its description opens on, so the
+    model compares situations rather than skill names it may not know.
+    """
+    options = "; ".join(
+        f"`{candidate.get('skill')}` ({_situation(candidate.get('description'))})"
+        for candidate in candidates
+        if candidate.get("skill")
+    )
+    return (
+        f"Pick the workflow whose situation matches what the user described: {options}. "
+        "If one clearly fits, use it; if two could, ask the user one short question that names both; "
+        "if none fits, answer directly without a workflow."
+    )
+
+
 def _candidate(recommendation: dict[str, object]) -> dict[str, object]:
     return {
         "skill": recommendation.get("skill"),
@@ -238,10 +348,27 @@ def build_candidate_handoff(
         return None
 
     recommendations = [item for item in route.get("recommendations", []) if isinstance(item, dict)]
-    candidates = [_candidate(recommendation) for recommendation in recommendations[:MAX_CANDIDATES]]
+    scored = [_candidate(recommendation) for recommendation in recommendations[:MAX_CANDIDATES]]
+    # The lexical index is English catalog text. A non-ASCII request keeps the
+    # scored shortlist: the Routing Language Policy leaves its intent to the
+    # frozen trigger tables and to model selection, not to English word overlap.
+    lexical = str(route.get("action") or "") == "clarify" and message.isascii()
+    candidates = (
+        _lexical_shortlist(recommendations, message, declined_dispatch=WEAK_DISPATCH_EVIDENCE in reasons)
+        if lexical
+        else scored
+    )
 
-    if _coding_lane_applies(candidates, message):
-        candidates = _coding_lane()
+    if _coding_lane_applies(scored, message):
+        lane = _coding_lane()
+        if lexical:
+            # The lane leads; the lexical ranks keep the remaining slots, so a
+            # request whose situation names a specialist skill still offers it
+            # beside the delivery engines.
+            lane_skills = {str(candidate.get("skill") or "") for candidate in lane}
+            candidates = [*lane, *[c for c in candidates if c.get("skill") not in lane_skills]][:MAX_CANDIDATES]
+        else:
+            candidates = lane
         reasons = (*reasons, "implementation_shaped_request")
 
     candidates = _relevant_candidates(candidates, relevance, message)
@@ -253,6 +380,7 @@ def build_candidate_handoff(
         "reasons": list(reasons),
         "candidates": candidates,
         "candidate_count": len(candidates),
+        "shortlist_source": SHORTLIST_LEXICAL if lexical else SHORTLIST_SCORED,
         "selector": "hermes",
         "digest": candidate_handoff_digest(candidates, reasons),
         "claim_boundary": CLAIM_BOUNDARY,
@@ -260,8 +388,8 @@ def build_candidate_handoff(
 
     if "implementation_shaped_request" in reasons:
         payload["question"] = (
-            "The request is implementation-shaped but no workflow matched strongly. These are "
-            "the coding-delivery workflows; choose the one that fits the delivery grain, or ask "
+            "The request is implementation-shaped but no workflow matched strongly. The leading "
+            "candidates are the coding-delivery workflows; choose the one that fits the delivery grain, or ask "
             "one clarifying question. Do not route implementation work to planning-only flows."
         )
     elif candidates:

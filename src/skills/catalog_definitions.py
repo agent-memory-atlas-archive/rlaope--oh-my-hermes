@@ -3983,6 +3983,7 @@ _DEFINITIONS = [
             "set up a component library",
             "add scroll effects to the hero",
             "react page styling",
+            "change how a page looks",
             "layout for a terminal app",
         ),
     ),

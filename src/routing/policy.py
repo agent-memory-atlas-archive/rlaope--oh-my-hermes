@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 from functools import lru_cache
+from collections.abc import Mapping
+from types import MappingProxyType
 
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
@@ -70,6 +74,9 @@ _SCHEDULED_OPS_STRONG_TOKENS = _normalized_token_set(
         "반복",
     }
 )
+# The strong tokens that name scheduling itself rather than describing a
+# thing that happens more than once.
+_SCHEDULED_OPS_EXPLICIT_TOKENS = _normalized_token_set({"cron", "automate", "automation", "자동화", "정기"})
 _SCHEDULED_OPS_CADENCE_TOKENS = _normalized_token_set(
     {
         "daily",
@@ -1367,9 +1374,9 @@ _FEEDBACK_TRIAGE_SOURCE_TOKENS = _normalized_token_set(
         "user",
         "users",
         "feedback",
-        "notes",
-        "report",
-        "reports",
+        # `report`, `reports`, and `notes` name an artifact as often as a
+        # source of feedback ("build a weekly ops report"); the customer
+        # phrases in `_FEEDBACK_TRIAGE_PHRASES` still carry "customer notes".
         "reported",
         "signal",
         "signals",
@@ -1447,8 +1454,8 @@ _FEEDBACK_TRIAGE_DECISION_TOKENS = _normalized_token_set(
         "choose",
         "prioritize",
         "rank",
-        "build",
-        "next",
+        # `build` and `next` left: they are what every plan says, not a
+        # decision about feedback.
         "roadmap",
         "investigate",
         "reproduce",
@@ -1457,7 +1464,6 @@ _FEEDBACK_TRIAGE_DECISION_TOKENS = _normalized_token_set(
         "결정",
         "선택",
         "우선순위",
-        "다음",
         "로드맵",
         "조사",
         "재현",
@@ -3892,6 +3898,12 @@ _LIVE_INFO_OPERATOR_LOOKUP_TOKENS = _normalized_token_set(
         "경계",
     }
 )
+_LIVE_INFO_OPERATOR_EVERYDAY_CONTEXT_TOKENS = _normalized_token_set(
+    {"time", "map", "rate", "score", "scores", "game", "price", "stock", "exchange", "location", "nearby", "sports"}
+)
+_LIVE_INFO_OPERATOR_LIVE_CUE_TOKENS = _normalized_token_set(
+    {"now", "today", "current", "latest", "tonight", "yesterday", "live", "nearby"}
+)
 _LIVE_INFO_OPERATOR_BLOCKERS = (
     "web search",
     "web research",
@@ -5511,6 +5523,98 @@ ROUTING_GUARD_RULES = (
 )
 
 
+# Which guards may decide a dispatch on their own (#dispatch-evidence).
+#
+# Rule for the label: a guard is trusted when its predicate matches an intent
+# shape AND its measured record as a winner on the tuning set supports it
+# (right >= wrong, or at most one wrong). A guard whose record does not is
+# either narrowed until it does or marked context-only; the reasons below
+# carry the record where it decided the label.
+#
+# A guard boost reorders the field either way. What this table decides is
+# whether the boost alone may DISPATCH a skill whose own trigger evidence is
+# thin. A trusted guard matches an intent shape -- an imperative plus its
+# object ("fix the login bug"), an explicit skill surface ("voice note"), a
+# cadence plus a scheduled action -- and keeps that authority. A context-only
+# guard fires on co-occurring topic words ("what" beside "time", a document
+# size, a format noun); when it is the only strong evidence the route clarifies
+# with its skill as the candidate. Every guard id must appear here, so a new
+# guard is a visible choice rather than a silent default.
+GUARD_TRUSTED = "trusted"
+GUARD_CONTEXT_ONLY = "context_only"
+GUARD_DISPATCH_TRUST: dict[str, tuple[str, str]] = {
+    "adversarial_qa_before_generic_help": (GUARD_TRUSTED, "hostile/missing-path testing named as the task"),
+    "agent_board_before_generic_clarification": (GUARD_TRUSTED, "an imperative to coordinate named agents or a board"),
+    "app_delivery_loop_before_generic_plan": (GUARD_TRUSTED, "an explicit idea-to-release path"),
+    "browser_operator_before_generic_clarification": (GUARD_TRUSTED, "an imperative to operate a browser page"),
+    "cleanup_refactor_before_workflow_learning": (GUARD_TRUSTED, "a cleanup verb on code with regression-test language"),
+    "coding_handoff_status_before_clarify": (GUARD_TRUSTED, "a named executor plus a status request"),
+    "coding_progress_status_before_clarify": (GUARD_TRUSTED, "a named executor plus a progress request"),
+    "command_operator_before_generic_terminal_or_coding": (GUARD_TRUSTED, "an imperative to run a terminal or package command"),
+    "connector_operator_before_generic_api_or_command": (GUARD_TRUSTED, "an action on a named external app"),
+    "content_operator_before_generic_text_transform": (GUARD_TRUSTED, "an imperative to write publish-ready copy"),
+    "contract_redline_before_generic_review": (GUARD_TRUSTED, "redline or negotiation verbs on a contract"),
+    "credential_rotation_before_toolbelt_readiness": (GUARD_TRUSTED, "rotate or revoke on an existing credential"),
+    "cto_loop_before_generic_loop": (GUARD_TRUSTED, "an explicit PM/dev/QA leadership loop"),
+    "deep_interview_before_generic_plan": (GUARD_TRUSTED, "an explicit interview-before-planning request"),
+    "deliverable_package_for_file_attachment": (GUARD_TRUSTED, "a generated file plus an attach or delivery action"),
+    "delivery_cycle_before_research_only": (GUARD_TRUSTED, "an explicit PR or delivery-cycle completion request"),
+    "dependency_upgrade_before_generic_plan": (GUARD_TRUSTED, "an upgrade verb on a named framework version"),
+    "direct_coding_task_before_fallback": (GUARD_TRUSTED, "an imperative code-edit verb plus a code object"),
+    "doctor_health_before_skill_catalog": (GUARD_TRUSTED, "OMH install or setup health named as the problem"),
+    "durable_research_goal_before_wiki": (GUARD_TRUSTED, "keep-researching-until-closed shape"),
+    "executor_runtime_readiness_before_generic_advice": (GUARD_TRUSTED, "an executor named with a can-it-run or connect question; narrowed off comparisons and session inventories"),
+    "feedback_before_coding": (GUARD_TRUSTED, "a customer or user report of a defect handed over for triage; narrowed off replies, filing, test commands, and system memory"),
+    "gateway_intent_before_feedback_triage": (GUARD_TRUSTED, "messenger thread or delivery policy named as the task"),
+    "generated_artifact_provenance_before_deliverable_package": (GUARD_TRUSTED, "asks whether a change touches a generated file"),
+    "github_event_ops_before_generic_planning": (GUARD_TRUSTED, "an explicit PR, CI, or issue-to-PR event"),
+    "github_issue_intake_before_event_ops_or_feedback": (GUARD_TRUSTED, "an imperative to file a new issue"),
+    "greenfield_build_before_generic_picker": (GUARD_CONTEXT_ONLY, "fires on build plus the absence of a named existing surface"),
+    "harness_session_inventory_before_toolbelt_or_observability": (GUARD_TRUSTED, "an inventory request over named harness sessions"),
+    "hermes_coding_team_before_generic_clarification": (GUARD_TRUSTED, "Hermes-owned coding with workers or worktrees"),
+    "img_summary_before_materials_or_delivery": (GUARD_TRUSTED, "an image or card summary named as the output"),
+    "jit_learn_before_generic_research_or_review": (GUARD_TRUSTED, "what-to-learn-now for a live blocker"),
+    "live_info_operator_before_generic_current_facts": (GUARD_TRUSTED, "a live topic (weather, rate, score) with a live cue (now, today, latest)"),
+    "long_document_reading_before_paper_or_materials": (GUARD_TRUSTED, "a read or summarize verb on a document past one read budget"),
+    "loop_goal_before_generic_clarification": (GUARD_TRUSTED, "a loopable product or OSS goal"),
+    "materials_package_before_report_or_clarify": (GUARD_TRUSTED, "a production verb on a document format (turn into slides, export a pdf)"),
+    "media_input_operator_before_generic_content_or_direct": (GUARD_TRUSTED, "an audio, video, or recording input named as the source"),
+    "memory_curation_before_generic_clarification": (GUARD_TRUSTED, "an imperative to clean up Hermes memory"),
+    "memory_new_before_existing_memory_curation": (GUARD_TRUSTED, "an imperative to capture a new durable fact"),
+    "memory_provider_lifecycle_before_toggle_or_file_operation": (GUARD_TRUSTED, "enable, switch, or export a named memory provider"),
+    "missed_workflow_operating_record_recovery": (GUARD_TRUSTED, "explicit missed-OMH feedback about operating records"),
+    "missed_workflow_research_recovery": (GUARD_TRUSTED, "explicit missed-OMH feedback about research work"),
+    "named_coding_agent_delivery_before_advisor_or_feedback": (GUARD_TRUSTED, "a named coding agent plus a delivery verb"),
+    "omh_quality_improvement_loop_before_feedback_triage": (GUARD_TRUSTED, "OMH self-improvement named as the task"),
+    "ops_observability_before_generic_loop": (GUARD_TRUSTED, "a status or metrics request over a named runtime surface; measured 1 right / 1 wrong"),
+    "paper_learning_before_materials_or_research_ops": (GUARD_TRUSTED, "a paper named as the thing to explain"),
+    "persistent_completion_before_board_status": (GUARD_TRUSTED, "finish-until-pass-or-block shape"),
+    "point_in_time_web_before_live_lookup": (GUARD_TRUSTED, "an explicit as-of date or archived capture"),
+    "product_shaping_before_ops_review": (GUARD_TRUSTED, "a product goal stated with an explicit do-not-know-where-to-start cue"),
+    "provider_profile_posture_before_toolbelt_readiness": (GUARD_TRUSTED, "explicit provider or profile posture request"),
+    "release_claim_review_before_file_lookup": (GUARD_TRUSTED, "release claims versus code named for review"),
+    "research_brief_before_wiki": (GUARD_TRUSTED, "a comparison with evidence gaps named as the output"),
+    "research_department_before_generic_scheduled_ops": (GUARD_TRUSTED, "a recurring research operation shape"),
+    "risky_refactor_before_cleanup": (GUARD_TRUSTED, "risky refactor named as the change"),
+    "safe_feature_change_before_generic_plan": (GUARD_TRUSTED, "a safe feature change named as the change"),
+    "scheduled_ops_blueprint_before_reliability_or_research": (GUARD_TRUSTED, "a cadence plus a scheduled action"),
+    "source_finder_before_generic_web_research": (GUARD_CONTEXT_ONLY, "fires on source and paper nouns"),
+    "strategy_brief_before_generic_plan": (GUARD_TRUSTED, "a decide-whether or prioritize decision shape"),
+    "toolbelt_readiness_before_generic_or_visual_fallback": (GUARD_TRUSTED, "a named tool or credential plus a missing or setup cue; narrowed off bare setup, api, provider, and model words"),
+    "voice_operator_before_generic_clarification": (GUARD_TRUSTED, "an explicit voice-note or mobile surface cue"),
+    "web_research_before_process": (GUARD_CONTEXT_ONLY, "fires on web, source, or current-evidence nouns"),
+    "workflow_learning_before_skill_management": (GUARD_TRUSTED, "learn-from-this-workflow named as the task"),
+    "workspace_file_operator_before_materials_or_coding": (GUARD_TRUSTED, "an imperative file or folder operation"),
+}
+
+
+@lru_cache(maxsize=1)
+def guard_label_dispatch_trust() -> Mapping[str, str]:
+    """`guard:<label>` -> trust, for every guard rule defined in this module."""
+    rules = [value for value in globals().values() if isinstance(value, RoutingGuardRule)]
+    return MappingProxyType({rule.matched_label: GUARD_DISPATCH_TRUST[rule.id][0] for rule in rules})
+
+
 def is_ambiguous_scores(first_score: int, second_score: int | None) -> bool:
     return second_score is not None and first_score > 0 and first_score == second_score
 
@@ -5622,6 +5726,7 @@ def _ordinary_explicit_skill_invocation(stripped: str, names: set[str]) -> str |
             and words[1] in CONTEXT_BUDGET_SENSE_WORDS
         )
         and not _bare_first_word_reads_as_a_verb(stripped, first, used_prefix)
+        and not _bare_verb_name_takes_a_plain_object(stripped, first, used_prefix)
         and not _bare_first_word_names_a_longer_skill(stripped, first, names, used_prefix)
     ):
         return None if _explicit_skill_candidate_is_negated(stripped, first) else first
@@ -5646,6 +5751,27 @@ def _ordinary_explicit_skill_invocation(stripped: str, names: set[str]) -> str |
 # they open a sentence as nouns or as the thing being asked for, not as a verb
 # taking the rest of the request as its object.
 _VERB_SHAPED_BARE_INVOCATION_NAMES = frozenset({"research"})
+
+# Skill names that are also imperative verbs. Unprefixed, such a first word is
+# the skill used AS a command only when what follows is its target: nothing,
+# a colon or comma, a determiner or pronoun, or a question word ("plan this",
+# "plan the migration", "plan how to ship X", "plan: ..."). Followed by a bare
+# noun it is the verb of an ordinary sentence ("plan meals for the
+# week" wants meals planned, not the `plan` workflow) and the message routes
+# on merit.
+_IMPERATIVE_BARE_INVOCATION_NAMES = frozenset({"plan", "loop", "cancel"})
+_BARE_INVOCATION_TARGET_WORDS = frozenset(
+    {"a", "an", "the", "this", "that", "these", "those", "it", "my", "our", "your", "me", "us", "out", "how", "what", "for"}
+)
+
+
+def _bare_verb_name_takes_a_plain_object(stripped: str, candidate: str, used_prefix: bool) -> bool:
+    if used_prefix or candidate not in _IMPERATIVE_BARE_INVOCATION_NAMES:
+        return False
+    parts = stripped.split(maxsplit=2)
+    if len(parts) < 2 or parts[0].endswith((":", ",")):
+        return False
+    return parts[1].strip(":,.!?").lower() not in _BARE_INVOCATION_TARGET_WORDS
 
 
 def _bare_first_word_reads_as_a_verb(stripped: str, candidate: str, used_prefix: bool) -> bool:
@@ -5773,6 +5899,11 @@ def _resolved_skill_name(token: str, names: set[str]) -> str:
         return token
     alias = _EXPLICIT_SKILL_ALIASES.get(token, "")
     return alias if alias in names else ""
+
+
+def skill_is_negated(message: str, skill: str) -> bool:
+    """The message names `skill` only to decline it ("don't use ultraqa")."""
+    return bool(skill) and _explicit_skill_candidate_is_negated(message, skill)
 
 
 def _explicit_skill_candidate_is_negated(message: str, *candidates: str) -> bool:
@@ -6176,6 +6307,65 @@ def _deep_interview_guard_applies(normalized_query: str, query_tokens: set[str])
     return (interview or clarify) and before_plan
 
 
+# The words of a message from its command verb on, after an optional courtesy
+# opener ("please", "can you") or an address to the assistant ("omh").
+# Used only to NARROW guards: an edit verb that is not the command verb does
+# not make a request an edit.
+_COURTESY_OPENERS = (
+    "please ", "pls ", "can you ", "could you ", "would you ", "will you ", "can we ", "could we ",
+    "kindly ", "hey ", "ok ", "okay ", "now ", "omh ", "hermes ", "hermes, ",
+)
+
+
+def _command_words(normalized_query: str) -> list[str]:
+    text = normalized_query.strip()
+    changed = True
+    while changed:
+        changed = False
+        for opener in _COURTESY_OPENERS:
+            if text.startswith(opener):
+                text = text[len(opener) :].lstrip(" ,")
+                changed = True
+    return re.findall(r"[a-z0-9#][a-z0-9#+.-]*", text)
+
+
+# Code-shaped objects: the nouns a code edit acts on. The direct code-edit
+# guard needs one; `_CODE_UNIT_TOKENS`, the units of source code among them,
+# is what the file-operation guard declines a file named by.
+_CODE_OBJECT_TOKENS = frozenset(
+    {
+        "api", "branch", "bug", "button", "class", "component", "config", "css", "file",
+        "function", "method", "module", "navbar", "readme", "route", "router", "settings", "test",
+        "tests", "toggle", "variable",
+    }
+)
+_CODE_UNIT_TOKENS = frozenset({"class", "component", "function", "method", "module", "variable"})
+_UI_BUILD_SURFACES = frozenset({"page", "pages", "screen", "screens", "sidebar", "dashboard", "form", "landing", "site", "website"})
+_DIRECT_CODING_EDIT_VERBS = frozenset(
+    {"add", "adjust", "build", "change", "delete", "edit", "fix", "implement", "make", "patch", "remove", "rename", "set", "tweak", "update"}
+)
+_CADENCE_TIME_WORDS = frozenset(
+    {
+        "morning", "evening", "night", "day", "weekday", "week", "month", "hour", "minute",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "am", "pm",
+    }
+)
+
+
+def has_cadence(normalized_query: str, query_tokens: set[str]) -> bool:
+    """A frequency word that schedules: daily/weekly alone, or every/each directly before a time."""
+    words = set(normalized_query.replace(",", " ").split()) | set(query_tokens)
+    if {"daily", "weekly", "monthly", "hourly", "nightly", "매일", "매주", "매월", "아침마다"} & words:
+        return True
+    sequence = normalized_query.replace(",", " ").split()
+    for index, word in enumerate(sequence[:-1]):
+        if word in {"every", "each"}:
+            following = sequence[index + 1]
+            if following in _CADENCE_TIME_WORDS or (following[:-2].isdigit() and following.endswith(("am", "pm"))):
+                return True
+    return False
+
+
 def _direct_coding_task_guard_applies(
     normalized_query: str,
     query_tokens: set[str],
@@ -6193,29 +6383,35 @@ def _direct_coding_task_guard_applies(
             "reproduction plan before coding",
             "구현 전에",
             "코딩 전에",
+            # A check verb asks for verification, not an edit.
+            *_CHECK_REQUEST_PHRASES,
         ),
     ):
         return False
-    action = bool(
-        {
-            "add",
-            "adjust",
-            "build",
-            "change",
-            "delete",
-            "edit",
-            "fix",
-            "implement",
-            "make",
-            "patch",
-            "remove",
-            "rename",
-            "set",
-            "tweak",
-            "update",
-        }
-        & query_tokens
-    ) or _contains_phrase(
+    # In English the edit verb must be the command verb, not a word further on
+    # ("compare how it looked before my CSS change" has no edit command).
+    edit_verbs = _DIRECT_CODING_EDIT_VERBS & query_tokens
+    # A delegation to a named coding agent ("have codex fix ...") puts the
+    # edit verb after the agent; that is still the command.
+    if normalized_query.isascii() and not _contains_named_coding_agent_phrase(normalized_query):
+        words = _command_words(normalized_query)
+        # The command verb, a verb introduced as the task ("use X to fix",
+        # "help me fix"), or a second command joined by "and"/"then".
+        commanded = set(words[:1]) | {words[i] for i in range(1, len(words)) if words[i - 1] in {"to", "me", "and", "then"}}
+        edit_verbs = edit_verbs & commanded
+    if normalized_query.isascii():
+        # "set up" is setup, not an edit; building a new page or screen is a
+        # frontend build; and a question about what a named coding agent can
+        # do asks nothing to be changed.
+        if _contains_phrase(normalized_query, ("set up", "setup")) and not (_CODE_OBJECT_TOKENS - {"api"}) & query_tokens:
+            edit_verbs = edit_verbs - {"set"}
+        if edit_verbs & {"build", "create"} and _UI_BUILD_SURFACES & query_tokens:
+            edit_verbs = edit_verbs - {"build", "create"}
+        if normalized_query.lstrip().startswith(_AGENT_CAPABILITY_QUESTION_OPENERS) and _contains_named_coding_agent_phrase(
+            normalized_query
+        ):
+            edit_verbs = set()
+    action = bool(edit_verbs) or _contains_phrase(
         normalized_query,
         (
             "바꿔",
@@ -6236,41 +6432,19 @@ def _direct_coding_task_guard_applies(
     if _workspace_file_operator_guard_applies(normalized_query, query_tokens):
         return False
 
+    # The object must be code-shaped. Everyday nouns that also name a
+    # document or UI surface (`style`, `title`, `mode`, `docs`, `login`,
+    # `log`, `output`, `setup`, `ux`) made "make the slide title shorter" or
+    # "update the style of this memo" a one-cycle code edit; they still count
+    # inside the phrases below ("dark mode", "readme title", "login bug",
+    # "setup log"). `setting` is the verb in "setting up", and `api` counts
+    # only as an API, not as an API key.
+    object_tokens = (
+        query_tokens - {"api"} if _contains_phrase(normalized_query, ("api key", "api keys")) else query_tokens
+    )
     concrete_surface = bool(
-        {
-            "api",
-            "bug",
-            "button",
-            "component",
-            "css",
-            "dark",
-            "docs",
-            "file",
-            "function",
-            "login",
-            "mode",
-            "navbar",
-            "readme",
-            "route",
-            "router",
-            "setting",
-            "settings",
-            "setup",
-            "style",
-            "test",
-            "tests",
-            "log",
-            "logs",
-            "output",
-            "ux",
-            "title",
-            "toggle",
-            "variable",
-            "로그",
-            "출력",
-            "테스트",
-        }
-        & query_tokens
+        (_CODE_OBJECT_TOKENS | {"로그", "출력", "테스트"})
+        & object_tokens
     ) or _contains_phrase(
         normalized_query,
         (
@@ -6358,6 +6532,11 @@ def _direct_coding_task_guard_applies(
     return True
 
 
+_REPLY_VERBS = frozenset({"reply", "respond", "answer", "apologize", "apologise"})
+_FILING_TARGETS = frozenset({"ticket", "tickets", "jira", "linear", "issue", "github"})
+_FILING_ACTIONS = frozenset({"turn", "file", "open", "create", "log", "raise", "put"})
+
+
 def _feedback_before_coding_guard_applies(
     normalized_query: str,
     query_tokens: set[str],
@@ -6393,6 +6572,15 @@ def _feedback_before_coding_guard_applies(
         ("before coding", "before code", "before implementation", "before writing code", "구현 전에", "코딩 전에"),
     )
     if _explicit_delivery_or_implementation_requested(normalized_query, query_tokens) and not planning_before_coding:
+        return False
+    # Answering the customer is support, and turning a report into a ticket
+    # or an issue is filing; triage is deciding what the report means.
+    if _REPLY_VERBS & query_tokens or (_FILING_TARGETS & query_tokens and _FILING_ACTIONS & query_tokens):
+        return False
+    # A test command is QA, and memory that grows or leaks is performance.
+    if _command_words(normalized_query)[:1] == ["test"]:
+        return False
+    if "memory" in query_tokens and (_SYSTEM_MEMORY_WORDS | {"grow", "grows", "growing"}) & query_tokens:
         return False
     if _contains_phrase(normalized_query, _FEEDBACK_TRIAGE_PHRASES):
         return True
@@ -6532,6 +6720,12 @@ def _research_brief_guard_applies(normalized_query: str, query_tokens: set[str])
 
 
 def _strategy_brief_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
+    # Deciding which features go on a roadmap is product planning, and a brief
+    # on a market is research; the strategy lane is business positioning.
+    if {"feature", "features", "roadmap", "backlog"} & query_tokens:
+        return False
+    if {"market", "markets", "competitors", "competitor"} & query_tokens and {"brief", "overview", "summary"} & query_tokens:
+        return False
     if _contains_phrase(
         normalized_query,
         (
@@ -6635,6 +6829,11 @@ def _cto_loop_guard_applies(normalized_query: str, query_tokens: set[str]) -> bo
 
 
 def _adversarial_qa_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
+    # A question about what a named coding agent can do is not a QA run.
+    if normalized_query.lstrip().startswith(_AGENT_CAPABILITY_QUESTION_OPENERS) and _contains_named_coding_agent_phrase(
+        normalized_query
+    ):
+        return False
     qa_context = bool({"test", "tests", "qa", "wizard"} & query_tokens)
     adversarial = bool({"hostile", "adversarial", "stale", "missing", "invalid", "broken"} & query_tokens)
     scenario_phrase = _contains_phrase(
@@ -6812,7 +7011,18 @@ def _loop_goal_guard_applies(normalized_query: str, query_tokens: set[str]) -> b
 def _scheduled_ops_blueprint_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if is_explicit_one_off_request(normalized_query, query_tokens):
         return False
-    if _SCHEDULED_OPS_STRONG_TOKENS & query_tokens:
+    # A digest of the user's own mail, inbox, or calendar is the morning
+    # brief's job, not a generic scheduled blueprint.
+    if {"inbox", "mail", "email", "emails", "calendar"} & query_tokens and {"brief", "digest", "summary", "summarize", "recap"} & query_tokens:
+        return False
+    if _SCHEDULED_OPS_EXPLICIT_TOKENS & query_tokens:
+        return True
+    # `recurring` and `repeat` describe a thing as often as they schedule one
+    # (recurring themes, repeat an answer); alone they no longer claim a
+    # scheduled job.
+    if _SCHEDULED_OPS_STRONG_TOKENS & query_tokens and (
+        _SCHEDULED_OPS_CADENCE_TOKENS & query_tokens or _SCHEDULED_OPS_CONTEXT_TOKENS & query_tokens
+    ):
         return True
     if _SCHEDULED_OPS_CADENCE_TOKENS & query_tokens and _SCHEDULED_OPS_CONTEXT_TOKENS & query_tokens:
         return True
@@ -7890,6 +8100,15 @@ def _github_issue_intake_guard_applies(normalized_query: str, query_tokens: set[
         ),
     ):
         return False
+    # A request on a cadence reads issues someone else filed; it files
+    # nothing now. `new github issue` is a substring of `new github issues`,
+    # so the explicit filing phrase alone handed any recurring digest of
+    # issues a +44 filing boost. A cadence (a frequency word, or "every" plus
+    # a time) or a scheduling cue takes the filing guard off.
+    if has_cadence(normalized_query, query_tokens) or _scheduled_ops_blueprint_guard_applies(
+        normalized_query, query_tokens
+    ):
+        return False
     if _contains_phrase(normalized_query, _GITHUB_ISSUE_INTAKE_EXPLICIT_PHRASES):
         return True
     github_context = _contains_phrase(normalized_query, ("github", "깃허브", "repository", "repo", "저장소", "레포"))
@@ -7903,6 +8122,12 @@ def _github_issue_intake_guard_applies(normalized_query: str, query_tokens: set[
 
 def _github_event_ops_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _visual_summary_guard_applies(normalized_query, query_tokens):
+        return False
+    # Event ops reacts to one event. A cadence makes it a scheduled digest,
+    # and turning an issue into a plan or spec is planning.
+    if has_cadence(normalized_query, query_tokens):
+        return False
+    if {"plan", "spec", "roadmap"} & query_tokens and _contains_phrase(normalized_query, ("into a", "into the")):
         return False
     if _github_issue_intake_guard_applies(normalized_query, query_tokens):
         return False
@@ -8008,6 +8233,30 @@ def _github_event_ops_guard_applies(normalized_query: str, query_tokens: set[str
     return (issue_or_pr or ci_event) and event_or_pr_prep and (github_context or event_context or ci_event)
 
 
+# A request to check or confirm something, not to change or produce it.
+_CHECK_REQUEST_PHRASES = ("make sure", "ensure", "verify", "confirm", "double check", "double-check")
+# The materials lane claims a document request on a format noun ("slide deck",
+# "pdf"). An English request must also ask for something to be produced or
+# processed; a document to be checked, judged, or located is another lane's.
+_MATERIALS_PRODUCTION_VERBS = frozenset(
+    {
+        "make", "create", "turn", "convert", "export", "build", "generate", "draft", "prepare",
+        "produce", "package", "summarize", "extract", "compare", "put", "combine", "merge", "format",
+        "translate", "fill", "update", "edit", "write", "attach",
+    }
+)
+
+
+def asks_to_produce_materials(normalized_query: str, ascii_query: bool) -> bool:
+    if not ascii_query:
+        return True
+    if _contains_phrase(normalized_query, _CHECK_REQUEST_PHRASES):
+        return False
+    words = set(normalized_query.replace(",", " ").replace(".", " ").split())
+    # "as a deck", "into slides": the target format is named as the output.
+    return bool(_MATERIALS_PRODUCTION_VERBS & words) or bool({"as", "into"} & words)
+
+
 def _materials_package_guard_applies(
     normalized_query: str,
     query_tokens: set[str],
@@ -8015,6 +8264,8 @@ def _materials_package_guard_applies(
     visual_summary_applies: bool | None = None,
 ) -> bool:
     if _cached_visual_summary_applies(normalized_query, query_tokens, visual_summary_applies):
+        return False
+    if not asks_to_produce_materials(normalized_query, normalized_query.isascii()):
         return False
     if _contains_phrase(normalized_query, ("report package", "leadership status deck", "monthly leadership status")):
         return False
@@ -8073,6 +8324,11 @@ def _memory_new_guard_applies(normalized_query: str) -> bool:
     return _contains_phrase(normalized_query, MEMORY_NEW_SCOPE_PHRASES)
 
 
+_SYSTEM_MEMORY_WORDS = frozenset(
+    {"usage", "leak", "leaks", "leaking", "heap", "ram", "oom", "rss", "allocation", "allocations", "gc", "footprint"}
+)
+
+
 def _memory_curation_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _public_plugin_connector_readiness_requested(normalized_query):
         return False
@@ -8081,6 +8337,10 @@ def _memory_curation_guard_applies(normalized_query: str, query_tokens: set[str]
     literature_review = _contains_phrase(normalized_query, ("literature review", "문헌 검토", "논문들 검토"))
     paper_context = bool({"paper", "papers", "논문"} & query_tokens)
     if literature_review and paper_context:
+        return False
+    # Memory as a machine resource (usage, leaks, heap, RAM) is not an
+    # agent's memory store.
+    if _SYSTEM_MEMORY_WORDS & query_tokens:
         return False
     context = bool(_MEMORY_CURATION_CONTEXT_TOKENS & query_tokens)
     hermes_context = _contains_phrase(normalized_query, ("hermes", "헤르메스"))
@@ -8506,6 +8766,9 @@ def _explicit_executor_delegation_requested(normalized_query: str, query_tokens:
     )
 
 
+_NAMED_AGENT_HANDOFF_AUTHORING_TOKENS = frozenset({"prompt", "prompts", "brief", "instructions"})
+
+
 def named_coding_agent_delivery_requested(normalized_query: str, query_tokens: set[str]) -> bool:
     """Explicit coding-agent name plus a coding-delivery request.
 
@@ -8515,6 +8778,13 @@ def named_coding_agent_delivery_requested(normalized_query: str, query_tokens: s
     coding lane.
     """
     if not _contains_named_coding_agent_phrase(normalized_query):
+        return False
+    # Writing the agent's prompt, brief, or instructions is preparing a
+    # handoff to it, not asking it to deliver code now.
+    if _NAMED_AGENT_HANDOFF_AUTHORING_TOKENS & query_tokens:
+        return False
+    # A question about what the agent can do asks for no delivery.
+    if normalized_query.lstrip().startswith(_AGENT_CAPABILITY_QUESTION_OPENERS):
         return False
     delivery = _contains_phrase(normalized_query, CODING_DELIVERY_REQUEST_PHRASES) or bool(
         CODING_DELIVERY_REQUEST_TOKENS & query_tokens
@@ -8585,6 +8855,12 @@ def _claude_bare_name_delegation_requested(normalized_query: str) -> bool:
 def _executor_runtime_readiness_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _explicit_executor_delegation_requested(normalized_query, query_tokens):
         return True
+    # Which executor does better is an evaluation, and the sessions already
+    # open are an inventory; readiness is whether one can run here.
+    if {"better", "compare", "comparison", "versus", "vs", "benchmark"} & query_tokens:
+        return False
+    if {"session", "sessions", "worktree", "worktrees"} & query_tokens and {"list", "all", "open", "show"} & query_tokens:
+        return False
     if _prompt_import_readiness_context_applies(normalized_query, query_tokens):
         return False
     if _contains_phrase(normalized_query, _EXECUTOR_RUNTIME_READINESS_PHRASES):
@@ -8811,7 +9087,32 @@ def _toolbelt_readiness_guard_applies(normalized_query: str, query_tokens: set[s
         return False
     if _contains_phrase(normalized_query, _TOOLBELT_READINESS_PHRASES):
         return True
-    tool_context = bool(_TOOLBELT_READINESS_TOKENS & query_tokens) or _contains_phrase(
+    # `setup` is also one of the missing-or-setup cues below, so on its own it
+    # satisfied both halves, and any sentence about someone's setup read as a
+    # missing tool. The tool has to be named apart from the word `setup`.
+    # Whether a named coding agent can run here is executor readiness.
+    if normalized_query.lstrip().startswith(_AGENT_CAPABILITY_QUESTION_OPENERS) and _contains_named_coding_agent_phrase(
+        normalized_query
+    ):
+        return False
+    # A reported failure without a credential in it is a failure to diagnose,
+    # not a missing tool ("the build fails with a traceback about a missing
+    # module").
+    if _COMMAND_OPERATOR_FAILURE_OUTCOME_TOKENS & query_tokens and not (
+        {"key", "keys", "credential", "credentials", "token", "tokens", "secret", "secrets", "auth"} & query_tokens
+    ):
+        return False
+    # Provider or profile credentials are posture, and a model account is model
+    # setup. `api` alone is a thing to build ("set up the tables and API"),
+    # not a missing tool; an API key or credential is.
+    if {"provider", "providers", "profile", "profiles", "model", "models"} & query_tokens and not (
+        {"plugin", "plugins", "tool", "tools", "connector", "connectors", "mcp", "integration", "generator"} & query_tokens
+    ):
+        return False
+    tool_words = (_TOOLBELT_READINESS_TOKENS - {"setup"}) & query_tokens
+    if tool_words == {"api"} and not _contains_phrase(normalized_query, ("api key", "api keys", "api token", "credential")):
+        tool_words = set()
+    tool_context = bool(tool_words) or _contains_phrase(
         normalized_query,
         ("api key", "external tool", "image tool", "image generator", "mcp server", "도구", "커넥터"),
     )
@@ -8828,7 +9129,6 @@ def _toolbelt_readiness_guard_applies(normalized_query: str, query_tokens: set[s
             "set up",
             "connect",
             "choose",
-            "credential",
             "없어",
             "없어서",
             "막혀",
@@ -8839,6 +9139,10 @@ def _toolbelt_readiness_guard_applies(normalized_query: str, query_tokens: set[s
             "고르",
         ),
     )
+    # `credential` names the tool as well as the gap; it counts as the gap only
+    # when some other tool word is the tool.
+    if not missing_or_setup and _contains_phrase(normalized_query, ("credential",)):
+        missing_or_setup = bool(tool_words - {"credential", "credentials"})
     return tool_context and missing_or_setup
 
 
@@ -8901,6 +9205,17 @@ def _voice_operator_guard_applies(normalized_query: str, query_tokens: set[str])
     )
 
 
+_EDIT_VERBS = frozenset({"change", "restyle", "redesign", "update", "adjust", "tweak", "make", "match"})
+_APPEARANCE_NOUNS = frozenset(
+    {"style", "styles", "styling", "theme", "color", "colors", "colour", "font", "fonts", "layout", "look", "brand", "branding", "css"}
+)
+
+
+def appearance_edit_request(query_tokens: set[str]) -> bool:
+    """An edit verb plus an appearance noun: a change to how something looks."""
+    return bool(_EDIT_VERBS & query_tokens) and bool(_APPEARANCE_NOUNS & query_tokens)
+
+
 def _browser_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _BROWSER_OPERATOR_LIVE_INCIDENT_BLOCKERS):
         return False
@@ -8910,8 +9225,17 @@ def _browser_operator_guard_applies(normalized_query: str, query_tokens: set[str
         return False
     if _contains_phrase(normalized_query, _BROWSER_OPERATOR_PHRASES):
         return True
-    browser_context = bool(_BROWSER_OPERATOR_CONTEXT_TOKENS & query_tokens)
-    browser_action = bool(_BROWSER_OPERATOR_ACTION_TOKENS & query_tokens)
+    # Changing how a page looks is a frontend change, not operating a browser
+    # on it: an edit verb plus an appearance noun hands the request on. A
+    # named SaaS app is the connector lane's, not a page to operate.
+    if appearance_edit_request(query_tokens):
+        return False
+    if _CONNECTOR_OPERATOR_CONTEXT_TOKENS & query_tokens:
+        return False
+    browser_context = _BROWSER_OPERATOR_CONTEXT_TOKENS & query_tokens
+    # A word that is both a place and an action (`login`) cannot supply both
+    # halves on its own.
+    browser_action = bool((_BROWSER_OPERATOR_ACTION_TOKENS & query_tokens) - browser_context)
     if browser_context and browser_action:
         return True
     return bool({"url", "link", "페이지", "웹페이지", "링크"} & query_tokens) and _contains_phrase(
@@ -8933,7 +9257,9 @@ def _workspace_file_operator_guard_applies(normalized_query: str, query_tokens: 
     file_action = bool(_WORKSPACE_FILE_OPERATOR_ACTION_TOKENS & query_tokens)
     if not (file_context and file_action):
         return False
-    if {"bug", "bugs", "upload", "uploads", "코드", "버그"} & query_tokens:
+    # A file named by a unit of source code is code to change, not a file to
+    # move.
+    if {"bug", "bugs", "upload", "uploads", "코드", "버그"} & query_tokens or _CODE_UNIT_TOKENS & query_tokens:
         return False
     return not _contains_phrase(
         normalized_query,
@@ -8949,8 +9275,33 @@ def _workspace_file_operator_guard_applies(normalized_query: str, query_tokens: 
     )
 
 
+# A command whose outcome is already reported as a failure is a failure to
+# diagnose, not a command to run. Failure-outcome vocabulary, not phrasings.
+_COMMAND_OPERATOR_FAILURE_OUTCOME_TOKENS = frozenset(
+    {
+        "error", "errors", "erroring", "fail", "fails", "failed", "failing", "failure", "failures",
+        "crash", "crashes", "crashed", "crashing", "exception", "exceptions", "throw", "throws",
+        "thrown", "warning", "warnings", "traceback", "complaint", "complaints", "broken",
+    }
+)
+# A question that opens with a modal or copula and names a coding agent asks
+# what that agent can do; it names no command for OMH to run.
+_AGENT_CAPABILITY_QUESTION_OPENERS = ("can ", "could ", "does ", "do ", "is ", "are ", "will ")
+
+
+def command_request_is_failure_or_agent_question(normalized_query: str, query_tokens: set[str]) -> bool:
+    """A failure to diagnose, or a question about what a coding agent can do."""
+    if _COMMAND_OPERATOR_FAILURE_OUTCOME_TOKENS & query_tokens:
+        return True
+    return normalized_query.lstrip().startswith(_AGENT_CAPABILITY_QUESTION_OPENERS) and _contains_named_coding_agent_phrase(
+        normalized_query
+    )
+
+
 def _command_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _COMMAND_OPERATOR_BLOCKERS):
+        return False
+    if command_request_is_failure_or_agent_question(normalized_query, query_tokens):
         return False
     if _contains_phrase(normalized_query, _COMMAND_OPERATOR_PHRASES):
         return True
@@ -8975,6 +9326,16 @@ def _command_operator_guard_applies(normalized_query: str, query_tokens: set[str
 
 def _connector_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _CONNECTOR_OPERATOR_BLOCKERS):
+        return False
+    # A digest on a cadence is a scheduled job, and a deploy command is a
+    # release, not an action in a connected app.
+    if has_cadence(normalized_query, query_tokens):
+        return False
+    if _command_words(normalized_query)[:1] and _command_words(normalized_query)[0] in {"deploy", "ship", "release"}:
+        return False
+    # Preparing provider or profile configuration is posture, not an action
+    # in a connected app.
+    if {"provider", "providers", "profile", "profiles"} & query_tokens and {"configuration", "configurations", "config", "secrets", "keys"} & query_tokens:
         return False
     if _gateway_intent_guard_applies(normalized_query, query_tokens):
         return False
@@ -9016,9 +9377,20 @@ def _live_info_operator_guard_applies(normalized_query: str, query_tokens: set[s
         return False
     if _contains_phrase(normalized_query, _LIVE_INFO_OPERATOR_PHRASES):
         return True
-    live_context = bool(_LIVE_INFO_OPERATOR_CONTEXT_TOKENS & query_tokens)
+    live_context = _LIVE_INFO_OPERATOR_CONTEXT_TOKENS & query_tokens
     lookup_intent = bool(_LIVE_INFO_OPERATOR_LOOKUP_TOKENS & query_tokens)
-    return live_context and lookup_intent
+    if not (live_context and lookup_intent):
+        return False
+    # `time`, `rate`, `score`, `price`, `map` and their kin are everyday words
+    # (a decision made last time, a page to rate, risks to map out). Alone
+    # they need a live cue before they read as a lookup: one of
+    # `_LIVE_INFO_OPERATOR_LIVE_CUE_TOKENS`, or "right now", "last night",
+    # "this morning".
+    if live_context - _LIVE_INFO_OPERATOR_EVERYDAY_CONTEXT_TOKENS:
+        return True
+    return bool(_LIVE_INFO_OPERATOR_LIVE_CUE_TOKENS & query_tokens) or _contains_phrase(
+        normalized_query, ("right now", "last night", "this morning", "현재", "지금", "오늘")
+    )
 
 
 def _media_input_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
@@ -9206,6 +9578,9 @@ def _delivery_cycle_guard_applies(
     visual_summary_applies: bool | None = None,
 ) -> bool:
     if _cached_visual_summary_applies(normalized_query, query_tokens, visual_summary_applies):
+        return False
+    # Reviewing a pull request is a review, not a request to deliver one.
+    if _command_words(normalized_query)[:1] == ["review"]:
         return False
     return _delivery_cycle_terms(normalized_query, query_tokens) and _contains_phrase(
         normalized_query,

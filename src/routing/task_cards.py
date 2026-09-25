@@ -466,6 +466,12 @@ def _diagnostic_region_router_feedback(normalized: str, compact: str) -> bool:
     return subject and evaluation
 
 
+# Workflow names that are also everyday words. Mentioned in passing ("log this
+# problem on GitHub for the team") they are not a remark about OMH's routing;
+# with routing vocabulary beside them the phrase check below still catches it.
+_EVERYDAY_WORD_WORKFLOW_NAMES = frozenset({"team", "plan", "loop", "research", "ask", "context", "doctor", "skill"})
+
+
 def _is_router_design_feedback(normalized: str, compact: str, tokens: set[str], intent: object) -> bool:
     structural_cues = set(getattr(intent, "structural_cues", ()))
     diagnostic_status_context = "diagnostic_status_context" in structural_cues
@@ -486,7 +492,10 @@ def _is_router_design_feedback(normalized: str, compact: str, tokens: set[str], 
         getattr(intent, "intent_class", "") in META_OR_FEEDBACK_INTENTS
         and not bool(getattr(intent, "explicit_execution", False))
         and (
-            (not diagnostic_status_context and bool(getattr(intent, "mentioned_workflows", ())))
+            (
+                not diagnostic_status_context
+                and bool(set(getattr(intent, "mentioned_workflows", ())) - _EVERYDAY_WORD_WORKFLOW_NAMES)
+            )
             or (not diagnostic_status_context and bool(getattr(intent, "mentioned_runtime_terms", ())))
             or bool(getattr(intent, "missing_requirements_cues", ()))
             or _phrase_hit(
