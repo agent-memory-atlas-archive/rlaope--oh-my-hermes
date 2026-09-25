@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..core.errors import OmhError
 from ..converter import convert_from_dir, convert_references_from_dir
+from .plugin_pack import host_managed_plugin
 from ..local_store import atomic_write_text, discard_path, is_directory_link, read_json_object_result
 from ..manifest import local_modifications, new_manifest, read_manifest, skill_records, write_manifest
 from ..paths import (
@@ -895,6 +896,12 @@ def _collect_removal(
     managed_plugin: bool = False,
 ) -> None:
     if not path.exists() and not is_directory_link(path):
+        return
+    if managed_plugin and host_managed_plugin(path) is not None:
+        # `hermes plugins install` wrote this tree and recorded it in its own
+        # install metadata. Deleting it -- even under --force -- would leave
+        # that record pointing at nothing; Hermes removes what Hermes installed.
+        kept.append({"path": str(path), "reason": "installed by Hermes; run `hermes plugins remove omh`"})
         return
     if managed_plugin and not _looks_like_managed_plugin(path):
         decision = resolve_approval_tier(

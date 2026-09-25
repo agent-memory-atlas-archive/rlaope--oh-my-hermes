@@ -64,6 +64,7 @@ from ..plugin_observations import (
     read_plugin_host_observations,
 )
 from ..plugin_pack import PLUGIN_NAME, inspect_plugin_bundle
+from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, host_managed_plugin
 from ..runtime.artifacts import read_state, read_state_error
 from ..skill_pack import CORE_SKILLS, builtin_skill_templates
 from ..system.security_posture import SECURITY_POSTURE_ENV_VAR, STRICT_POSTURE, resolve_security_posture
@@ -314,6 +315,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
             )
         )
     latest_plugin_active = latest_plugin_readiness == "active_runtime_observed"
+    host_managed = bool(plugin["plugin_host_managed"])
     plugin_expected = bool(plugin["plugin_dir_installed"]) or bool(state and state.get("last_plugin_distribution"))
     if not plugin_expected:
         checks.append(Check("plugin_bundle", True, f"managed OMH plugin bridge is not installed yet at {paths.hermes_plugin_dir}"))
@@ -321,17 +323,23 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         checks.extend(
             [
                 Check("plugin_bundle", bool(plugin["plugin_dir_installed"]), f"{paths.hermes_plugin_dir}"),
-                Check("plugin_manifest", bool(plugin["plugin_manifest_valid"]), str(plugin["plugin_manifest_path"])),
+                Check(
+                    "plugin_manifest",
+                    bool(plugin["plugin_manifest_valid"]) or host_managed,
+                    _plugin_host_managed_message(plugin) if host_managed else str(plugin["plugin_manifest_path"]),
+                ),
                 Check(
                     "plugin_bundle_current",
-                    bool(plugin["plugin_manifest_current"]),
+                    bool(plugin["plugin_manifest_current"]) or host_managed,
                     (
-                        "installed plugin bundle matches the current OMH package"
+                        _plugin_host_managed_message(plugin)
+                        if host_managed
+                        else "installed plugin bundle matches the current OMH package"
                         if plugin["plugin_manifest_current"]
                         else _plugin_bridge_message(plugin)
                     ),
-                    remediation="" if plugin["plugin_manifest_current"] else _plugin_bridge_remediation(plugin),
-                    next_action="" if plugin["plugin_manifest_current"] else _plugin_bridge_next_action(plugin),
+                    remediation="" if plugin["plugin_manifest_current"] or host_managed else _plugin_bridge_remediation(plugin),
+                    next_action="" if plugin["plugin_manifest_current"] or host_managed else _plugin_bridge_next_action(plugin),
                 ),
                 Check(
                     "plugin_import_smoke",
@@ -2170,7 +2178,11 @@ def _plugin_desktop_half_check(paths: OmhPaths) -> Check:
         True,
         f"installed bundle predates the Hermes Desktop half (missing {', '.join(missing)})",
         severity="warning",
-        next_action="run `omh update` to refresh the managed plugin bundle",
+        next_action=(
+            f"run `{HERMES_PLUGIN_UPDATE_COMMAND}`; Hermes installed this bundle and OMH does not write it"
+            if host_managed_plugin(plugin_dir) is not None
+            else "run `omh update` to refresh the managed plugin bundle"
+        ),
     )
 
 
@@ -2459,6 +2471,31 @@ def _hook_integrity_check(paths: OmhPaths) -> Check:
     )
     if not excluded and status["revocation_ledger"] != "unreadable":
         return Check("plugin_hook_integrity", True, summary)
+    # A tree `hermes plugins install` wrote carries the hook bytes of the
+    # commit Hermes pinned, which lags or leads the installed OMH package after
+    # either side updates. A digest mismatch there is version skew, not
+    # tampering, and `omh setup --force` does not write that tree; only a
+    # revocation, a missing review, or an unreadable ledger still fails.
+    untrusted = [record for record in records if not record["trusted"]]
+    skew_only = all(
+        record["digest"] in {"changed", "missing"}
+        and record["revocation"] != "revoked"
+        and record["review"] != "unreviewed"
+        for record in untrusted
+    )
+    if host_managed_plugin(paths.hermes_plugin_dir) is not None and skew_only and status["revocation_ledger"] != "unreadable":
+        skewed = ", ".join(str(record["name"]) for record in untrusted)
+        return Check(
+            "plugin_hook_integrity",
+            True,
+            (
+                f"{summary}; the plugin was installed by Hermes and its hooks ({skewed}) differ from the "
+                "installed OMH package's reviewed digests: version skew between the Hermes pin and OMH, "
+                "not a local edit OMH can repair"
+            ),
+            severity="warning",
+            next_action=f"Run `{HERMES_PLUGIN_UPDATE_COMMAND}` (or `omh update`) so the two versions meet, then rerun `omh doctor`.",
+        )
     detail = "; ".join(str(item["repair"]) for item in excluded)
     if status["revocation_ledger"] == "unreadable":
         detail = f"{status['revocation_ledger_path']} is unreadable" + (f"; {detail}" if detail else "")
@@ -2471,13 +2508,32 @@ def _hook_integrity_check(paths: OmhPaths) -> Check:
     )
 
 
+def _plugin_host_managed_message(plugin: dict) -> str:
+    host = plugin.get("plugin_host_install") or {}
+    revision = str(host.get("revision", ""))[:8] or "unknown revision"
+    return (
+        f"{plugin['plugin_dir']} was installed by Hermes ({host.get('installer', 'hermes')} @ {revision}); "
+        + (
+            "its files match the installed OMH package; "
+            if plugin.get("plugin_host_matches_package")
+            else "its files differ from the installed OMH package (version skew between the Hermes pin and OMH); "
+        )
+        + "OMH leaves it in place and manages skills and config only; update the plugin with "
+        + f"`{host.get('update_command', 'hermes plugins update omh')}`"
+    )
+
+
 def _plugin_bridge_remediation(plugin: dict) -> str:
+    if plugin.get("plugin_host_managed"):
+        return "Run `hermes plugins update omh`; OMH does not write a plugin directory Hermes installed."
     if plugin.get("plugin_bundle_stale"):
         return "Run `omh setup` to refresh the managed plugin bridge from the current OMH package."
     return "Run `omh setup`; use `omh setup --force` only if replacing local plugin edits is intended."
 
 
 def _plugin_bridge_next_action(plugin: dict) -> str:
+    if plugin.get("plugin_host_managed"):
+        return "Run `hermes plugins update omh`, then `omh doctor` again."
     if plugin.get("plugin_bundle_stale"):
         return "Run `omh setup`, then `omh doctor` again."
     return "Run `omh setup --force`, then `omh doctor` again."

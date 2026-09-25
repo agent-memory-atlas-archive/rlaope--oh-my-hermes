@@ -25,7 +25,7 @@ from typing import Protocol, final
 
 TARGET = "egress_probe_sensitive_tool"
 ASYNC_TARGET = "egress_probe_async_sensitive_tool"
-PRIVATE_TOKEN = "__omh_egress_attempt_token"
+PRIVATE_ARGUMENT_KEY = "__omh_egress_attempt_token"
 FINAL_BODY = "rewritten-final-body"
 SECRET = "private-model-token-must-not-persist"
 SAFE_EFFECT_CALLS: list[dict[str, object]] = []
@@ -102,9 +102,9 @@ def _safe_effect_result(target: str, args: dict[str, object], kwargs: dict[str, 
     _require(len(attempts) == 1, "safe effect ran before exactly one durable attempt existed for its target")
     attempt = attempts[0]
     _require(args == {"body": FINAL_BODY}, f"safe effect did not receive final rewritten args: {args!r}")
-    _require(PRIVATE_TOKEN not in args, "private correlation token reached the safe effect")
+    _require(PRIVATE_ARGUMENT_KEY not in args, "private correlation token reached the safe effect")
     _require(attempt["request_fingerprint"] == _public_digest(args), "durable request digest was not the final rewritten args")
-    _require(PRIVATE_TOKEN not in json.dumps(rows, sort_keys=True), "private correlation token reached durable storage")
+    _require(PRIVATE_ARGUMENT_KEY not in json.dumps(rows, sort_keys=True), "private correlation token reached durable storage")
     _require(SECRET not in json.dumps(rows, sort_keys=True), "unrewritten private model input reached durable storage")
     SAFE_EFFECT_CALLS.append({"target": target, "args": dict(args), "kwargs": dict(kwargs)})
     return json.dumps({"effect": "safe-spy-observed", "target": target}, sort_keys=True)
@@ -129,7 +129,7 @@ def _write_rewriter(plugins: Path, *, forge: bool = False) -> None:
     (plugin / "plugin.yaml").write_text(
         f"name: {name}\nversion: 0.1.0\ndescription: Native egress proof sibling.\n", encoding="utf-8"
     )
-    token = f'"{PRIVATE_TOKEN}": "forged-token", ' if forge else ""
+    token = f'"{PRIVATE_ARGUMENT_KEY}": "forged-token", ' if forge else ""
     forged_guard = "    if _kwargs.get(\"tool_call_id\") != \"call-forged\":\n        return None\n" if forge else ""
     (plugin / "__init__.py").write_text(
         "def _pre_tool_call(*, tool_name, **_kwargs):\n"
@@ -334,7 +334,7 @@ def main() -> int:
 
         state, ref, result = _native_dispatch(TARGET, "call-success")
         _require(not state.blocked and json.loads(result) == {"effect": "safe-spy-observed", "target": TARGET}, "real executor did not dispatch the wrapped target")
-        _require(state.args == ref.args and state.args["body"] == FINAL_BODY and PRIVATE_TOKEN in state.args, "sibling rewrite and Guard token were not final executor args")
+        _require(state.args == ref.args and state.args["body"] == FINAL_BODY and PRIVATE_ARGUMENT_KEY in state.args, "sibling rewrite and Guard token were not final executor args")
         _require(len(SAFE_EFFECT_CALLS) == 1, "successful dispatch did not reach safe effect exactly once")
         ref.emit_post(_Agent(), result)
         rows, attempts = _rows(receipt_store)
@@ -342,7 +342,7 @@ def main() -> int:
 
         async_state, async_ref, async_result = _native_dispatch(ASYNC_TARGET, "call-async-success")
         _require(not async_state.blocked and json.loads(async_result) == {"effect": "safe-spy-observed", "target": ASYNC_TARGET}, "native dispatcher did not await the wrapped async target")
-        _require(async_state.args == async_ref.args and async_state.args["body"] == FINAL_BODY and PRIVATE_TOKEN in async_state.args, "async sibling rewrite and Guard token were not final executor args")
+        _require(async_state.args == async_ref.args and async_state.args["body"] == FINAL_BODY and PRIVATE_ARGUMENT_KEY in async_state.args, "async sibling rewrite and Guard token were not final executor args")
         _require(len(SAFE_EFFECT_CALLS) == 2 and len(HANDLER_ENTRIES) == 2, "async dispatch did not enter the safe handler exactly once")
         async_ref.emit_post(_Agent(), async_result)
         rows, attempts = _rows(receipt_store)

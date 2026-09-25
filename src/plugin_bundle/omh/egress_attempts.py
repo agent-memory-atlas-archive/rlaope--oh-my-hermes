@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol
 
-PRIVATE_TOKEN = "__omh_egress_attempt_token"
+PRIVATE_ARGUMENT_KEY = "__omh_egress_attempt_token"
 MAX_LIVE_CALLS = 512
 MAX_FINAL_ARGUMENT_BYTES = 262_144
 _ACTIONS = frozenset({"message_send", "review_submit", "ci_dispatch", "merge", "external_write"})
@@ -129,12 +129,12 @@ class Guard:
             token = secrets.token_urlsafe(32)
             self.live[token] = LiveCall(target, session_id, tool_call_id, wrapper)
             self.by_call[call_key] = token
-        return {"action": "modify", "args": {PRIVATE_TOKEN: token}}
+        return {"action": "modify", "args": {PRIVATE_ARGUMENT_KEY: token}}
 
     def before_handler(self, tool_name: str, args: object, handler_kwargs: dict[str, object]):
         if not isinstance(args, dict):
             return None, None, "BLOCKED: final egress arguments are invalid"
-        token = args.get(PRIVATE_TOKEN)
+        token = args.get(PRIVATE_ARGUMENT_KEY)
         if not isinstance(token, str):
             return None, None, "BLOCKED: final egress correlation identity is invalid"
         with self.lock:
@@ -148,7 +148,7 @@ class Guard:
                 return None, None, "BLOCKED: final egress correlation identity is invalid"
             live.phase = "opening"
         forwarded = dict(args)
-        forwarded.pop(PRIVATE_TOKEN, None)
+        forwarded.pop(PRIVATE_ARGUMENT_KEY, None)
         try:
             destination = forwarded[live.target.destination_arg]
             payload = forwarded[live.target.payload_arg]

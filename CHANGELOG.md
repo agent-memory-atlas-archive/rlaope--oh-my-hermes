@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin bundle passes `hermes plugins validate`, and a plugin Hermes
+  installed is left to Hermes.** The Hermes install scanner read the dict-key
+  constant `PRIVATE_TOKEN = "__omh_egress_attempt_token"` as a hardcoded
+  secret (`dangerous`), which fails a curated-catalog entry; it is now
+  `PRIVATE_ARGUMENT_KEY`, and a test applies the scanner's own
+  `hardcoded_secret` pattern to every bundle file. `omh setup` and
+  `omh update` read Hermes' install records (`plugins/.install-metadata.json`,
+  the `.hermes-catalog.json` sidecar): a `plugins/omh` that
+  `hermes plugins install` wrote, and OMH did not write after it, is reported
+  as host-managed and not overwritten, `--force` included, while skills and
+  config are still managed, and a bot profile's row says `host_managed`
+  instead of `refreshed`. `omh uninstall` keeps that tree, `--force`
+  included, and names `hermes plugins remove omh`. `omh doctor` reports it as
+  installed by Hermes, says whether its files match the installed OMH
+  package, and reports a hook whose bytes differ from the package's reviewed
+  digest as version skew (a warning naming `hermes plugins update omh`), not
+  tampering; the hook-integrity record is read only by doctor, so nothing
+  changed at runtime. A directory with neither OMH's manifest nor a Hermes
+  record is still refused.
+  The documented install is unchanged.
+
 - **The product A/B lane measures honestly where it contradicted itself.**
   `benchmarks/product-ab/v1` gave the OMH arm a file scope (`src/`, `tests/`)
   that forbade the completion file its own contract required, and one model
