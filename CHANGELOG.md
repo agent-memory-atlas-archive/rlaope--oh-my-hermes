@@ -38,7 +38,14 @@ All notable changes will be documented here.
   calling the plugin) keep the old per-turn path. The largest measured
   `pre_llm_call` context drops from 6,260 to 5,214 chars, and
   `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT` is re-derived to match. Everything else
-  the hook sends depends on the turn and stays where it was.
+  the hook sends depends on the turn and stays where it was. A section render
+  counts as an awareness delivery, so `omh doctor` does not warn about zero
+  deliveries on an install whose primer only goes out through the section; an
+  install with neither a render nor a hook payload still warns. Known limit:
+  Hermes drops sections past an 8,000-char budget shared by every plugin,
+  after rendering them, and exposes no signal a plugin can read afterwards.
+  A session that loses that budget gets no primer (the host logs a warning)
+  and is still counted as delivered.
 
 - **The product A/B lane measures honestly where it contradicted itself.**
   `benchmarks/product-ab/v1` gave the OMH arm a file scope (`src/`, `tests/`)

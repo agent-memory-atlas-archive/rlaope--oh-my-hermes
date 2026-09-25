@@ -13,7 +13,8 @@ Between those two, awareness could be dead for weeks and the only symptom would
 be a user learning to type "load OMH" by hand. This records the one fact that
 distinguishes those worlds.
 
-The ledger observes the `pre_llm_call` hook returning injection content. It is
+The ledger observes the `pre_llm_call` hook returning injection content, and
+the `omh.awareness` system prompt section rendering the primer. It is
 not host-consumption acknowledgement and does not prove a model received,
 processed, or acted on that content.
 

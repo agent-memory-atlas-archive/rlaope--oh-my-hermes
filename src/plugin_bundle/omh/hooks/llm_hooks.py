@@ -228,17 +228,34 @@ _awareness_section_lock = threading.Lock()
 _awareness_section_sessions: set[str] = set()
 
 
-def awareness_system_prompt_section(session_info: object) -> str:
+def awareness_system_prompt_section(session_info: object, *, omh_home: str | None = None) -> str:
     """The primer, for Hermes to freeze into a new session's system prompt.
 
     The text is the same for every session. `session_info` is read only for
     the session id, to record that this session's prompt carries the primer.
+    The host passes no `omh_home`; the store is resolved the way the hooks
+    resolve it.
     """
     primer = awareness_primer_context()
     session_id = str(session_info.get("session_id") or "") if isinstance(session_info, Mapping) else ""
     if session_id and 0 < len(primer.strip()) <= AWARENESS_SECTION_MAX_CHARS:
         with _awareness_section_lock:
             _awareness_section_sessions.add(session_id)
+        # The primer no longer rides a `pre_llm_call` payload for this
+        # session, so the render is the delivery `omh doctor` counts; without
+        # it a quiet install reads as a dead hook. The host may still drop the
+        # section past its shared budget, and nothing it exposes says so.
+        try:
+            home = str(runtime_paths.plugin_home(omh_home))
+        except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
+            return primer
+        _record_delivery(
+            delivered=True,
+            route_hint=False,
+            context_chars=len(primer),
+            omh_home=home,
+            session_id=session_id,
+        )
     return primer
 
 

@@ -2077,6 +2077,9 @@ def recommended_next_action(checks: list[Check]) -> str:
 def _awareness_delivery_check(paths: OmhPaths, *, now: datetime | None = None) -> Check:
     """Has OMH's primer and route hint hook returned content for model input?
 
+    A render of the `omh.awareness` system prompt section counts too: on a
+    host that renders it, the primer is not in any hook payload.
+
     Reported, never blocking. A fresh install has legitimately delivered
     nothing, and Hermes may not have been restarted since the bundle changed, so
     a zero here is ambiguous in a way `plugin_enabled_in_hermes` is not. What it
@@ -2141,7 +2144,7 @@ def _awareness_delivery_check(paths: OmhPaths, *, now: datetime | None = None) -
         "awareness_delivery",
         True,
         (
-            f"{delivered} awareness hook payload(s) returned, "
+            f"{delivered} awareness hook payload(s) or system prompt section render(s) returned, "
             f"{int(record.get('route_hint_count', 0) or 0)} with a route hint; "
             f"last at {record.get('last_delivered_at', 'unknown')}"
         ),

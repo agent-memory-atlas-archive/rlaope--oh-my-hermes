@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
@@ -18,7 +19,10 @@ from _local_package import load_local_package
 
 load_local_package()
 
+from omh.maintenance.doctor import _awareness_delivery_check
 from omh.maintenance.release import AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT
+from omh.paths import resolve_paths
+from omh.plugin_bundle.omh.awareness_delivery import read_awareness_delivery, record_awareness_delivery
 from omh.plugin_bundle.omh import register
 from omh.plugin_bundle.omh.awareness import awareness_primer_context
 from omh.plugin_bundle.omh.hooks import llm_hooks
@@ -108,7 +112,7 @@ class RegistrationTests(SectionTestCase):
         self.assertLessEqual(int(section["max_chars"]), _HOST_MAX_SECTION_CHARS)
         content = section["content"]
         self.assertTrue(callable(content))
-        text = content(_session_info("s-1"))
+        text = content(_session_info("s-1"), omh_home=str(self.omh_home))
         self.assertEqual(text, awareness_primer_context())
         self.assertLessEqual(len(text), AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT)
         self.assertLessEqual(len(text), int(section["max_chars"]))
@@ -134,7 +138,7 @@ class RegistrationTests(SectionTestCase):
 
 class FrozenContentTests(SectionTestCase):
     def test_the_rendered_text_carries_no_session_or_turn_data(self) -> None:
-        a = llm_hooks.awareness_system_prompt_section(_session_info("session-alpha-123"))
+        a = llm_hooks.awareness_system_prompt_section(_session_info("session-alpha-123"), omh_home=str(self.omh_home))
         b = llm_hooks.awareness_system_prompt_section(
             _session_info(
                 "session-beta-456",
@@ -143,7 +147,8 @@ class FrozenContentTests(SectionTestCase):
                 platform="discord",
                 profile_name="miku",
                 cwd="/srv/other-checkout",
-            )
+            ),
+            omh_home=str(self.omh_home),
         )
         self.assertEqual(a, b)
         for value in ("session-alpha-123", "gpt-6-astra", "/tmp/project-a", "cli", "default"):
@@ -153,19 +158,19 @@ class FrozenContentTests(SectionTestCase):
     def test_the_rendered_text_is_the_same_after_a_turn_ran(self) -> None:
         # A turn writes its own state (delivery ledger, plan counters); the
         # section reads none of it.
-        before = llm_hooks.awareness_system_prompt_section(_session_info("s-state"))
+        before = llm_hooks.awareness_system_prompt_section(_session_info("s-state"), omh_home=str(self.omh_home))
         self.first_turn_context("s-state")
-        after = llm_hooks.awareness_system_prompt_section(_session_info("s-state"))
+        after = llm_hooks.awareness_system_prompt_section(_session_info("s-state"), omh_home=str(self.omh_home))
         self.assertEqual(before, after)
 
 
 class PerTurnDeliveryTests(SectionTestCase):
     def test_a_session_the_section_rendered_for_gets_no_per_turn_primer(self) -> None:
-        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"))
+        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"), omh_home=str(self.omh_home))
         self.assertNotIn(awareness_primer_context(), self.first_turn_context("s-sectioned"))
 
     def test_a_session_the_section_did_not_render_for_still_gets_it(self) -> None:
-        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"))
+        llm_hooks.awareness_system_prompt_section(_session_info("s-sectioned"), omh_home=str(self.omh_home))
         self.assertIn(awareness_primer_context(), self.first_turn_context("s-resumed-after-restart"))
 
     def test_a_primer_the_host_would_skip_is_not_recorded_as_delivered(self) -> None:
@@ -173,12 +178,56 @@ class PerTurnDeliveryTests(SectionTestCase):
         # rendering it, so the session must keep the per-turn primer.
         oversized = "p" * (llm_hooks.AWARENESS_SECTION_MAX_CHARS + 1)
         with mock.patch.object(llm_hooks, "awareness_primer_context", return_value=oversized):
-            llm_hooks.awareness_system_prompt_section(_session_info("s-oversized"))
+            llm_hooks.awareness_system_prompt_section(_session_info("s-oversized"), omh_home=str(self.omh_home))
             self.assertIn(oversized, self.first_turn_context("s-oversized"))
 
     def test_an_empty_session_id_is_never_recorded(self) -> None:
-        llm_hooks.awareness_system_prompt_section(_session_info(""))
+        llm_hooks.awareness_system_prompt_section(_session_info(""), omh_home=str(self.omh_home))
         self.assertIn(awareness_primer_context(), self.first_turn_context(""))
+
+
+class DoctorDeliveryTests(SectionTestCase):
+    """`omh doctor` must not call a section-delivered install a dead hook."""
+
+    def _attempted_long_ago(self):
+        # A hook attempt with nothing returned, 31 days before the check: the
+        # state in which the zero-delivery warning is due.
+        record_awareness_delivery(
+            delivered=False,
+            route_hint=False,
+            context_chars=0,
+            observed_at="2026-07-01T00:00:00Z",
+            omh_home=str(self.omh_home),
+        )
+        return resolve_paths(self.omh_home, self.hermes_home)
+
+    def _check(self, paths):
+        return _awareness_delivery_check(paths, now=datetime(2026, 8, 1, tzinfo=UTC))
+
+    def test_a_section_render_counts_as_a_delivery(self) -> None:
+        paths = self._attempted_long_ago()
+        llm_hooks.awareness_system_prompt_section(_session_info("s-doctor"), omh_home=str(self.omh_home))
+        # The session's turns now inject nothing, which is the case at issue.
+        self.assertEqual(self.first_turn_context("s-doctor"), "")
+        record = read_awareness_delivery(str(self.omh_home))
+        self.assertEqual(record["delivery_count"], 1)
+        self.assertEqual(record["last_context_chars"], len(awareness_primer_context()))
+        check = self._check(paths)
+        self.assertTrue(check.ok)
+        self.assertEqual(check.severity, "ok")
+
+    def test_no_section_and_no_payload_still_warns(self) -> None:
+        paths = self._attempted_long_ago()
+        # Neither render records: no session id, and a primer the host would drop.
+        llm_hooks.awareness_system_prompt_section(_session_info(""), omh_home=str(self.omh_home))
+        oversized = "p" * (llm_hooks.AWARENESS_SECTION_MAX_CHARS + 1)
+        with mock.patch.object(llm_hooks, "awareness_primer_context", return_value=oversized):
+            llm_hooks.awareness_system_prompt_section(_session_info("s-dropped"), omh_home=str(self.omh_home))
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 0)
+        check = self._check(paths)
+        self.assertFalse(check.ok)
+        self.assertEqual(check.severity, "warning")
+        self.assertIn("for at least 7 days", check.message)
 
 
 if __name__ == "__main__":

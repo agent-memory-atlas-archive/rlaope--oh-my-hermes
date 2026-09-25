@@ -139,14 +139,16 @@ def _run_pre_llm_call(
     # section for this session, as every admitted host does; without it the
     # primer rides the fenced context, as on a host that lacks the API.
     llm_hooks._reset_awareness_section_state()
-    if section:
-        llm_hooks.awareness_system_prompt_section({"session_id": _SCENARIO_SESSION})
     try:
         with tempfile.TemporaryDirectory() as tmp:
             omh_home = Path(tmp) / "omh"
             hermes_home = Path(tmp) / "hermes"
             omh_home.mkdir()
             hermes_home.mkdir()
+            if section:
+                llm_hooks.awareness_system_prompt_section(
+                    {"session_id": _SCENARIO_SESSION}, omh_home=str(omh_home)
+                )
             for seed in seeds:
                 seed(omh_home)
             payload = llm_hooks.pre_llm_call(
