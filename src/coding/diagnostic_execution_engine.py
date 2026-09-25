@@ -192,7 +192,13 @@ class DiagnosticExecutionEngine:
         if not owner:
             return future.result()
         try:
-            with self._global_slots, self._provider_slots[capability.provider_id]:
+            # Provider slot first, global slot last. A global slot is then held
+            # only by a runner that is executing. Acquired the other way round,
+            # a request queued behind a busy provider held a global slot while
+            # it waited, and with two global slots both taken by pyright (one
+            # running, one waiting on pyright's own slot) ruff could not start
+            # although nothing was running in its place (#1790).
+            with self._provider_slots[capability.provider_id], self._global_slots:
                 observed = self.runner.run(
                     capability.provider_id, workspace_id, revision, files, capability.max_timeout_ms, self.cancellation
                 )

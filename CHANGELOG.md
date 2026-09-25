@@ -855,6 +855,25 @@ All notable changes will be documented here.
   subcommands and is linked from the README, so it leaves the navigation
   exemption list. Deriving a fanout unit's `verification_commands` from its
   `file_scope` through this selection is a named follow-up (#1697).
+- **A diagnostic request queued behind a busy provider no longer holds a
+  global execution slot while it waits.** `DiagnosticExecutionEngine._observe`
+  took the global slot before the provider slot, so when two overlapping
+  requests both reached pyright first, the two global slots were held by one
+  pyright runner and one pyright waiter and ruff could not start although
+  nothing ran in its place. The engine now takes the provider slot first, so a
+  global slot is only ever held by a runner that is executing. This is the
+  fault behind the bounded-execution test that failed three times and was
+  answered each time with a wider deadline (#1599, #1755, then at 60s on
+  Linux): the overlap it waits for is now guaranteed rather than scheduled, a
+  new test forces the interleaving that hung, the deadline is unchanged, and a
+  failure reports the observed `active` map instead of `False is not true`;
+  it also releases the runners on failure, so a broken engine reports at one
+  deadline rather than after every queued runner has waited out its own
+  (#1790). Observed: with the interleaving forced, the previous order hung to
+  the deadline 3/3 with `active={'pyright': 1}` and the new order overlapped
+  5/5; the unmodified test, run 30 times on a loaded macOS host, failed once
+  before the change (360s, the same traceback as CI) and the new test against the
+  previous order failed 1/1 at the deadline naming the observation.
 
 ## 2.0.5 - 2026-09-22
 
