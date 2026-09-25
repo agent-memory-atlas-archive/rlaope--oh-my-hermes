@@ -169,7 +169,13 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 59258
 # replays each turn's injection from `api_content` on every later turn, so this
 # accumulates in history. `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT` above still
 # bounds the primer alone.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 6260
+# 6260 -> 5214: the awareness primer (1044 chars plus its "\n\n" join) leaves
+# the fenced context for the `omh.awareness` system prompt section, which
+# every admitted host (Hermes >= 0.20.4) freezes into a new session's system
+# prompt. The scenarios now measure that host; the primer's own limit above
+# bounds the section, far under the host's 4,000-char per-section cap.
+# Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5214
 # 340000 -> 349637: three capability-skill sections were added by the domain
 # skill pack (`backend`, `rust`, `native-debugging`), on top of the
 # `llm-app-dev` section that landed on main under the old ceiling. Each section

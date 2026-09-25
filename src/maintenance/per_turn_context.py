@@ -17,10 +17,13 @@ installed, and none of them is the skill body total the older budget watches:
   bridge;
 - the fenced context `pre_llm_call` returns, which Hermes appends to the API
   copy of the user message and replays on every later turn from the
-  `api_content` sidecar. Its parts come from several producers (primer, route
-  hint, role context, active workflow, running-work board, ...) joined with no
-  aggregate cap, so it is measured over a fixed, named scenario set rather
-  than as the primer alone.
+  `api_content` sidecar. Its parts come from several producers (route hint,
+  role context, active workflow, running-work board, ...) joined with no
+  aggregate cap, so it is measured over a fixed, named scenario set. The
+  awareness primer is not one of them on a host with system prompt sections:
+  there it is frozen into the session's system prompt instead
+  (`awareness_system_prompt_section`), and only the fallback scenario
+  measures it here.
 
 The plugin bundle is imported from here, never the other way round: modules
 under `src/plugin_bundle/omh/` must stay importable without `omh`
@@ -127,22 +130,33 @@ def _seed_running_board(omh_home: Path) -> None:
         )
 
 
-def _run_pre_llm_call(seeds: tuple[Callable[[Path], None], ...], **kwargs: Any) -> int:
-    from ..plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
+def _run_pre_llm_call(
+    seeds: tuple[Callable[[Path], None], ...], *, section: bool = True, **kwargs: Any
+) -> int:
+    from ..plugin_bundle.omh.hooks import llm_hooks
 
-    with tempfile.TemporaryDirectory() as tmp:
-        omh_home = Path(tmp) / "omh"
-        hermes_home = Path(tmp) / "hermes"
-        omh_home.mkdir()
-        hermes_home.mkdir()
-        for seed in seeds:
-            seed(omh_home)
-        payload = pre_llm_call(
-            omh_home=str(omh_home),
-            hermes_home=str(hermes_home),
-            session_id=_SCENARIO_SESSION,
-            **kwargs,
-        )
+    # `section` is whether the host rendered the awareness system prompt
+    # section for this session, as every admitted host does; without it the
+    # primer rides the fenced context, as on a host that lacks the API.
+    llm_hooks._reset_awareness_section_state()
+    if section:
+        llm_hooks.awareness_system_prompt_section({"session_id": _SCENARIO_SESSION})
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            omh_home = Path(tmp) / "omh"
+            hermes_home = Path(tmp) / "hermes"
+            omh_home.mkdir()
+            hermes_home.mkdir()
+            for seed in seeds:
+                seed(omh_home)
+            payload = llm_hooks.pre_llm_call(
+                omh_home=str(omh_home),
+                hermes_home=str(hermes_home),
+                session_id=_SCENARIO_SESSION,
+                **kwargs,
+            )
+    finally:
+        llm_hooks._reset_awareness_section_state()
     return len(str((payload or {}).get("context", "")))
 
 
@@ -158,9 +172,15 @@ def _largest_role(message_suffix: str, seeds: tuple[Callable[[Path], None], ...]
 def pre_llm_call_context_scenario_chars() -> dict[str, int]:
     """Fenced `pre_llm_call` context size per named scenario.
 
-    - `first_turn`: a session's first turn on a request with no OMH vocabulary
-      (the primer alone).
-    - `route_hint`: a first turn on a routed request (primer + route hint).
+    Every scenario but one runs as on a host that rendered the awareness
+    system prompt section for the session (Hermes 0.20.4 and later, so every
+    host the plugin admits), where the primer is in the system prompt and not
+    here:
+
+    - `first_turn_without_section`: a session's first turn on a request with
+      no OMH vocabulary, on a host that did not render the section (the primer
+      alone, inside the fence). This is the fallback, not the default.
+    - `route_hint`: a first turn on a routed request (the route hint).
     - `role_marker`: a later turn carrying an `[omh-role:...]` marker, the
       largest shipped role.
     - `active_workflow`: a later turn while a workflow is active.
@@ -192,7 +212,9 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
     no_seed: tuple[Callable[[Path], None], ...] = ()
     later = {"is_first_turn": False}
     return {
-        "first_turn": _run_pre_llm_call(no_seed, user_message=_PLAIN_REQUEST, is_first_turn=True),
+        "first_turn_without_section": _run_pre_llm_call(
+            no_seed, section=False, user_message=_PLAIN_REQUEST, is_first_turn=True
+        ),
         "route_hint": _run_pre_llm_call(no_seed, user_message=_ROUTED_REQUEST, is_first_turn=True),
         "role_marker": _largest_role("continue", no_seed, **later),
         "active_workflow": _run_pre_llm_call((_seed_active_workflow,), user_message="continue", **later),

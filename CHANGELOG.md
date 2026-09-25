@@ -24,6 +24,21 @@ All notable changes will be documented here.
   changed at runtime. A directory with neither OMH's manifest nor a Hermes
   record is still refused.
   The documented install is unchanged.
+- **The OMH awareness primer now lives in the session's system prompt, not in
+  the first user message.** Hermes 0.20.4 (tag v2026.8.18) added
+  `register_system_prompt_section`: text rendered once per new session and
+  frozen into its system prompt. Every Hermes the plugin admits (0.21.1 and
+  later) has it. The plugin registers the primer (1,044 chars, the same text
+  for every session) as the `omh.awareness` section, under the host's
+  4,000-char per-section cap. `pre_llm_call` no longer carries it for a
+  session the section rendered for. Before, the primer went into the fenced
+  user-message context on the first turn and again after a compaction dropped
+  it. A host without the API, a section the host refuses, and a session
+  resumed after a restart (where the host restores the section without
+  calling the plugin) keep the old per-turn path. The largest measured
+  `pre_llm_call` context drops from 6,260 to 5,214 chars, and
+  `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT` is re-derived to match. Everything else
+  the hook sends depends on the turn and stays where it was.
 
 - **The product A/B lane measures honestly where it contradicted itself.**
   `benchmarks/product-ab/v1` gave the OMH arm a file scope (`src/`, `tests/`)

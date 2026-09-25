@@ -228,7 +228,12 @@ hash/length metadata, matched cue labels, candidate workflow names, next
 actions, generic-tool checkpoint rules, and boundaries; it does not include the
 raw user message or prove a workflow executed. For capability/catalog questions,
 the context brief adds `omh_catalog_question_hint/v1` so Hermes can show the
-workflow picker or capability summary without shell approval. The `pre_tool_call`
+workflow picker or capability summary without shell approval. The
+session-stable awareness primer is not part of that per-turn payload on a host
+with `register_system_prompt_section` (Hermes 0.20.4 and later): the plugin
+registers it as the `omh.awareness` system prompt section, which Hermes freezes
+into each new session's system prompt, and `pre_llm_call` delivers it only for a
+session the section did not render for. The `pre_tool_call`
 hook enforces user-authored toolcall rules (a matching rule returns the host's
 block directive) and validates delegate role markers, warning on unknown
 roles; it does not inject generic-tool checkpoint metadata or raw tool input.
