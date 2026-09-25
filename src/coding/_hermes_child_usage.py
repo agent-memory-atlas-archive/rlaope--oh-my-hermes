@@ -11,9 +11,14 @@ persisted: every API call of the turn queues its token deltas, priced cost,
 quiet CLI exits. The dispatcher hands every child a disposable, exclusive
 ``HERMES_HOME``, so after the child exits and before that home is removed,
 every ``sessions`` row in the file is this child's spend and nothing else's.
-A context-compression rotation opens a second row under the first; summing
-all rows reproduces the agent's own cumulative counters, which is what the
-``-z`` report summarized.
+The child runs with ``--toolsets file --safe-mode``, so no delegate subagent
+opens a row of its own and a context-compression rotation is the only source
+of a second row; summing all rows therefore reproduces the agent's own
+cumulative counters, which is what the ``-z`` report summarized. That
+equivalence depends on the toolset restriction: a delegate child writes its
+own ``sessions`` row, and the ``-z`` main-loop keys exclude subagent tokens
+while its cost includes them, so a later ``--toolsets`` widening that admits
+delegation has to revisit this sum.
 
 This is a read-only coupling to a Hermes-private file shape. The columns read
 here have been in the ``sessions`` table since Hermes 2026-04 (the cost trio
@@ -85,7 +90,12 @@ def read_hermes_child_usage(hermes_home: Path) -> dict[str, object]:
 
 
 def summarize_session_rows(rows: list[tuple[object, ...]]) -> dict[str, object]:
-    """Fold ``sessions`` rows (in ``started_at`` order) into the ``-z`` report vocabulary."""
+    """Fold ``sessions`` rows (in ``started_at`` order) into the ``-z`` report vocabulary.
+
+    Counts and cost are summed across rows; for ``model``, ``provider``,
+    ``cost_status`` and ``cost_source`` the latest row's non-``None`` value
+    wins, mirroring Hermes' own last-call-wins update of those columns.
+    """
     counts = {column: 0 for column in _COUNT_COLUMNS}
     cost_total: float | None = None
     text: dict[str, str] = {}

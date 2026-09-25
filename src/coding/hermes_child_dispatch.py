@@ -183,8 +183,12 @@ class HermesChildResult:
     # `-z/--oneshot` alone and that mode cannot read a prompt from stdin
     # (#1824), so on this transport the ledger is the only source (#1831).
     # Empty, never zero, when the child recorded no API call or the file is
-    # missing or unreadable. The observation copies this mapping into its
-    # session record (`omh coding hermes-child dispatch`).
+    # missing or unreadable. On `timed_out` or `cancelled` the child was
+    # killed, and deltas still in Hermes' daemon token-writer queue at that
+    # moment are lost, so the mapping is a lower bound of the spend and
+    # carries no marker saying so; the status is the marker. The observation
+    # copies this mapping into its session record
+    # (`omh coding hermes-child dispatch`).
     usage: Mapping[str, object]
     cleanup_verified: bool
     termination_signals: tuple[int, ...]

@@ -353,9 +353,14 @@ ledger is the only record of the turn's spend: every API call queues
 `cost_source`, `model`, and `billing_provider` into the row
 (`agent/turn_usage.py` → `SessionDB.queue_token_counts`), drained at turn
 finalize and again when the quiet CLI exits. The home belongs to that child
-alone, so every row in the file is its spend and the rows are summed (a
-context-compression rotation opens a second row under the first); the result
-is the `-z` report's vocabulary, which the observation builder already reads.
+alone, so every row in the file is its spend and the rows are summed; the
+result is the `-z` report's vocabulary, which the observation builder already
+reads. The child runs with `--toolsets file --safe-mode`, so no delegate
+subagent opens a row of its own and a context-compression rotation is the only
+source of a second row. The sum equals the `-z` counters only because of that
+restriction: a delegate child writes its own `sessions` row, and the `-z`
+main-loop keys exclude subagent tokens while its cost includes them, so a
+later `--toolsets` widening that admits delegation has to revisit this read.
 The columns have been in the table since Hermes 2026-04, before the
 `requires_hermes` floor.
 
@@ -365,7 +370,10 @@ the table and these column names still hold. If the shape moves, the read goes
 quiet and `usage` stays empty — never zero, never estimated.
 _Avoid_: writing to it, reading it before the child has exited, reading any
 `state.db` other than the disposable one the dispatcher created, treating an
-empty result as a measured zero
+empty result as a measured zero, treating a `timed_out` or `cancelled`
+result's usage as complete (the child was killed, deltas still in Hermes'
+daemon token-writer queue are lost, and the read is a lower bound with no
+marker of its own)
 
 ### Fault domains
 
