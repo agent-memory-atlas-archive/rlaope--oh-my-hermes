@@ -313,6 +313,74 @@ not show that the model consumed them, that a call succeeded, that a skill's
 guidance was followed, or that a reply was correct, and it is not execution,
 review, CI, or merge evidence.
 
+## Declared Verdicts
+
+`verification-gate` issues `claim_verdict/v1` as PASS, HOLD or BLOCK,
+`code-review` ranks findings per axis, and `ultraqa` reports pass/fail
+evidence. Until #1818 those lived in the conversation and nowhere else: a later
+session could not ask what the verdict was, whether a HOLD was resolved, or
+whether the merge that followed contradicted it, and an absent source read the
+same as a clean one. They now survive the session as bounded declarations in
+the completion store, `native_completion/v1` at
+`$OMH_HOME/runtime/completion/records.json`.
+
+**What is stored, and by whom.** A model declares a result through
+`omh_todo action=record` under a scope checkpoint (`action=set`, then
+`action=checkpoint` with `accepted=true` and the revision and environment
+fingerprints); OMH writes the row. A row carries `kind` (`verification`,
+`review`, `qa`), `verdict`, a bounded `summary`, `findings`, `claimed_source`
+(`model`, `host_exit`, `independent_review`, `ci`), `claimed_evidence_state`
+(`prepared_not_observed` or `observed`) and up to eight evidence references
+(receipt keys, artifact or CI-run ids). No transcript, prompt, log or raw
+command output is accepted. The wrapper guidance for the three lanes names
+this destination in one shared sentence, so a model that reaches a verdict is
+told where it goes and that it stays a declaration there; `code-review`'s
+entry is the review category's action and boundary plus that sentence,
+derived from the category rather than copied.
+
+**What the store refuses to say.** Every row is written and read back as
+`standing: model_declaration`, `observed: false`, whatever evidence state the
+writer claimed. A stored PASS is evidence that a PASS was claimed, exactly as
+a done mark on the plan todo is evidence that done was claimed. A row with
+`observed: true` on disk is malformed, not evidence.
+
+**How it reads.** In a session, `omh_todo action=recall`, bound by the host to
+the active profile and project. From the command line, over the home you name:
+
+```sh
+omh runtime verdict show [--session <id>] [--checkpoint <id>] [--revision <r> --environment <e>]
+```
+
+The payload is `native_completion_read/v1`, and carries `standing:
+model_declaration` and the claim boundary at its top level on every status,
+read or malformed, so a reader that stops at the first line is told what every
+row says. `store_state` is `absent` (no
+store), `empty` (a store with no checkpoints) or `present`; `sources` per kind
+is `absent`, `stale`, `declared_no_findings` or `declared_findings`, so "no
+record" and "a record that declared nothing found" never read alike, and a
+filter that matches nothing still reports the store present. Freshness is a
+judgment against a binding: with `--revision` and `--environment` a row is
+`current` only for that exact pair and inside the age cap, otherwise `stale`,
+and the checkpoint carries the `completion` projection whose status is always
+`not_verified`; without them every row is `unbound` and no completion
+judgment is made, because completeness against no binding is not a judgment.
+A half binding is refused. `--session` keeps the checkpoints a session
+declared or recorded into. A store that cannot be read is `malformed` and
+exits 1; a missing store exits 0 with `store_state: absent`, because nothing
+declared is not failed work. The read writes nothing and creates nothing.
+
+**Why staleness is a revision, not a clock.** A plan todo hides after 24 hours
+because a checklist nobody touched for a day is no longer the plan. A verdict
+is attached to a change, so it is current for the revision and environment it
+was declared against and stale the moment either moves, whether that takes a
+minute or a month; the 30-day cap only bounds a dossier whose revision nobody
+moves. The store never deletes: a stale row is still the row that was
+declared, and the read says so on the source rather than by dropping it.
+
+One limit worth knowing: a verdict needs a checkpoint, so a session with no
+accepted plan reaches the store in three calls (`set`, `checkpoint`,
+`record`), not one.
+
 ## Golden Examples
 
 See `examples/wrapper-golden/harness-quality.json` for deterministic examples

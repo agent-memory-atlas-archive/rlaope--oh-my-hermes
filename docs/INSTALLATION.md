@@ -1553,6 +1553,17 @@ home-wide record under the gates above; it never adopts another session's
 record. The plugin tools and the reminder are unaffected either way, because
 Hermes dispatches them with the durable key.
 
+The verification verdicts, review finding sets and QA results a session
+declares through `omh_todo action=record` are a separate record from the
+plan: the completion store at `$OMH_HOME/runtime/completion/records.json`.
+`omh runtime verdict show [--session <id>] [--checkpoint <id>] [--revision <r>
+--environment <e>]` reads it from the command line. `store_state` says whether
+the store is absent, empty or present; each row keeps the evidence state its
+writer claimed under `standing: model_declaration`, `observed: false`; and
+freshness is judged only against a revision and environment you pass, `unbound`
+otherwise. It writes nothing. The record shape and the reading rules are in
+`docs/HARNESS_QUALITY.md` under Declared Verdicts.
+
 Native agent activity is a separate ownership policy from todos. A mapped
 valid durable identity selects native `state.db` children before row limits
 and totals, following only unambiguous compression continuations, never

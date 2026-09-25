@@ -875,6 +875,38 @@ All notable changes will be documented here.
   before the change (360s, the same traceback as CI) and the new test against the
   previous order failed 1/1 at the deadline naming the observation.
 
+- **A verdict one session declares can be read by a later one, from the
+  command line, as the declaration it is.** `verification-gate` was told to
+  issue `claim_verdict/v1` as PASS, HOLD or BLOCK and never where it goes; the
+  completion store #1818 added (`omh_todo action=record` / `recall`,
+  `native_completion/v1`) is that place, and the wrapper guidance for
+  `verification-gate`, `code-review` and `ultraqa` now names it in one shared
+  sentence, so a model that reaches a verdict, a ranked finding set or a QA
+  result is told to persist it under the scope checkpoint with its
+  `claimed_evidence_state` kept as written; `code-review`'s policy is derived
+  from the review category's entry plus that sentence, never a pasted copy.
+  Nothing read that store from outside a Hermes session;
+  `omh runtime verdict show [--session] [--checkpoint] [--revision
+  --environment]` does, through one reader in the store module. Its
+  `native_completion_read/v1` payload carries `standing: model_declaration`
+  and the claim boundary at the top level on every status and keeps every row
+  at `standing: model_declaration`, `observed: false`; separates a store that is
+  `absent` from one that is `empty` from one that is `present`; and reports
+  each kind as `absent`, `stale`, `declared_no_findings` or
+  `declared_findings`, so no record and a record that declared nothing found
+  never read alike. Freshness is judged only against a binding the reader
+  states -- `current` or `stale` for that exact revision and environment
+  inside the 30-day cap, with the `completion` projection beside it -- and is
+  `unbound` with no completion judgment when none is stated; a half binding
+  is refused. A store that cannot be read is `malformed` and exits 1; a
+  missing one exits 0. The tool's `recall` renders through the same
+  projection unchanged. `docs/HARNESS_QUALITY.md` gains a Declared Verdicts
+  section and `CONTEXT.md` a Completion dossier entry. Observed: one handler
+  session wrote a PASS claimed observed, a HOLD with one finding claimed
+  prepared and a QA PASS, then cleared its plan; the CLI read them bound and
+  unbound with the claimed states intact, and a second session's `recall`
+  agreed with the bound read field for field (#1782).
+
 ## 2.0.5 - 2026-09-22
 
 - **The cut now asks for the site rebuild its own push cannot start.** A cut

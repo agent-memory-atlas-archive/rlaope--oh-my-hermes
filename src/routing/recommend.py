@@ -611,6 +611,15 @@ _DEFAULT_POLICY = RecommendationPolicy(
     evidence_boundary="Routing guidance is not execution evidence.",
     wrapper_guidance="Route conservatively and show the missing decision before claiming work started.",
 )
+# #1782: where a lane's verdict, finding set or QA result goes once it exists.
+# One sentence shared by `verification-gate`, `code-review` and `ultraqa`, so
+# the destination and the claim boundary cannot drift apart between them. The
+# store is `native_completion/v1` (src/plugin_bundle/omh/completion_store.py);
+# a row there is what a model declared, never what the host observed.
+RECORD_SENTENCE = (
+    "Persist {subject} with `omh_todo action=record` (kind={kind}) under the scope checkpoint so a "
+    "later session can read it; the stored row stays a model declaration, never observed evidence."
+)
 _SKILL_POLICIES = {
     "meta-router": RecommendationPolicy(
         next_action="present_meta_route",
@@ -807,7 +816,8 @@ _SKILL_POLICIES = {
         ),
         wrapper_guidance=(
             "Prepare verification_matrix/v1, record observed_check_results/v1 only from fresh outputs, "
-            "and issue claim_verdict/v1 as PASS, HOLD, or BLOCK."
+            "and issue claim_verdict/v1 as PASS, HOLD, or BLOCK. "
+            + RECORD_SENTENCE.format(subject="that verdict", kind="verification")
         ),
     ),
     "build-failure-triage": RecommendationPolicy(
@@ -1159,7 +1169,11 @@ _SKILL_POLICIES = {
     "ultraqa": RecommendationPolicy(
         next_action="dispatch_to_workflow",
         evidence_boundary="A QA workflow route is not observed scenario execution, verification, fix evidence, CI, or release readiness evidence.",
-        wrapper_guidance="Run the QA workflow as a Hermes-owned review lane; report scenarios, observed checks, gaps, and any follow-up handoff separately.",
+        wrapper_guidance=(
+            "Run the QA workflow as a Hermes-owned review lane; report scenarios, observed checks, gaps, and any "
+            "follow-up handoff separately. "
+            + RECORD_SENTENCE.format(subject="the pass/fail result", kind="qa")
+        ),
     ),
 }
 _SKILL_POLICIES.update(
@@ -1724,6 +1738,21 @@ _CATEGORY_POLICIES = {
         wrapper_guidance="Route conservatively and show the missing decision before claiming work started.",
     ),
 }
+# #1782: `code-review` is the review category plus the destination for its
+# ranked finding set. Its action and boundary are read from the category entry
+# above, never pasted, so the skill card cannot drift from the category it
+# belongs to; `tests/test_router_content.py` pins the equality.
+_SKILL_POLICIES["code-review"] = RecommendationPolicy(
+    next_action=_CATEGORY_POLICIES["review"].next_action,
+    evidence_boundary=_CATEGORY_POLICIES["review"].evidence_boundary,
+    wrapper_guidance=(
+        _CATEGORY_POLICIES["review"].wrapper_guidance
+        + " "
+        + RECORD_SENTENCE.format(
+            subject="the ranked finding set (an empty list declares none found)", kind="review"
+        )
+    ),
+)
 _HERMES_ROLE_POLICIES = {
     "guide": RecommendationPolicy(
         next_action="clarify_or_route",

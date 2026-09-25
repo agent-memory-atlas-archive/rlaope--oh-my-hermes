@@ -151,6 +151,26 @@ answer, never that a plan was reviewed or that anything was implemented.
 _Avoid_: task list as evidence, TodoWrite (that is another product's tool
 name), reading an absent `plan_stage` as an unaccepted plan
 
+**Completion dossier**:
+The record a verification verdict, a review finding set, or a QA result
+survives its session in: `native_completion/v1` at
+`$OMH_HOME/runtime/completion/records.json`, written by OMH from an
+`omh_todo action=record` declaration under a scope checkpoint, read back with
+`omh_todo action=recall` inside a session or `omh runtime verdict show` from
+the command line. Every row keeps `standing: model_declaration` and
+`observed: false` whatever `claimed_evidence_state` (`prepared_not_observed`
+or `observed`) its writer claimed, so a stored PASS is evidence that a PASS
+was claimed, exactly as a done mark on the plan todo is. The read adds
+`freshness` — `current` or `stale` against a stated revision and environment,
+`unbound` when none is stated — and a source state per kind (`absent`,
+`stale`, `declared_no_findings`, `declared_findings`), so a missing record
+and a record that declared nothing found never read alike. A verdict is bound
+to the revision it was declared for and goes stale when that revision moves,
+not on a clock; the 30-day cap only bounds a dossier nobody moves.
+_Avoid_: reading a stored PASS as verification, reading an absent dossier as a
+clean run, review transcript (the store holds summaries and evidence ids,
+never transcripts or raw output)
+
 ### Coding delegation
 
 **Default coding lane (Hermes harness)**:

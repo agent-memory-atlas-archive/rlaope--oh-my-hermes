@@ -31,6 +31,10 @@ MAX_CHECKPOINTS = 32
 MAX_RESULTS = 64
 STALE_SECONDS = 30 * 86400
 KINDS = ('verification', 'review', 'qa')
+READ_SCHEMA = 'native_completion_read/v1'
+STORE_STATES = ('absent', 'empty', 'present')
+SOURCE_STATES = ('absent', 'stale', 'declared_no_findings', 'declared_findings')
+FRESHNESS_UNBOUND = 'unbound'
 CLAIM_BOUNDARY = (
     'Scope, acceptance, verdicts, findings and QA are model declarations, not permission '
     'or observed execution. Claimed host exit, independent review and CI remain distinct '
@@ -249,26 +253,91 @@ def _checkpoint(home, session, args, binding):
             'items': items, 'rejected': _texts(args.get('rejected', [])), 'results': []}
 
 
+def _freshness(record, revision, environment):
+    # Bound: a checkpoint or result row is current only for the exact revision
+    # and environment it was declared against, and only inside the age cap. A
+    # verdict is attached to a revision, not to a calendar: the revision moving
+    # makes it stale at once, and the cap only bounds a dossier nobody moves.
+    # Unbound (`revision is None`; the reader stated no binding): nothing can be
+    # called current or stale, so it is neither, and no completion judgment is
+    # made. The tool never reaches here unbound; its actions validate the
+    # binding first.
+    if revision is None:
+        return FRESHNESS_UNBOUND
+    current = (record['revision'] == revision and record['environment'] == environment
+               and time.time() - record['created_at'] <= STALE_SECONDS)
+    return 'current' if current else 'stale'
+
+
 def _projection(c, revision, environment):
-    rows = []
-    for row in c['results']:
-        current = (row['revision'] == revision and row['environment'] == environment
-                   and time.time() - row['created_at'] <= STALE_SECONDS)
-        rows.append({**row, 'freshness': 'current' if current else 'stale'})
-    current = [r for r in rows if r['freshness'] == 'current']
-    latest = {(r['item'], r['kind']): r for r in current}
-    missing = [i for i in range(1, len(c['items']) + 1)
-               if (i, 'verification') not in latest]
-    blockers = sorted({r['item'] for r in latest.values() if r['verdict'] != 'PASS' or r['findings']})
+    rows = [{**row, 'freshness': _freshness(row, revision, environment)} for row in c['results']]
+    considered = [r for r in rows if r['freshness'] != 'stale']
+    latest = {(r['item'], r['kind']): r for r in considered}
     sources = {}
     for kind in KINDS:
         relevant = [r for r in latest.values() if r['kind'] == kind]
         sources[kind] = ('declared_findings' if any(r['findings'] for r in relevant)
                          else 'declared_no_findings') if relevant else (
                              'stale' if any(r['kind'] == kind for r in rows) else 'absent')
-    return {'checkpoint': {**c, 'results': rows}, 'sources': sources,
-            'completion': {'status': 'not_verified', 'missing': missing, 'blockers': blockers,
-                           'declarations_complete': not missing and not blockers}}
+    projection = {'checkpoint': {**c, 'results': rows}, 'sources': sources}
+    if revision is None:
+        return projection
+    missing = [i for i in range(1, len(c['items']) + 1)
+               if (i, 'verification') not in latest]
+    blockers = sorted({r['item'] for r in latest.values() if r['verdict'] != 'PASS' or r['findings']})
+    projection['completion'] = {'status': 'not_verified', 'missing': missing, 'blockers': blockers,
+                                'declarations_complete': not missing and not blockers}
+    return projection
+
+
+def read_completion_dossiers(home, *, session_ref='', checkpoint_id='', revision=None, environment=None):
+    """Read every dossier in one OMH home for an operator or agent; never a write.
+
+    The tool's `recall` is bound by the host to one profile and project. This
+    reader takes the home the caller named and returns each checkpoint with its
+    profile and project digests as stored, so a later session, a wrapper or a
+    person can read what an earlier session declared. `store_state` separates a
+    store that does not exist from one with no checkpoints from one with some;
+    `sources` per kind separates absent from stale from declared-empty from
+    declared-findings. Rows keep `standing=model_declaration` and
+    `observed=false`, and the payload itself says the same at the top level on
+    every status, read or malformed: the read adds freshness and source states,
+    never evidence.
+    """
+    base = {'schema_version': READ_SCHEMA, 'standing': 'model_declaration',
+            'claim_boundary': CLAIM_BOUNDARY}
+    if (revision is None) != (environment is None):
+        raise CompletionValidationError('revision and environment bind together; pass both or neither')
+    if revision is not None:
+        revision = _binding_text(revision)
+        environment = _binding_text(environment)
+    if checkpoint_id and (not isinstance(checkpoint_id, str) or not _ID.fullmatch(checkpoint_id)):
+        raise CompletionValidationError('Invalid checkpoint id')
+    try:
+        path = _path(home)
+        existed = path.exists()
+        data = _read(path)
+    except (ValueError, OSError, TodoStoreError, RecursionError) as error:
+        # Same shape as the tool's recall: a store that cannot be read is
+        # `malformed`, never an empty one, and raw stored content stays inside.
+        return {**base, 'status': 'malformed',
+                'error': str(error) if isinstance(error, CompletionValidationError) else 'Completion metadata unavailable or invalid',
+                'error_type': type(error).__name__}
+    checkpoints = data['checkpoints']
+    author = _digest(session_ref) if session_ref else ''
+    dossiers = []
+    for c in checkpoints:
+        if checkpoint_id and c['checkpoint_id'] != checkpoint_id:
+            continue
+        if author and c['author'] != author and all(r['author'] != author for r in c['results']):
+            continue
+        dossiers.append({'freshness': _freshness(c, revision, environment),
+                         **_projection(c, revision, environment)})
+    return {**base, 'status': 'read',
+            'store_state': 'absent' if not existed else ('empty' if not checkpoints else 'present'),
+            'path': str(path), 'session_ref': session_ref,
+            'binding': None if revision is None else {'revision': revision, 'environment': environment},
+            'checkpoint_count': len(checkpoints), 'dossiers': dossiers}
 
 
 def completion_action(args, *, session):
