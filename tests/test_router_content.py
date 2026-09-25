@@ -737,6 +737,25 @@ class RouterContentTests(unittest.TestCase):
             recommend_module._SKILL_POLICIES["build-failure-triage"].evidence_boundary,
         )
         self.assertEqual(recommend_module._SKILL_POLICIES["verification-gate"].next_action, "prepare_verification_gate")
+        # #1782: the three lanes whose output the completion store keeps are
+        # told where it goes in one shared sentence, and told it stays a
+        # declaration there.
+        for lane, kind in (("verification-gate", "verification"), ("code-review", "review"), ("ultraqa", "qa")):
+            guidance = recommend_module._SKILL_POLICIES[lane].wrapper_guidance
+            self.assertIn(f"`omh_todo action=record` (kind={kind})", guidance, lane)
+            self.assertTrue(guidance.endswith("never observed evidence."), lane)
+        # `code-review` is the review category plus that sentence: derived from
+        # the category entry, so the two cannot drift apart.
+        review = recommend_module._CATEGORY_POLICIES["review"]
+        code_review = recommend_module._SKILL_POLICIES["code-review"]
+        self.assertEqual(code_review.next_action, review.next_action)
+        self.assertEqual(code_review.evidence_boundary, review.evidence_boundary)
+        self.assertEqual(
+            code_review.wrapper_guidance,
+            review.wrapper_guidance + " " + recommend_module.RECORD_SENTENCE.format(
+                subject="the ranked finding set (an empty list declares none found)", kind="review"
+            ),
+        )
         self.assertEqual(recommend_module._SKILL_POLICIES["agent-evaluation"].next_action, "prepare_agent_evaluation")
         self.assertEqual(recommend_module._SKILL_POLICIES["rules-distill"].next_action, "prepare_rules_distillation")
         self.assertEqual(recommend_module._SKILL_POLICIES["codebase-onboarding"].next_action, "prepare_codebase_onboarding")

@@ -93,6 +93,10 @@ from ..paths import OmhPaths
 from ..skill_pack import builtin_harnesses, routable_definitions
 from ..team_readiness import DEFAULT_RUNTIME_TARGET_SCAN_LIMIT, build_team_worker_readiness
 from ..hud import build_hud_payload
+from ..plugin_bundle.omh.completion_store import (
+    CompletionValidationError,
+    read_completion_dossiers,
+)
 from ..plugin_bundle.omh.todo_store import (
     TODO_CLAIM_BOUNDARY,
     TodoContendedError,
@@ -1349,6 +1353,24 @@ def cmd_runtime_todo_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_runtime_verdict_show(args: argparse.Namespace) -> int:
+    paths = _paths(args)
+    try:
+        payload = read_completion_dossiers(
+            paths.omh_home,
+            session_ref=args.session_ref,
+            checkpoint_id=args.checkpoint_id,
+            revision=args.revision,
+            environment=args.environment,
+        )
+    except CompletionValidationError as error:
+        raise OmhError(str(error)) from None
+    _print_json(payload)
+    # A store that cannot be read is not an empty one: `malformed` exits 1 so a
+    # shell reading only the status never takes it for "nothing declared".
+    return 0 if payload["status"] == "read" else 1
+
+
 def _add_runtime_commands(sub) -> None:
     from .run_efficiency import add_runtime_efficiency_command
     from .run_health import add_runtime_health_summary_command
@@ -1678,3 +1700,47 @@ def _add_runtime_commands(sub) -> None:
                 "show without it reads as the live TUI session would."
             ),
         )
+
+    runtime_verdict = runtime_sub.add_parser(
+        "verdict",
+        help=(
+            "Agent/operator surface: read the verification verdicts, review finding sets, and QA "
+            "results sessions declared through `omh_todo action=record`. Read-only; every row is a "
+            "model declaration, never observed evidence."
+        ),
+    )
+    verdict_sub = runtime_verdict.add_subparsers(dest="runtime_verdict_command", required=True)
+    verdict_show = verdict_sub.add_parser(
+        "show",
+        help=(
+            "Read the completion store of this OMH home: store_state absent/empty/present, and per "
+            "checkpoint the declared rows with their claimed evidence state kept as written."
+        ),
+    )
+    verdict_show.add_argument(
+        "--session",
+        dest="session_ref",
+        default="",
+        help="Hermes session id: keep only checkpoints that session declared or recorded a result into.",
+    )
+    verdict_show.add_argument(
+        "--checkpoint",
+        dest="checkpoint_id",
+        default="",
+        help="One checkpoint id as `omh_todo action=recall` lists it.",
+    )
+    verdict_show.add_argument(
+        "--revision",
+        default=None,
+        help=(
+            "With --environment: the revision fingerprint to judge freshness against; rows declared "
+            "for another revision read as stale. Without both, freshness is `unbound` and no "
+            "completion judgment is made."
+        ),
+    )
+    verdict_show.add_argument(
+        "--environment",
+        default=None,
+        help="With --revision: the environment fingerprint to judge freshness against.",
+    )
+    verdict_show.set_defaults(func=cmd_runtime_verdict_show)
