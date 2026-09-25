@@ -110,7 +110,7 @@ class ApplicationThreatModelRoutingTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
-                self.assertEqual(route_owner(route), SIBLING)
+                self.assertEqual(route_owner(route, allow_clarify=True), SIBLING)
                 self.assertNotIn(SKILL, [rec["skill"] for rec in route["recommendations"][:1]])
 
     def test_the_awareness_hint_keeps_the_agent_surface_with_the_safety_review(self) -> None:
@@ -173,9 +173,9 @@ class ApplicationThreatModelRoutingTests(unittest.TestCase):
                 route = route_chat_message(message, source="discord")
                 if not expected:
                     self.assertNotEqual(route["action"], "dispatch")
-                    self.assertNotEqual(route_owner(route), "application-threat-model")
+                    self.assertNotEqual(route_owner(route, allow_clarify=True), "application-threat-model")
                     continue
-                self.assertEqual(route_owner(route), expected)
+                self.assertEqual(route_owner(route, allow_clarify=True), expected)
 
 
 class ApplicationThreatModelChatCardTests(unittest.TestCase):

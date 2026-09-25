@@ -5,30 +5,31 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **Shortlist first: the router dispatches only on strong evidence and
-  otherwise hands Hermes the shortlist.** A confident score now dispatches
-  only on an explicit or named invocation, the winner's own trigger phrase
-  (unless another skill said an equal phrase), or a trusted intent guard;
-  every guard is classified in `GUARD_DISPATCH_TRUST`. Everything else --
-  trigger tokens however rare, a single-word name, a context-only guard --
-  clarifies with reason `weak_dispatch_evidence`. The clarify carries up to
-  four candidates: scored skills with evidence of their own, then a BM25
-  ranking over each skill's name, triggers, situations, description, and
-  use_when, admitted on a non-common anchor word. The route's candidate is
-  the shortlist's first entry, and the clarify card tells the model to pick
-  the workflow whose situation matches, naming each by the situation its
-  description opens on; `route_question` asks the same shortlist. Guards and
-  fast paths that fired on a word used in passing were narrowed, each with a
-  negative case: direct code edits need a code-shaped object, `recurring`
-  needs a cadence, feedback triage no longer reads `report` or `build`,
-  `setup` alone is not a missing tool, a bare `plan` or `loop` before a plain
-  noun is a verb, "learn this week" is not a learning request, the materials
-  lane needs a production verb, live lookups need a live cue, a command whose
-  outcome is an error is a failure, and installed-skill questions are not a
-  catalog browse. A Jev-addressed message picks a Jev sibling by the same
-  ranking only on a clear lead. On the 501-message tuning set wrong
-  dispatches fell from 30.9% to 11.8% and the intended skill was dispatched
-  or shortlisted for 60.3% (66.4% of English messages), up from 34.3%; the
-  85% reach target is not met.
+  otherwise hands Hermes the shortlist.** A confident score dispatches only
+  on an explicit or named invocation, the winner's own trigger phrase (unless
+  another skill said an equal phrase), a request shape -- a review verb on a
+  pull request or diff, a failing build in a code context, a deploy to
+  production, a filing verb on a GitHub bug, an edit verb on how a page
+  looks -- or a trusted intent guard. Every guard is classified in
+  `GUARD_DISPATCH_TRUST`, trusted only where its predicate is intent-shaped
+  and its measured record supports it; guard fast paths answer to the same
+  table. Everything else -- trigger tokens, a one-word name, a context-only
+  guard -- clarifies with reason `weak_dispatch_evidence`. The clarify
+  carries up to four candidates: the declined winner first, scored skills
+  with evidence of their own, then a BM25 ranking over each skill's name,
+  triggers, situations, description, and use_when. The clarify card tells the
+  model to pick the workflow whose situation matches, naming each by the
+  situation its description opens on; `route_question` asks the same
+  shortlist. Guards and fast paths that fired on a word used in passing were
+  narrowed with vocabulary-level rules and negative cases (failure-outcome
+  words, check verbs, a cadence of a frequency word before a time, code-unit
+  nouns, own-skill inventory questions, system memory, bare verb names before
+  a plain noun). Measured in-sample on the 501-message tuning set these rules
+  were checked against: wrong dispatch 30.9% -> 9.8%, intended skill
+  dispatched or shortlisted 34.3% -> 62.9% (English: 7.9% and 69.7%). On the
+  owner's held-out English set, before the follow-up that removed
+  tuning-probe wording from the predicates, wrong dispatch went 40.4% ->
+  25.3% and reach 43.2% -> 62.2%; the reach target of 85% is not met.
 - **The plugin admits a Hermes git checkout by the release it resolves, not
   the install stamp's placeholder.** Released Hermes through 0.21.5 hard-codes
   `hermes_cli.__version__`; hermes-agent main now serves it from the install

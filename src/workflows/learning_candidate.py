@@ -328,8 +328,8 @@ def _detect_learning_signal_cached(message: str) -> dict[str, object] | None:
     return None
 
 
-# "learn this week" and "remember this morning" are a verb plus a time, not a
-# request to learn or remember THIS; the phrase names nothing to keep.
+# "<learn|remember> this <time noun>" is a verb plus a time, not a request to
+# learn or remember THIS; the phrase names nothing to keep.
 _TIME_NOUNS_AFTER_THIS = frozenset(
     {"week", "weekend", "month", "quarter", "year", "morning", "afternoon", "evening", "semester", "sprint"}
 )

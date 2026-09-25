@@ -107,15 +107,21 @@ class WeakEvidenceRouteTests(unittest.TestCase):
         self.assertIn("route_question", route)
         return route
 
-    def test_before_and_merge_do_not_dispatch_the_verification_gate(self) -> None:
-        # `before` and `merge` are trigger tokens of verification-gate phrases;
-        # the sentence says neither phrase.
-        self._assert_weak_clarify("check this diff before I merge it")
+    def test_a_review_verb_without_a_change_set_asks(self) -> None:
+        # `review` alone is a token twenty skills list; with no PR, diff, or
+        # change as its object it is not the review shape.
+        route = self._assert_weak_clarify("review the onboarding flow for rough edges")
+        # The declined winner leads the shortlist.
+        self.assertEqual(route["candidate_handoff"]["candidates"][0]["skill"], route["candidate_skill"])
+
+    def test_the_declined_winner_always_leads_the_shortlist(self) -> None:
+        route = self._assert_weak_clarify("refactor the auth module")
+        self.assertIn("ai-slop-cleaner", [c["skill"] for c in route["candidate_handoff"]["candidates"]])
 
     def test_last_time_does_not_carry_a_live_information_guard(self) -> None:
         # `what` plus `time` fired the live-information guard for +42 on a
         # request about a past decision; the guard now needs a live cue.
-        route = route_chat_message("what did we pick last time for the cache layer?", source="discord")
+        route = route_chat_message("what did we settle on last time for the queue design?", source="discord")
         self.assertNotEqual(route["action"], "dispatch")
         self.assertNotEqual(route["candidate_skill"], "live-info-operator")
 
@@ -149,10 +155,55 @@ class NarrowedGuardTests(unittest.TestCase):
                 self.assertEqual(route["selected_skill"], "ultrawork")
 
     def test_writing_a_prompt_for_a_named_agent_is_not_a_delivery(self) -> None:
-        route = route_chat_message("write the instructions I will give codex for the parser fix", source="discord")
+        route = route_chat_message("draft instructions for codex about the parser fix", source="discord")
         self.assertNotEqual(route["selected_skill"], "ultrawork")
         route = route_chat_message("have codex fix the flaky checkout test", source="discord")
         self.assertEqual(route["selected_skill"], "ultrawork")
+
+
+class RequestShapeTests(unittest.TestCase):
+    """Canonical requests dispatch by shape; the same words out of shape ask."""
+
+    def _dispatch(self, message: str) -> str:
+        route = route_chat_message(message, source="discord")
+        self.assertEqual(route["action"], "dispatch", message)
+        return str(route["selected_skill"])
+
+    def _no_dispatch(self, message: str) -> None:
+        self.assertNotEqual(route_chat_message(message, source="discord")["action"], "dispatch", message)
+
+    def test_review_verb_on_a_change_set(self) -> None:
+        for message in ("review PR 1234", "can you review this pull request", "look over my changes before release"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dispatch(message), "code-review")
+        self._no_dispatch("the review of our budget changes is due friday")
+
+    def test_build_failure_in_a_code_context(self) -> None:
+        for message in ("the CI build is failing on main", "npm run build throws a bunch of TypeScript warnings"):
+            with self.subTest(message=message):
+                self.assertEqual(self._dispatch(message), "build-failure-triage")
+        self._no_dispatch("the office build is failing its inspection")
+
+    def test_deploy_to_production(self) -> None:
+        self.assertEqual(self._dispatch("deploy the app to production"), "deploy-and-monitor")
+        self._no_dispatch("who approved the deploy to production last week?")
+
+    def test_file_a_defect_on_github(self) -> None:
+        self.assertEqual(self._dispatch("file this bug on GitHub for the team"), "github-issue-intake")
+        self._no_dispatch("the bug I filed on GitHub last week got closed")
+
+    def test_repair_a_running_part(self) -> None:
+        self.assertEqual(self._dispatch("fix the broken log output in the worker"), "ultrawork")
+        self._no_dispatch("fix the dinner schedule for the week")
+
+    def test_appearance_change_is_frontend_not_the_browser(self) -> None:
+        self.assertEqual(self._dispatch("change the login page style to match the brand"), "frontend")
+        self.assertEqual(self._dispatch("open the login page and fill the form"), "browser-operator")
+
+    def test_system_memory_is_not_the_memory_store(self) -> None:
+        route = route_chat_message("investigate why memory usage keeps growing in prod", source="discord")
+        self.assertNotEqual(route["selected_skill"], "memory-sync")
+        self.assertNotEqual(route["candidate_skill"], "memory-sync")
 
 
 class RecurringIssueDigestTests(unittest.TestCase):

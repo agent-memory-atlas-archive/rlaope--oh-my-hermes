@@ -46,7 +46,7 @@ class LexicalRankingTests(unittest.TestCase):
 
 class LexicalFillTests(unittest.TestCase):
     def test_a_weak_clarify_offers_lexical_candidates(self) -> None:
-        route = route_chat_message("check this diff before I merge it", source="discord")
+        route = route_chat_message("review the onboarding flow for rough edges", source="discord")
         handoff = route["candidate_handoff"]
         self.assertLessEqual(len(handoff["candidates"]), MAX_CANDIDATES)
         # The scored leader leads: it is the route's candidate, and a question
@@ -59,7 +59,7 @@ class LexicalFillTests(unittest.TestCase):
             self.assertEqual(candidate["matched"], ["lexical_shortlist"])
 
     def test_no_jev_skill_enters_by_word_overlap(self) -> None:
-        for message in ("which workflow fits this request best", "is this failure flaky or a real regression"):
+        for message in ("pick the right workflow for my request", "is this failure flaky or a real regression"):
             with self.subTest(message=message):
                 self.assertFalse([skill for skill in _shortlist(message) if skill.startswith("jev-")])
 
@@ -109,7 +109,7 @@ class ShortlistHintTests(unittest.TestCase):
         from omh.skills.catalog import routable_definitions
         from omh.wrapper.contract import build_chat_interaction_payload
 
-        payload = build_chat_interaction_payload("check this diff before I merge it", source="discord")
+        payload = build_chat_interaction_payload("review the onboarding flow for rough edges", source="discord")
         route = payload["route"]
         body = payload["chat_response"]["body"]
         candidates = [candidate["skill"] for candidate in route["candidate_handoff"]["candidates"]]

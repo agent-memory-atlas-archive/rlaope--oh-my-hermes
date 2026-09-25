@@ -77,9 +77,9 @@ class RecurringIntentPreparationTests(unittest.TestCase):
 
                 # Shortlist-first: a request carried by words rather than a
                 # phrase asks, with automation-blueprint leading the shortlist.
-                self.assertTrue(dispatched_or_asked(route))
-                self.assertEqual(route_owner(route), "automation-blueprint")
-                self.assertEqual(route_owner_harness(route), "scheduled-ops-blueprint")
+                self.assertTrue(dispatched_or_asked(route, allow_clarify=True))
+                self.assertEqual(route_owner(route, allow_clarify=True), "automation-blueprint")
+                self.assertEqual(route_owner_harness(route, allow_clarify=True), "scheduled-ops-blueprint")
 
     def test_one_off_requests_do_not_become_recurring_intents(self) -> None:
         for message in (

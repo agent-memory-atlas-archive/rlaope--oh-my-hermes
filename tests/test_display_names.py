@@ -164,8 +164,8 @@ class DisplayNameEchoBackRoutingTests(unittest.TestCase):
                 # is ordinary English, so under shortlist-first routing it may
                 # ask instead, with the same skill leading the shortlist.
                 self.assertEqual(
-                    route_owner(route_chat_message(f"use {display}")),
-                    route_owner(route_chat_message(f"use {definition.name}")),
+                    route_owner(route_chat_message(f"use {display}"), allow_clarify=True),
+                    route_owner(route_chat_message(f"use {definition.name}"), allow_clarify=True),
                 )
 
     def test_route_hint_accepts_the_display_name_it_just_rendered(self) -> None:

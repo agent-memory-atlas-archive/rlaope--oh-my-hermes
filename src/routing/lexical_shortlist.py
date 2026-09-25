@@ -3,17 +3,20 @@
 The scorer in `recommend.py` answers "which skill's trigger table does this
 message hit hardest". That is the right question for a dispatch and the wrong
 one for a shortlist: a user who does not know a skill's vocabulary writes the
-situation instead ("save the fact that we use 8px spacing"), no trigger fires,
+situation instead ("keep a note that our API uses snake_case"), no trigger fires,
 and the clarify that follows offers whatever the everyday words happened to
 touch.
 
 This module ranks the same catalog a second way, as a bag of words: BM25 over
 each skill's name, English triggers, description, `use_when`, and the
 `situations` field, which exists for exactly this reader -- the plain phrases a
-user in that situation would type. The ranking feeds `candidate_handoff` only,
-after the route is already undecided. It never reads a scorer result and never
-changes an action, so a lexical accident can put a skill on a shortlist that
-Hermes chooses from, and cannot dispatch anything.
+user in that situation would type. It has two readers. `candidate_handoff`
+fills an undecided route's shortlist from it, after the route is already a
+clarify; there it never reads a scorer result and never changes an action, so
+a lexical accident can put a skill on a shortlist Hermes chooses from and
+cannot dispatch it. `jev_addressing` uses it to pick a Jev sibling for a
+message already addressed to Jev, and only on an absolute score floor and a
+clear lead over the next sibling; below either it keeps `jev-ask`.
 
 Ranking is not admission. `candidate_handoff` admits a ranked skill only when
 the message shares an anchor word with it (`lexical_anchor_terms`) and the
@@ -73,10 +76,26 @@ STOPWORDS: frozenset[str] = frozenset(
 
 
 def stem(token: str) -> str:
-    """Fold the common English inflections so `issues`/`issue`, `failing`/`fail` meet."""
-    for suffix in ("ing", "ed", "es", "s"):
-        if len(token) > len(suffix) + 2 and token.endswith(suffix):
-            return token[: -len(suffix)]
+    """Fold common English inflections so a word's forms meet.
+
+    `issues`/`issue`, `pages`/`page`, `services`/`service`, `notes`/`note`,
+    `queries`/`query`, `fixes`/`fix`, `failing`/`failed`/`fail`,
+    `running`/`run`. A word ending in -ss, -us, or -is keeps its `s`
+    (`class`, `status`, `analysis`). It is a light stemmer, not a
+    lemmatizer: `making` and `make` still differ.
+    """
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 4 and token.endswith(("sses", "xes", "ches", "shes", "zes")):
+        return token[:-2]
+    for suffix in ("ing", "ed"):
+        if len(token) > len(suffix) + 3 and token.endswith(suffix):
+            base = token[: -len(suffix)]
+            if len(base) > 2 and base[-1] == base[-2] and base[-1] not in "lsz":
+                base = base[:-1]
+            return base
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
     return token
 
 

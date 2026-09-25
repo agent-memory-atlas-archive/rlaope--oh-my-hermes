@@ -265,7 +265,7 @@ class LongDocumentRoutingTests(unittest.TestCase):
                     # dispatched; the scored field below still keeps the skill out.
                     self.assertNotEqual(route["action"], "dispatch")
                 else:
-                    self.assertEqual(route_owner(route), expected)
+                    self.assertEqual(route_owner(route, allow_clarify=True), expected)
                 self.assertNotIn("long-document-reading", [rec["skill"] for rec in route["recommendations"]])
                 self.assertNotEqual(awareness_route_hint(message)["primary_workflow"], "long-document-reading")
 

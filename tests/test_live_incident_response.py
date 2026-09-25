@@ -142,7 +142,7 @@ class LiveIncidentRoutingTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 route = route_chat_message(message, source="discord")
-                self.assertEqual(route_owner(route), RETROSPECTIVE_SIBLING)
+                self.assertEqual(route_owner(route, allow_clarify=True), RETROSPECTIVE_SIBLING)
                 self.assertNotIn(SKILL, [rec["skill"] for rec in route["recommendations"][:1]])
 
     def test_the_support_case_and_the_release_watch_keep_their_lanes(self) -> None:
@@ -155,7 +155,7 @@ class LiveIncidentRoutingTests(unittest.TestCase):
             ("is this release ready for production", "production-audit"),
         ):
             with self.subTest(message=message):
-                self.assertEqual(route_owner(route_chat_message(message, source="discord")), expected)
+                self.assertEqual(route_owner(route_chat_message(message, source="discord"), allow_clarify=True), expected)
 
     def test_generic_words_in_another_sense_never_reach_the_skill(self) -> None:
         # "incident", "response", "commander", "severity", "outage",

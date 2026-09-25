@@ -239,7 +239,7 @@ class CapabilityToggleRoutingTests(unittest.TestCase):
     def test_the_memory_write_workflows_keep_their_own_requests(self) -> None:
         # The regression this feature exists to prevent, in both directions.
         # Shortlist-first: this asks, with memory-new leading the shortlist.
-        self.assertEqual(route_owner(route_chat_message("capture this decision to memory")), "memory-new")
+        self.assertEqual(route_owner(route_chat_message("capture this decision to memory"), allow_clarify=True), "memory-new")
         self.assertEqual(route_chat_message("memory-sync")["selected_skill"], "memory-sync")
 
     def test_a_toggle_in_the_users_own_product_is_not_a_capability_change(self) -> None:

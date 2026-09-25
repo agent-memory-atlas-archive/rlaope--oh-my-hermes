@@ -199,22 +199,26 @@ def _relevant_candidates(
 def _lexical_shortlist(
     recommendations: list[dict[str, object]], message: str, *, declined_dispatch: bool = False
 ) -> list[dict[str, object]]:
-    """Scored candidates with evidence of their own, then lexical ranks, deduped.
+    """The declined winner, scored candidates with evidence of their own, then lexical ranks.
 
     Only for a `clarify`: the router already decided it cannot dispatch, and
-    the shortlist is what Hermes chooses from. The first entry becomes the
-    route's `candidate_skill`. A `jev-*` skill never enters by word overlap --
+    the shortlist is what Hermes chooses from. After a declined dispatch the
+    declined winner always leads, whatever its own-evidence score. The first
+    entry becomes the route's `candidate_skill`. A `jev-*` skill never enters by word overlap --
     it sends data off the machine and is reached only through
     `routing/jev_addressing.py`.
     """
     candidates: list[dict[str, object]] = []
-    for recommendation in recommendations:
+    for index, recommendation in enumerate(recommendations):
         if len(candidates) >= MAX_SCORED_CANDIDATES:
             break
         labels = recommendation.get("matched")
         if skill_is_negated(message, str(recommendation.get("skill") or "")):
             continue
-        if own_evidence_score([str(label) for label in labels or ()]) >= SCORED_OWN_EVIDENCE_FLOOR:
+        # The winner the gate declined to dispatch always leads: the router
+        # was confident in it, and declining means asking, not dropping it.
+        declined_winner = declined_dispatch and index == 0 and int(recommendation.get("score", 0) or 0) > 0
+        if declined_winner or own_evidence_score([str(label) for label in labels or ()]) >= SCORED_OWN_EVIDENCE_FLOOR:
             candidates.append(_candidate(recommendation))
     named = {str(candidate.get("skill") or "") for candidate in candidates}
     definitions = {definition.name: definition for definition in routable_definitions()}
@@ -358,8 +362,8 @@ def build_candidate_handoff(
         lane = _coding_lane()
         if lexical:
             # The lane leads; the lexical ranks keep the remaining slots, so a
-            # request whose situation names a skill ("remove the dead code an
-            # AI left") still offers that skill beside the delivery engines.
+            # request whose situation names a specialist skill still offers it
+            # beside the delivery engines.
             lane_skills = {str(candidate.get("skill") or "") for candidate in lane}
             candidates = [*lane, *[c for c in candidates if c.get("skill") not in lane_skills]][:MAX_CANDIDATES]
         else:

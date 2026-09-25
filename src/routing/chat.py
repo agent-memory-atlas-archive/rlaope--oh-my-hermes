@@ -20,7 +20,7 @@ from .catalog_questions import (
 from .compound_intent import distinct_complete_domain_signals
 from .action_copy import next_action_label as _route_next_action_label
 from .candidate_handoff import SHORTLIST_LEXICAL, WEAK_DISPATCH_EVIDENCE, build_candidate_handoff, shortlist_clarification
-from .dispatch_evidence import EVIDENCE_WEAK, dispatch_evidence
+from .dispatch_evidence import EVIDENCE_WEAK, GUARD_TRUSTED, dispatch_evidence
 from .decision_contract import build_route_decision_contract
 from .route_question import build_route_question_for_candidate_handoff
 from .domain_signals import (
@@ -5485,6 +5485,12 @@ def _guarded_operator_fast_path_decision(
     ):
         return None
     if guard.preferred_skills[0] == "feedback-triage" and _feedback_triage_fast_path_blocked(routing_message):
+        return None
+    # The fast path answers to the same trust table as the scored gate: a
+    # context-only guard does not dispatch from here on an English message.
+    # It falls through to scoring, where it still ranks the field and the
+    # dispatch-evidence gate decides.
+    if routing_message.isascii() and guard_label_dispatch_trust().get(guard.matched_label) != GUARD_TRUSTED:
         return None
     return _routing_guard_fast_path_decision(
         guard,

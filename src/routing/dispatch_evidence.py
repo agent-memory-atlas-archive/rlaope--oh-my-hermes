@@ -2,12 +2,12 @@
 
 Shortlist first. `_confidence` calls a score of 8 `high`, and a high winner
 used to dispatch. Eight is three everyday words: a trigger phrase is also
-credited through each of its tokens, so "check this diff before I merge it"
-reached `verification-gate` on `before` and `merge` alone. A dispatch on that
-evidence throws away the one thing the router does well on such a message:
-a shortlist that names the right skill. Measured on an English tuning set,
-the lexical shortlist holds the intended skill in its top four for 88% of
-messages; a token-scored winner is right far less often.
+credited through each of its tokens, so a sentence that merely contains
+`before` and `merge` reached `verification-gate`. A dispatch on that evidence
+throws away what the router does better on such a message: a shortlist that
+names the right skill. (On the in-sample tuning set, BM25's top four held the
+intended skill for most English messages where a token-scored winner often
+did not; that is a tuning-set observation, not a held-out claim.)
 
 So a confident winner dispatches only on strong evidence, and every other
 winner becomes a clarify that carries the shortlist for Hermes to choose from.
@@ -80,8 +80,8 @@ _DIRECT_PREFIXES = ("direct:", "domain:", "domain_action:")
 # A sigilled trigger (`$ulw`, `/omh`) is a command the user typed, not a word
 # that happened to occur; it is phrase evidence even though it has no space.
 _COMMAND_SIGILS = ("$", "/", "@")
-# The product's own name names OMH, not one of its skills: "check if
-# oh-my-hermes is set up" is a doctor question, not the router skill.
+# The product's own name names OMH, not one of its skills: a question about
+# whether OMH is installed or working is a doctor question, not the router.
 _PRODUCT_NAME_TOKENS = frozenset({"oh-my-hermes", "oh-my", "oh-my-hermes-agent"})
 
 
@@ -158,6 +158,12 @@ def dispatch_evidence(
         return EVIDENCE_EXPLICIT
     if any(label.startswith(_DIRECT_PREFIXES) for label in labels):
         return EVIDENCE_DIRECT
+    fast_path_guards = [label for label in labels if _kind(label) == "guard_fast_path"]
+    if fast_path_guards and message.isascii():
+        # A guard fast path answers to the trust table like a scored guard.
+        guard_labels = [label for label in labels if _kind(label) == "guard"]
+        if not any(guard_trust.get(label) == GUARD_TRUSTED for label in guard_labels):
+            return EVIDENCE_WEAK
     if any(_kind(label) not in _SCORER_LABEL_WEIGHTS for label in labels):
         return EVIDENCE_FAST_PATH
     if not message.isascii():

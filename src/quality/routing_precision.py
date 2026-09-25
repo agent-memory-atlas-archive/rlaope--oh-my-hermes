@@ -2299,18 +2299,84 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "refactor-plan",
     ),
+    # Shortlist-first follow-up: the negative half of each request shape and
+    # narrowed guard. Every sentence here is written for the rule, not taken
+    # from a tuning probe.
+    RoutingPrecisionCase(
+        "review-as-a-noun-is-not-a-code-review",
+        "A review on an agenda names a review; it does not ask for one",
+        "the review of our hiring changes is on the agenda",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "a-building-inspection-is-not-a-build-failure",
+        "A failing building inspection has no code context",
+        "the office build is failing its inspection",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "a-question-about-a-past-deploy-is-not-a-deploy",
+        "A question about a past deploy is not a deploy command",
+        "who approved the deploy to production last week?",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "a-closed-github-bug-is-not-a-new-filing",
+        "A bug already filed is not a request to file one",
+        "the bug I filed on GitHub last week got closed",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "fixing-a-schedule-is-not-a-code-edit",
+        "A repair verb on a non-code object is not a code edit",
+        "fix the dinner schedule for the week",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "a-style-guide-question-is-not-a-frontend-change",
+        "A question about a style guide is not an appearance edit",
+        "what style guide does the team use for the site?",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "an-office-setup-is-not-a-missing-tool",
+        "`setup` alone is not a missing tool",
+        "our home office setup needs a better chair",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "plan-before-a-plain-noun-is-not-an-invocation",
+        "`plan` before a plain noun is a verb, not the plan skill",
+        "plan meals for the week",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "an-edit-noun-in-a-question-is-not-a-code-edit",
+        "`change` as a noun in a question is not an edit command",
+        "who approved the change to the settings button last sprint?",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "a-check-on-a-deck-is-not-a-materials-request",
+        "A check verb on a document is not a request to produce one",
+        "ensure the quarterly deck is uploaded to the shared drive",
+        "answer_clarification",
+        "",
+    ),
     # Dispatch evidence. Each sentence below dispatched on origin before the
     # gate: everyday words that are also trigger tokens, a context-only guard,
     # or a guard whose object vocabulary was wider than code. Each now asks.
     # No `forbidden_candidate` where the scored leader stays the candidate --
     # that field reads `route.candidate_skill`, and the claim is the ACTION.
-    RoutingPrecisionCase(
-        "before-i-merge-is-not-a-verification-request",
-        "`before` and `merge` are words, not the verification gate's phrase",
-        "check this diff before I merge it",
-        "answer_clarification",
-        "",
-    ),
     RoutingPrecisionCase(
         "last-time-is-not-a-live-lookup",
         "`what` plus `time` does not make a past decision a live-information lookup",
@@ -2359,13 +2425,6 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # Shortlist-first fast paths. Each of these dispatched on origin through a
     # fast path or a bare-name invocation that fired on a word used in passing.
     RoutingPrecisionCase(
-        "plan-as-a-verb-on-a-plain-noun-is-not-an-invocation",
-        "`plan` followed by a plain noun is the verb of a sentence, not the `plan` skill",
-        "plan interviews with three candidates for the support role",
-        "answer_clarification",
-        "",
-    ),
-    RoutingPrecisionCase(
         "plan-as-an-object-is-not-an-invocation",
         "A sentence that ends on the word plan does not invoke it",
         "tell the team about the plan",
@@ -2373,43 +2432,11 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
     ),
     RoutingPrecisionCase(
-        "office-setup-is-not-a-missing-tool",
-        "`setup` alone is not a missing tool or credential",
-        "our office setup is new, what do people usually buy first?",
-        "answer_clarification",
-        "",
-        "toolbelt-readiness",
-    ),
-    RoutingPrecisionCase(
-        "learn-this-weekend-is-not-a-learning-card",
-        "\"learn this weekend\" is a verb and a time, not a request to learn this",
-        "I want to learn this weekend how sourdough starters work",
-        "answer_clarification",
-        "",
-        "workflow-learning",
-    ),
-    RoutingPrecisionCase(
         "remember-this-morning-is-not-a-memory-capture",
         "\"remember this morning\" recalls a time; nothing is asked to be kept",
         "remember this morning the train was late",
         "answer_directly",
         "direct_answer",
-    ),
-    RoutingPrecisionCase(
-        "deck-location-check-is-not-a-materials-request",
-        "A deck to be checked, not produced, is not a materials package",
-        "make sure the slide deck is in the shared folder",
-        "answer_clarification",
-        "",
-        "materials-package",
-    ),
-    RoutingPrecisionCase(
-        "deck-inventory-is-not-a-materials-request",
-        "Decks to be found, not produced, are not a materials package",
-        "an inventory of conference slide decks about accessibility",
-        "answer_clarification",
-        "",
-        "materials-package",
     ),
 )
 
@@ -2545,7 +2572,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         },
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, backend, leads
+    # the shortlist.
     RoutingInterventionCase(
         "apple-glass-database-stays-with-backend",
         "Apple Glass database request does not select the Apple UI specialist",
@@ -2557,7 +2585,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "backend",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, frontend, leads
+    # the shortlist.
     RoutingInterventionCase(
         "generic-ui-stays-with-frontend",
         "Generic UI request does not select the Apple UI specialist",
@@ -2678,9 +2707,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "apple_design",
         "apple-design",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, frontend, is not the top shortlist entry (shortlist: live-incident-response, award-bar-score, design-quality-gate, frontend); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, frontend, leads
+    # the shortlist.
     RoutingInterventionCase(
         "generic-gsap-stays-with-frontend",
         "Generic GSAP animation does not select Apple design",
@@ -2689,11 +2718,11 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "frontend",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, ultrawork, is not the top shortlist entry (shortlist: apple-design, award-bar-score, design-quality-gate, ralplan); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, ultrawork, leads
+    # the shortlist.
     RoutingInterventionCase(
         "generic-liquid-logo-stays-with-planning",
         "Generic liquid-logo implementation does not select Apple design",
@@ -2702,7 +2731,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "ultrawork",
     ),
     RoutingInterventionCase(
         "generic-liquid-glass-stays-with-handoff",
@@ -3014,7 +3043,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "web_research",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, websearch-setup, leads
+    # the shortlist.
     RoutingInterventionCase(
         "websearch-setup-outranks-the-lookup-lane",
         "Configuring web search still reaches websearch-setup rather than the lookup lane",
@@ -3522,7 +3552,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "application_threat_model",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, security-safety-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "agent-surface-stays-security-safety-review",
         "The agent's own prompt and tool surface stays with the safety review, not the application model",
@@ -3579,7 +3610,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "live_incident_record",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, reliability-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "closed-incident-stays-reliability-review",
         "A closed incident's notes and postmortem stay with the reliability review",
@@ -3600,7 +3632,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "support_operations",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, deploy-and-monitor, leads
+    # the shortlist.
     RoutingInterventionCase(
         "release-watch-stays-deploy-and-monitor",
         "Watching a healthy release stays with deploy-and-monitor, not the incident lane",
@@ -3611,9 +3644,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "deploy-and-monitor",
     ),
-    # Re-pinned to clarify (dispatch-evidence gate, owner decision 2026-09-25): `review`,
-    # `contract`, and `compliance` are shared with other skills and the lead over
-    # code-review is 2; no whole legal phrase is said. The candidate stays legal.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, legal-compliance-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "contract-compliance-review-stays-legal",
         "Reviewing a contract for compliance risk stays legal compliance review",
@@ -3633,9 +3666,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_legal_compliance_review",
         "legal_compliance_review",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, materials-package, is not the top shortlist entry (shortlist: long-document-reading, report-package, deploy-and-monitor, paper-learning); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, materials-package, leads
+    # the shortlist.
     RoutingInterventionCase(
         "large-pdf-upload-failure-stays-materials",
         "A large PDF upload failure is a file problem, not a reading request",
@@ -3644,7 +3677,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "materials-package",
     ),
     RoutingInterventionCase(
         "korean-large-pdf-upload-failure-stays-materials",
@@ -3673,9 +3706,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_material_package",
         "materials_package",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, materials-package, is not the top shortlist entry (shortlist: native-debugging, long-document-reading, agent-debug, paper-learning); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, materials-package, leads
+    # the shortlist.
     RoutingInterventionCase(
         "huge-pdf-crash-debug-stays-materials",
         "Debugging a viewer crash on a huge PDF stays file packaging",
@@ -3684,7 +3717,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "materials-package",
     ),
     RoutingInterventionCase(
         "ocr-pipeline-document-stays-media-input",
@@ -3695,10 +3728,10 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_media_input_card",
         "media_input",
     ),
-    # Re-pinned to clarify (dispatch-evidence gate, owner decision 2026-09-25): `style`
-    # no longer counts as a code object for direct_coding_task, so nothing claims a code
-    # edit; the claim that a long-document mention stays out of long-document-reading
-    # holds, with content-operator (`style guide`) as the candidate.
+    # Re-pinned to clarify (shortlist-first). FINDING: the intended skill on main,
+    # ultrawork, is not on the shortlist: nothing claims a code edit once `style`
+    # stopped being a code object. The case pins content-operator, which leads,
+    # and that the route asks.
     RoutingInterventionCase(
         "style-guide-long-document-section-stays-ultrawork",
         "Adding a section to a long style guide stays a coding handoff",
@@ -3709,9 +3742,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "content-operator",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: research, ai-slop-cleaner, source-finder); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, code-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "spec-page-year-stays-code-review",
         "A year near the word page is not a page count",
@@ -3720,7 +3753,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "code-review",
     ),
     RoutingInterventionCase(
         "exact-paper-learning-capability",
@@ -4969,9 +5002,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # delivery cycle at 44 while `build a todo list` scored 4 and fell to the
     # picker, because `navbar` sat in a literal noun set and `todo`, `app`, and
     # `dashboard` did not.
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, deep-interview, is not the top shortlist entry (shortlist: frontend-refactor, todo-checklist, frontend); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, deep-interview, leads
+    # the shortlist.
     RoutingInterventionCase(
         "greenfield-build-reaches-interview",
         "An English greenfield build request reaches the interview lane whatever the product noun",
@@ -4980,7 +5013,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "deep-interview",
     ),
     RoutingInterventionCase(
         "greenfield-build-korean-reaches-interview",
@@ -5300,7 +5333,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "workflow_learning",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, curriculum-design, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jit-learn-negative-curriculum-design",
         "An explicit multi-week syllabus remains curriculum design",
@@ -5339,7 +5373,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "source_finder",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, web-research, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jit-learn-negative-research",
         "An already-scoped current-source investigation reaches the web lookup lane",
@@ -5368,9 +5403,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_reliability_review",
         "reliability_review",
     ),
-    # Re-pinned to clarify (dispatch-evidence gate, owner decision 2026-09-25): the claim
-    # is "not jit-learn" and it holds -- the candidate is reliability-review; `postmortem`
-    # and `review` lead code-review by 2, too little to dispatch on tokens.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, reliability-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jit-learn-negative-postmortem-report-rollback",
         "Postmortem report rollback investigation remains reliability review",
@@ -5403,8 +5438,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "forward_plan_to_selected_workflow",
         "plan",
     ),
-    # Re-pinned to clarify (dispatch-evidence gate, owner decision 2026-09-25): `parallel`,
-    # `integrate`, and `then` lead the runner-up by 1; the candidate stays ultrawork.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, ultrawork, leads
+    # the shortlist.
     RoutingInterventionCase(
         "dependency-topology-parallel-then-integrate",
         "Dependency-shaped parallel work reaches ultrawork's topology decision",
@@ -5568,8 +5604,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # A fresh `git init` with no files named yet is genuinely underspecified -
     # unlike the three cases above, this stays a clarifying interview instead
     # of dispatching the delivery loop outright.
-    # Re-pinned to clarify: greenfield_build is a context-only guard and deep-interview has
-    # no evidence of its own here; the candidate stays deep-interview.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, deep-interview, leads
+    # the shortlist.
     RoutingInterventionCase(
         "greenfield-git-init-what-now-reaches-interview",
         "'I just ran git init, what now' reaches the interview lane instead of unrelated low-confidence guesses",
@@ -6359,31 +6396,25 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "completion_objection_check",
         "jev-done-check",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: security-safety-review, verification-gate, ralplan, codegraph-refresh); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
     RoutingInterventionCase(
         "jev-mention-review-stays-code-review",
         "Reviewing a PR about a Jev plugin stays code-review; nobody asked Jev",
         "review the jev plugin PR before merge",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
-        "",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
+        "code-review",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: security-safety-review, parallel-tools, memory-sync, websearch-setup); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
     RoutingInterventionCase(
         "jev-tool-name-review-stays-code-review",
         "A diff that adds omh_jev_ask stays code-review; the tool name is not an address",
         "review this diff that adds the omh_jev_ask tool",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
-        "",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
+        "code-review",
     ),
     RoutingInterventionCase(
         "jev-comparison-stays-code-review",
@@ -6396,7 +6427,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "code-review",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, agent-debug, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jev-plugin-debug-stays-agent-debug",
         "Debugging a looping Jev plugin stays agent-debug",
@@ -6407,10 +6439,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "agent-debug",
     ),
-    # Re-pinned to clarify (dispatch-evidence gate, owner decision 2026-09-25): the claim is
-    # "not a Jev skill", and it holds -- the candidate is still skill. The route no longer
-    # dispatches because `skill` is a name plus one token with a lead
-    # of 3 and no specific token.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, skill, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jev-skill-authoring-stays-skill",
         "Creating a skill that calls Jev stays with skill management",
@@ -6422,7 +6453,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "skill",
     ),
     # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
-    # tokens or a context-only guard, so the route asks; the intended skill leads the shortlist.
+    # tokens or a context-only guard, so the route asks; the declined winner, verification-gate, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jev-integration-verify-stays-verification-gate",
         "Verifying a Jev integration stays verification-gate",
@@ -6470,9 +6502,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # preset. Three configuration sentences pin today's owner only because a
     # dispatch cannot be a negative control: their claim is that no Jev skill
     # takes them, and a better owner may replace the pinned one.
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, oh-my-hermes, is not the top shortlist entry (shortlist: doctor, build-failure-triage, github-event-ops, ultrawork); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, oh-my-hermes, leads
+    # the shortlist.
     RoutingInterventionCase(
         "jev-doctor-check-line-stays-router",
         "The doctor's Jev check line is a status question, not a Jev ask",
@@ -6481,7 +6513,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "oh-my-hermes",
     ),
     RoutingInterventionCase(
         "jev-doctor-key-missing-stays-toolbelt",
@@ -6523,18 +6555,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "handoff",
         "code-review",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: github-event-ops, security-safety-review, memory-sync, rules-distill); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
     RoutingInterventionCase(
         "jev-skill-file-review-stays-code-review",
         "Reviewing a Jev skill's SKILL.md diff is ordinary code review, like any skill file",
         "review the omh-jev-action-check SKILL.md diff",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
-        "",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
+        "code-review",
     ),
     RoutingInterventionCase(
         "jev-skill-bug-fix-stays-ultrawork",
@@ -6546,9 +6575,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "handoff",
         "ultrawork",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: executor-runtime-readiness, ask, prompt-import-readiness, agent-evaluation); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, code-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "decide-jev-or-claude-not-jev-skill",
         "Deciding whether to use Jev or Claude for review never reaches a Jev skill",
@@ -6557,11 +6586,11 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "code-review",
     ),
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: ask, deep-interview, memory-new, code-review); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26): the winner's evidence is
+    # tokens or a context-only guard, so the route asks; the declined winner, code-review, leads
+    # the shortlist.
     RoutingInterventionCase(
         "declined-jev-review-stays-code-review",
         "Declining Jev before a review keeps the review with code-review",
@@ -6570,7 +6599,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "oh-my-hermes",
         "answer_clarification",
         "clarification",
-        "",
+        "code-review",
     ),
     RoutingInterventionCase(
         "declined-jev-command-stays-operator",
@@ -7058,22 +7087,19 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "run_hermes_research",
         "web_research",
     ),
-    # Dispatch evidence, the positive half. A weak phrasing asks with the right
-    # candidate; the guards tightened alongside the gate still dispatch their
-    # own shapes: a code object under a code-edit verb, a recurring check with
-    # a cadence, a named coding agent asked to deliver.
-    # Re-pinned to clarify (shortlist-first, owner decision 2026-09-26). FINDING: the intended
-    # skill, code-review, is not the top shortlist entry (shortlist: instinct-ledger, workflow-learning, sales-pipeline-review, product-brief); the case asserts
-    # only that the route asks and does not dispatch the wrong skill.
+    # Dispatch evidence, the positive half. Request shapes dispatch their own
+    # skill (a review verb on a change set), and the guards tightened alongside
+    # the gate still dispatch theirs: a code object under a code-edit verb, a
+    # recurring check with a cadence, a named coding agent asked to deliver.
     RoutingInterventionCase(
-        "weak-review-phrasing-asks-with-code-review",
-        "`review` alone asks, and offers code-review as the candidate",
+        "review-my-change-dispatches-code-review",
+        "A review verb on a change set dispatches code-review by shape, not by the `review` token",
         "review my change for the export feature",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
-        "",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
+        "code-review",
     ),
     RoutingInterventionCase(
         "code-object-rename-still-dispatches-delivery",
@@ -7114,6 +7140,91 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "send_to_executor",
         "handoff",
         "ultrawork",
+    ),
+    # Moved from the negative controls: "check" plus a diff is a review
+    # request with its object named, so it dispatches code-review through the
+    # review-object shape -- not verification-gate on `before` and `merge`.
+    RoutingInterventionCase(
+        "check-diff-before-merge-reaches-code-review",
+        "A check verb on a diff is a code review, not a verification-gate token match",
+        "check this diff before I merge it",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
+        "code-review",
+    ),
+    # Shortlist-first follow-up, the positive half: each request shape and
+    # narrowed guard still dispatches its own request.
+    RoutingInterventionCase(
+        "review-object-shape-dispatches-code-review",
+        "A review verb on the changes in a PR dispatches code-review",
+        "could you look over the changes in this PR",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
+        "code-review",
+    ),
+    RoutingInterventionCase(
+        "build-failure-shape-dispatches-triage",
+        "A failing build on a release branch dispatches build-failure triage",
+        "the nightly build is failing on the release branch",
+        "dispatch",
+        "build-failure-triage",
+        "prepare_build_failure_triage",
+        "build_failure_triage",
+        "build-failure-triage",
+    ),
+    RoutingInterventionCase(
+        "deploy-target-shape-dispatches-deploy-and-monitor",
+        "A deploy command to production dispatches deploy-and-monitor",
+        "ship the new checkout service to production",
+        "dispatch",
+        "deploy-and-monitor",
+        "prepare_deploy_monitor_plan",
+        "deploy_monitor_plan",
+        "deploy-and-monitor",
+    ),
+    RoutingInterventionCase(
+        "issue-filing-shape-dispatches-intake",
+        "A filing command for a defect on GitHub dispatches issue intake",
+        "open an issue on GitHub for the upload crash",
+        "dispatch",
+        "github-issue-intake",
+        "prepare_github_issue_intake",
+        "github_issue_intake",
+        "github-issue-intake",
+    ),
+    RoutingInterventionCase(
+        "repair-verb-on-a-worker-dispatches-delivery",
+        "A repair command on a running part of the system is a code edit",
+        "fix the noisy logs in the billing worker",
+        "dispatch",
+        "ultrawork",
+        "choose_executor",
+        "handoff",
+        "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "appearance-change-shape-dispatches-frontend",
+        "An edit verb on how a page looks dispatches frontend, not the browser operator",
+        "restyle the settings page header to match our theme",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "recurring-issue-recap-reaches-the-scheduler",
+        "A recap of new GitHub issues on a cadence is a scheduled job, not issue filing",
+        "put together a recap of new GitHub issues every morning",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
+        "automation-blueprint",
     ),
 )
 

@@ -886,8 +886,9 @@ class SkillDefinition:
     # in the words a user who does not know the skill name would use: domain
     # nouns, symptoms, artifact names. One reader: `routing/lexical_shortlist.py`
     # ranks it (with the name, triggers, and description) to fill an undecided
-    # route's candidate shortlist, and takes anchor words from it. No scorer,
-    # trigger table, or renderer reads it, so it never dispatches anything.
+    # route's candidate shortlist, takes anchor words from it, and picks a Jev
+    # sibling for a Jev-addressed message on a score floor and a clear lead.
+    # No scorer, trigger table, or renderer reads it.
     # `tests/test_skill_situations.py` holds its shape.
     situations: tuple[str, ...] = ()
 

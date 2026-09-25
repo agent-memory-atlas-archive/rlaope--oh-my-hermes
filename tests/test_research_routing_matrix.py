@@ -115,8 +115,8 @@ class ResearchRoutingMatrixTest(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 decision = route_chat_message(prompt)
                 # A weak-evidence clarify names its owner as the candidate.
-                self.assertEqual(route_owner(decision), expected_skill, decision)
-                self.assertNotIn(route_owner(decision), RESEARCH_SKILLS, decision)
+                self.assertEqual(route_owner(decision, allow_clarify=True), expected_skill, decision)
+                self.assertNotIn(route_owner(decision, allow_clarify=True), RESEARCH_SKILLS, decision)
 
     def test_deliverables_lane_still_reachable_after_trigger_cleanup(self) -> None:
         decision = route_chat_message("자료 첨부해줘")

@@ -14,6 +14,13 @@ from .domain_signals import (
     specialist_domain_route_signal,
 )
 from .intent import scrub_diagnostic_status_text
+from .request_shapes import (
+    appearance_change_shape,
+    build_failure_shape,
+    code_review_shape,
+    deploy_shape,
+    issue_filing_shape,
+)
 from .reference_regions import executable_routing_text
 from .localization import (
     normalized_phrase,
@@ -3165,6 +3172,23 @@ def _score_definition(
     ):
         score += 28
         matched.add("direct:fixed_or_pass_verification")
+    # Request shapes (routing/request_shapes.py): an imperative verb acting on
+    # the object the skill owns. Strong evidence for the dispatch gate.
+    if definition.name == "code-review" and code_review_shape(normalized_query):
+        score += 30
+        matched.add("direct:review_object_shape")
+    if definition.name == "build-failure-triage" and build_failure_shape(query_tokens):
+        score += 30
+        matched.add("direct:build_failure_shape")
+    if definition.name == "deploy-and-monitor" and deploy_shape(normalized_query):
+        score += 30
+        matched.add("direct:deploy_target_shape")
+    if definition.name == "github-issue-intake" and issue_filing_shape(normalized_query):
+        score += 30
+        matched.add("direct:issue_filing_shape")
+    if definition.name == "frontend" and appearance_change_shape(normalized_query):
+        score += 30
+        matched.add("direct:appearance_change_shape")
 
     if score <= 0:
         return None

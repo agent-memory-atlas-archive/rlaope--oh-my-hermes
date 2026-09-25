@@ -140,9 +140,9 @@ def is_omh_intro_question(message: str) -> bool:
     )
     if any(marker in text for marker in intro_markers):
         return True
-    # "how does OMH work" asks for the mental model; "how does OMH decide
-    # which model to use" asks about one mechanism, which the OMH docs lane
-    # answers from source, so it is not an intro question.
+    # "how does OMH work" asks for the mental model; "how does OMH <verb>
+    # <something>" asks about one mechanism, which the OMH docs lane answers
+    # from source, so only the bare "how does ... work" shape is an intro.
     return "how does" in text and " work" in text
 
 
