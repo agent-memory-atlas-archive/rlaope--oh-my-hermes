@@ -54,9 +54,9 @@ _FEATURE_SURFACE_SKILLS = (
         bad_prompt="github-event-ops prove the issue was labelled and CI was rerun.",
         situations=(
             "a pull request was just opened",
-            "ci failed on the main branch",
+            "checks broke on the main branch",
             "label incoming issues",
-            "auto review new pull requests",
+            "sort out events arriving from our repo",
             "a webhook from github arrived",
         ),
     ),
@@ -127,7 +127,7 @@ _FEATURE_SURFACE_SKILLS = (
             "split tasks among helper agents",
             "track which agent is blocked",
             "hand off work between profiles",
-            "roles for pm qa and dev agents",
+            "assign a role to each agent profile",
         ),
     ),
     _feature_surface_skill(
@@ -265,8 +265,8 @@ _FEATURE_SURFACE_SKILLS = (
         good_prompt="gateway-intent-card route this Discord thread update silently unless action is needed.",
         bad_prompt="gateway-intent-card prove the Telegram attachment was sent.",
         situations=(
-            "reply in the same slack thread",
-            "only notify discord if action is needed",
+            "reply in the same thread on slack",
+            "stay silent in the thread unless action is needed",
             "where should the bot post updates",
             "send the attachment to telegram",
             "quiet status updates in the channel",
@@ -311,9 +311,9 @@ _FEATURE_SURFACE_SKILLS = (
         good_prompt="executor-runtime-readiness can this task run in Codex, Claude Code, or Hermes coding?",
         bad_prompt="executor-runtime-readiness claim Codex already started the session.",
         situations=(
-            "can claude code handle this task",
+            "is claude code ready to run here",
             "is codex set up on this machine",
-            "which coding runtime has the tools",
+            "which coding agent has the tools",
             "tools the coding agent lacks",
             "worktree support for helper agents",
         ),
@@ -382,7 +382,7 @@ _FEATURE_SURFACE_SKILLS = (
             "dictated message",
             "one-line voice note",
             "talking while driving",
-            "short command from mobile",
+            "terse ask from mobile",
         ),
     ),
     _feature_surface_skill(
@@ -537,7 +537,7 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request is file conversion, deck/PDF export, or attachment delivery, route to materials-package or deliverable-package instead.",
         ),
         situations=(
-            "clean up my downloads folder",
+            "clean up the folder of downloads",
             "rename all these files",
             "archive old pdfs",
             "find files by name",
@@ -693,9 +693,9 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         situations=(
             "send this email to the customer",
-            "file a jira ticket for this",
+            "open a ticket in jira for this",
             "post in the slack channel",
-            "update the notion page",
+            "edit the page in notion",
             "add a meeting to my calendar",
             "update the crm record",
         ),
@@ -947,8 +947,8 @@ _FEATURE_SURFACE_SKILLS = (
         situations=(
             "should we adopt this plugin",
             "is this api safe and affordable",
-            "evaluate a memory provider",
-            "compare two data providers",
+            "evaluate a memory backend plugin",
+            "is this data provider reliable enough to wire in",
             "trial a new connector",
         ),
     ),
@@ -1167,7 +1167,7 @@ _FEATURE_SURFACE_SKILLS = (
             "write the changelog for this version",
             "draft a newsletter",
             "rewrite this for executives in plain words",
-            "customer announcement email",
+            "draft the launch announcement text",
             "linkedin post about the launch",
             "fix the tone of this copy",
         ),
@@ -1265,7 +1265,7 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         situations=(
             "transcribe this recording",
-            "what does this youtube video say",
+            "what does this video on youtube say",
             "pull text from a screenshot",
             "read this receipt photo",
             "timestamps for the podcast",
@@ -1273,7 +1273,7 @@ _FEATURE_SURFACE_SKILLS = (
     ),
     _feature_surface_skill(
         "data-analysis",
-        "Dataset or logs to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.",
+        "Dataset or table to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.",
         (
             "data-analysis",
             "data analysis",
@@ -1386,11 +1386,11 @@ _FEATURE_SURFACE_SKILLS = (
         good_prompt="toolbelt-readiness what MCP or CLI tools do I need for weekly Linear and GitHub triage?",
         bad_prompt="toolbelt-readiness claim Gmail access works without an observed credential check.",
         situations=(
-            "what mcp servers do I need",
+            "which mcp integrations does this need",
             "which cli is missing for this",
             "which api keys are required",
             "tools needed for linear and github triage",
-            "check my integrations",
+            "credentials this automation requires",
         ),
     ),
     _feature_surface_skill(
@@ -1520,8 +1520,8 @@ _FEATURE_SURFACE_SKILLS = (
             "how much are we spending on tokens",
             "latency dashboard",
             "prometheus and grafana numbers",
-            "failure modes of our loops",
-            "service quality overview",
+            "where our loops keep failing",
+            "uptime and error rate overview",
         ),
     ),
     _feature_surface_skill(
@@ -1619,8 +1619,8 @@ _FEATURE_SURFACE_SKILLS = (
             "hit is a finding with its location and fix, never a style remark.",
         ),
         situations=(
-            "where is the agent at",
-            "status of the codex work",
+            "how productive are our agents",
+            "quality of the agents' output this week",
             "manager summary of agent progress",
             "is the ai work any good",
             "blockers in agent tasks",
@@ -1884,7 +1884,7 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         situations=(
             "does a skill for this already exist",
-            "best hermes skills to install",
+            "which community skills are worth adopting",
             "search github for skills",
             "compare marketplace skills",
             "don't reinvent this skill",

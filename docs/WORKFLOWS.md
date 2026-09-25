@@ -2948,7 +2948,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### backend
 
-[omh] Designing an API, server, or database change: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.
+[omh] Designing an API, server, or data-layer change: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.
 
 - Category: `planning`
 - Phase: `backend-design`
@@ -3034,7 +3034,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### rust
 
-[omh] Rust borrow-checker or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
+[omh] Rust ownership, lifetime, or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
 
 - Category: `planning`
 - Phase: `rust-development`
@@ -3278,7 +3278,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### visual-qa
 
-[omh] Rendered screen or screenshot to verify: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.
+[omh] Rendered UI needing a visual verdict: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.
 
 - Category: `materials`
 - Phase: `visual-qa`
@@ -4159,7 +4159,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### automation-blueprint
 
-[omh] Recurring scheduled job or digest: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.
+[omh] Recurring scheduled job or reminder: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.
 
 - Category: `operations`
 - Phase: `scheduled-ops-blueprint`
@@ -4496,7 +4496,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### deploy-and-monitor
 
-[omh] Release rollout needing a health watch: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
+[omh] Release rollout needing health signals: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
 
 - Category: `monitoring`
 - Phase: `release-ops`
@@ -5200,7 +5200,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### model-optimization
 
-[omh] Model family's latest generation: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.
+[omh] Onboarding a newly released model generation: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.
 
 - Category: `optimization`
 - Phase: `model-onboarding`
@@ -7242,7 +7242,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### jev-review-gate
 
-[omh] Diff flagged by Jev during review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.
+[omh] Wants Jev risk flags on a diff under review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.
 
 - Category: `review`
 - Phase: `jev-review-gate`
@@ -8588,7 +8588,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### data-analysis
 
-[omh] Dataset or logs to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.
+[omh] Dataset or table to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.
 
 - Category: `analysis`
 - Phase: `data-task`

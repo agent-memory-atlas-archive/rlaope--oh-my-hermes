@@ -17,9 +17,9 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-apple-design`: [omh] Designing or reviewing an iOS, macOS, or Apple-style UI: prepare native Apple UI or Apple marketing product-visual direction, review, and improvement briefs with evidence-backed remediation handoffs.
 - `omh-application-threat-model`: [omh] Attack paths into an operated system: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds.
 - `omh-ask`: [omh] Outside AI critique wanted: consulting an external advisor when configured.
-- `omh-automation-blueprint`: [omh] Recurring scheduled job or digest: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.
+- `omh-automation-blueprint`: [omh] Recurring scheduled job or reminder: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.
 - `omh-award-bar-score`: [omh] Aiming for design-award quality: score a web surface against published design-award judging axes and name the binding constraint.
-- `omh-backend`: [omh] Designing an API, server, or database change: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.
+- `omh-backend`: [omh] Designing an API, server, or data-layer change: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.
 - `omh-browser`: [omh] Browser login, click, or form task: policy overlay for browser tasks - add auth, confirmation, and observed-trace gates after preferring the native browser for ordinary URL, click, login, and form actions.
 - `omh-build-failure-triage`: [omh] Build or CI failure to triage: classify build, typecheck, lint, test, CI, and DCO failures into minimal safe fix handoffs.
 - `omh-buzz`: [omh] Buzz community agent setup or relay trouble: connect and operate Hermes as a native Buzz community agent, deliver local media with verified relay receipts, or diagnose a self-hosted Buzz relay without inventing transport evidence.
@@ -36,12 +36,12 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-context-budget-review`: [omh] Context window or token budget at risk: plan compact context, token/cost budgets, summarization checkpoints, and overflow recovery before long agent work.
 - `omh-cto-loop`: [omh] Engineering leadership over roadmap and risk: roadmap, PM, technical tradeoffs, risk, delivery, release, and follow-up operating cadence.
 - `omh-curriculum-design`: [omh] Teaching goal that needs a course or syllabus: turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.
-- `omh-data-analysis`: [omh] Dataset or logs to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.
+- `omh-data-analysis`: [omh] Dataset or table to analyze: scope supplied data with provenance, causal-claim, and hallucination guards.
 - `omh-decision-prototype`: [omh] Uncertain technical choice for a spike: bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.
 - `omh-decision-recall`: [omh] Previously rejected options to revisit: recall scoped reviewed rejected decisions without elevating them to approved memory.
 - `ulw-interview`: [omh] Vague, underspecified request: one-question-at-a-time clarification.
 - `omh-deliverable-package`: [omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.
-- `omh-deploy-and-monitor`: [omh] Release rollout needing a health watch: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
+- `omh-deploy-and-monitor`: [omh] Release rollout needing health signals: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
 - `omh-design-orchestration`: [omh] Entire design problem to delegate: prepare a bounded design direction, existing-lane composition, and executor-neutral handoff.
 - `omh-design-quality-gate`: [omh] Deliverable demands premium polish: enforce superior content, design, layout, publishing, and visual QA gates.
 - `omh-doctor`: [omh] OMH install misbehaving: diagnosing oh-my-hermes installation health.
@@ -64,7 +64,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-jev-ask`: [omh] Jev asked for yes/no or pick-one odds: Jev ask: typed yes/no, pick-one, or scored questions to Jev with your own key; returns probabilities, never prose.
 - `omh-jev-done-check`: [omh] Completion claim tested by Jev: Jev done check: does the gathered evidence support the completion claim? It can only object.
 - `omh-jev-failure-triage`: [omh] Failing run handed to Jev for a next move: Jev failure triage: retry, fix a dependency, ask for access, or change approach on a failing run.
-- `omh-jev-review-gate`: [omh] Diff flagged by Jev during review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.
+- `omh-jev-review-gate`: [omh] Wants Jev risk flags on a diff under review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.
 - `omh-jev-route`: [omh] Undecided OMH route handed to Jev: Jev route pick: answer an OMH route question about which workflow fits, recorded without re-routing.
 - `omh-jit-learn`: [omh] Blocked and choosing a learning target: just-in-time learning workflow: select and confirm an immediate learning target, research credible sources, and prepare an application-first brief without popularity ranking.
 - `omh-legal-compliance-review`: [omh] Contract, NDA, or policy with legal exposure: surface contract and compliance risks, questions, and escalation points before a legal decision or action.
@@ -82,7 +82,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-memory-new`: [omh] Remember a fact for future sessions: capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for existing Hermes memory use omh-memory-sync, and for a past decision use decision-recall.
 - `omh-memory-sync`: [omh] Outdated or wrong Hermes memory entries: English-canonical Hermes memory-review guidance: inspect USER.md and MEMORY.md claims and prepare a native write diff without invoking, applying, or observing a native write; for a new fact use memory-new, and for a past decision use decision-recall.
 - `omh-meta-router`: [omh] Message opens with /omh and a task: meta-routing guidance for a leading /omh command: reason over the imperative task, consult the live workflow catalog, and select or chain the right workflow(s).
-- `omh-model-optimization`: [omh] Model family's latest generation: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.
+- `omh-model-optimization`: [omh] Onboarding a newly released model generation: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.
 - `omh-model-setup`: [omh] Model and provider configuration changes: diagnose role-slot model configuration, guide provider connection, and apply changes only after diff approval.
 - `omh-morning-brief`: [omh] Mail and calendar brief configuration: morning brief SETUP (one-time) - connects mail and calendar MCP with read-and-draft-only scope and diff approval; produces the configuration, not the daily brief itself.
 - `omh-native-debugging`: [omh] Native program crashes or corrupts memory: prepare hypothesis-driven debugging of native binaries and instruct the executor to drive a DAP debugger instead of printf.
@@ -111,7 +111,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-rules-distill`: [omh] Turn repeated lessons into written rules: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance.
 - `omh-run-efficiency`: [omh] Run efficiency and context usage report: report supplied local run efficiency while provider and host data stay unobserved.
 - `omh-running-work-board`: [omh] Live view of running coding units: showing which coding units are running right now, on which runtime and model, with observed tokens and elapsed time.
-- `omh-rust`: [omh] Rust borrow-checker or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
+- `omh-rust`: [omh] Rust ownership, lifetime, or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
 - `omh-sales-development`: [omh] Prospect or account worth pursuing: turn an account or market opportunity into a focused discovery, qualification, and next-step brief.
 - `omh-sales-pipeline-review`: [omh] CRM pipeline or sales forecast to review: turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review.
 - `omh-security-safety-review`: [omh] Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution.
@@ -128,7 +128,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `ulw-qa`: [omh] Hostile scenario testing: adversarial QA and fix loops.
 - `ulw-work`: [omh] Accepted plan awaiting implementation: split it into disjoint parallel lanes with per-lane acceptance criteria, verification commands, and owners; prevents two lanes editing the same file.
 - `omh-verification-gate`: [omh] Proof a change is done before merge: define and record build, lint, typecheck, test, security, docs, generated-output, and CI evidence before completion or merge.
-- `omh-visual-qa`: [omh] Rendered screen or screenshot to verify: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.
+- `omh-visual-qa`: [omh] Rendered UI needing a visual verdict: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.
 - `omh-voice-input`: [omh] Short spoken or mobile-style request: terse voice and mobile-style requests - turn short spoken-style asks into clarify, plan, status, handoff, or confirmation actions.
 - `omh-web-research`: [omh] Current-facts lookup on the web: web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`.
 - `omh-websearch-setup`: [omh] Expensive or unconfigured web search: diagnose scraper and auxiliary extract-model configuration, guide account setup, and apply each change as its own diff approval.

@@ -30,12 +30,12 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "Recall output is not presented as approved memory, source freshness, or execution evidence.",
             ),
             situations=(
-                "why did we reject this",
-                "what did we decide",
-                "decided against",
-                "options we ruled out",
-                "was this tried before",
-                "alternatives we dropped earlier",
+                "what did we rule out",
+                "why did we drop this",
+                "alternatives we rejected before",
+                "was this idea turned down already",
+                "options we decided against",
+                "why an approach was dismissed",
             ),
         ),
         feature_surface_skill(
@@ -63,11 +63,11 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "The report does not intercept, route, or execute provider or host work.",
             ),
             situations=(
-                "how much context did this run use",
+                "how efficient was the last run",
                 "which tools were slow",
                 "run timing breakdown",
-                "context window usage report",
-                "efficiency of the last session",
+                "time spent per tool in this run",
+                "wasted steps in this session",
             ),
         ),
         feature_surface_skill(

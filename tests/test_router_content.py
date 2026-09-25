@@ -261,14 +261,12 @@ class RouterContentTests(unittest.TestCase):
             self.assertIn(anchor, headings, f"docs/README.md links to missing README anchor #{anchor}")
 
     def test_catalog_index_reference_stays_fresh_and_budgeted(self) -> None:
-        # Shared 24,000-byte reference ceiling (asserted below in
-        # test_context_surfaces_stay_within_compact_budgets): catalog-index.md
-        # (~14.4KB) and workflow-registry.md (~19.6KB) both grow with the
-        # catalog, and harness-registry.md (23,985B) is the pack's tightest
-        # reference today. At roughly 150 routable skills the index nears its
-        # own 20,000-byte gate; the escalation is to shed low-value skills or
-        # drop to name-only lines, or raise a ceiling deliberately — never
-        # silent growth past a gate.
+        # catalog-index.md carries one name-and-description line per routable
+        # skill, so it grows with the catalog and with description length; it
+        # has its own byte ceiling, asserted below with the history of every
+        # raise (26,934 bytes at the last one). The escalation is to shed
+        # low-value skills or drop to name-only lines, or raise the ceiling
+        # deliberately — never silent growth past a gate.
         from omh.skills.catalog import routable_definitions
         from omh.skills.render import _router_catalog_index_reference
 
@@ -295,7 +293,7 @@ class RouterContentTests(unittest.TestCase):
         # name-and-hook index lines (24,317 measured); one line per new
         # skill, ~2.8% headroom kept.
         # 25,000 -> 27,700: every description now opens on the user's
-        # situation before what the skill produces (26,904 measured), so the
+        # situation before what the skill produces (26,934 measured), so the
         # shortlist says when each skill applies; about 20 bytes per line,
         # ~2.9% headroom kept.
         self.assertLess(len(rendered.encode("utf-8")), 27_700)

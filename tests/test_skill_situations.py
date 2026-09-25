@@ -1,19 +1,16 @@
 """Shape of `SkillDefinition.situations`, the plain-words list of user situations.
 
 Every installable skill names the situations it serves in the words a user who
-does not know the skill name would use. The list is catalog data only: nothing
-scores, triggers on, or renders it yet, so this file also pins that no routing
-or rendering module reads the field.
+does not know the skill name would use. A situation carries words the trigger
+table does not, so it may neither equal nor contain one of the skill's own
+multi-word triggers.
 """
 
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
 from omh.skills.catalog import builtin_definitions, installable_skill_definitions
-
-SRC = Path(__file__).resolve().parents[1] / "src"
 
 
 class SkillSituationsShapeTests(unittest.TestCase):
@@ -39,13 +36,18 @@ class SkillSituationsShapeTests(unittest.TestCase):
                 self.assertEqual(len(folded), len(set(folded)))
 
     def test_no_situation_restates_one_of_the_skills_own_triggers(self) -> None:
-        # A situation that equals a trigger adds nothing the trigger table does
-        # not already say; the field exists for the words triggers do not carry.
+        # A situation that equals a trigger, or wraps a multi-word trigger in a
+        # few extra words, adds nothing the trigger table does not already say;
+        # the field exists for the words triggers do not carry. Single-word
+        # triggers are exempt: they are ordinary words a plain phrase needs.
         for definition in installable_skill_definitions():
             triggers = {trigger.strip().casefold() for trigger in definition.triggers}
+            phrases = sorted(trigger for trigger in triggers if " " in trigger)
             for situation in definition.situations:
+                folded = situation.casefold()
                 with self.subTest(skill=definition.name, situation=situation):
-                    self.assertNotIn(situation.casefold(), triggers)
+                    self.assertNotIn(folded, triggers)
+                    self.assertEqual([phrase for phrase in phrases if phrase in folded], [])
 
     def test_retired_definitions_carry_none(self) -> None:
         installable = {definition.name for definition in installable_skill_definitions()}
@@ -53,16 +55,6 @@ class SkillSituationsShapeTests(unittest.TestCase):
             if definition.name not in installable:
                 with self.subTest(skill=definition.name):
                     self.assertEqual(definition.situations, ())
-
-
-class SkillSituationsUnreadTests(unittest.TestCase):
-    """The field ships ahead of its reader; nothing may score or render it yet."""
-
-    def test_no_routing_or_render_module_reads_the_field(self) -> None:
-        readers = [SRC / "skills" / "render.py", SRC / "skills" / "skill_index.py", *sorted((SRC / "routing").rglob("*.py"))]
-        for path in readers:
-            with self.subTest(path=str(path.relative_to(SRC))):
-                self.assertNotIn(".situations", path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -432,7 +432,11 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6260
 # the description, and the situation lead adds about 20 chars per row. The
 # index budgets above do not move: Hermes cuts each line to 60 chars either
 # way. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 441446
+# 441446 -> 441476: review follow-up rewords eight situation openings to
+# drop words the negative-control corpus uses (margins back to main's) and
+# to say what the user wants; net +30 across those rows. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 441476
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

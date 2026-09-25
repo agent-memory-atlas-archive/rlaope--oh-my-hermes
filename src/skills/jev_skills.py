@@ -130,7 +130,7 @@ JEV_ASK_DEFINITION = _definition(
         "A non-answer was reported as its status, not as an answer.",
     ),
     situations=(
-        "have jev score this text",
+        "have jev rate this text",
         "jev probability that this is true",
         "let jev pick one of these options",
         "typed question for jev",
@@ -233,7 +233,7 @@ JEV_FAILURE_TRIAGE_DEFINITION = _definition(
 
 JEV_REVIEW_GATE_DEFINITION = _definition(
     "jev-review-gate",
-    "Diff flagged by Jev during review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.",
+    "Wants Jev risk flags on a diff under review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.",
     ("jev-review-gate", "jev review gate", "ask jev to review this diff"),
     "Use when a diff is under review and the user asks Jev for typed flags as an extra reviewer signal.",
     category="review",

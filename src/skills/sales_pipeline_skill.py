@@ -296,7 +296,7 @@ DEFINITION = SkillDefinition(
     situations=(
         "which deals are stuck",
         "is our forecast realistic",
-        "pipeline coverage for the quarter",
+        "enough pipeline for the quarter",
         "review this salesforce export",
         "deals slipping to next quarter",
     ),
