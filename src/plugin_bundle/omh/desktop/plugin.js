@@ -73,6 +73,9 @@ function fetchHud(sessionId) {
 // them: `category:architect(claude...)` and `turn 3 (12 tools)`.
 export const sanitizeText = value => String(value ?? '').replace(/[^\p{L}\p{N} .:/_·|+()\[\]!\-]/gu, '')
 export const safeText = value => sanitizeText(value).slice(0, 96)
+// The reader caps an action title at 140 characters; the row's tooltip is
+// the one place that shows it whole, so it takes a longer cut than safeText.
+export const longText = value => sanitizeText(value).slice(0, 160)
 const plural = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 // One decimal always kept above a thousand, bare integers under it; a
@@ -173,8 +176,11 @@ export function routeFragments(text) {
   return pieces
 }
 
-const kindTag = row =>
-  safeText(row.lane_backend) === 'kanban' ? '[bot]' : safeText(row.dispatch_lane) || safeText(row.executor_profile) ? '' : '[sub]'
+// The tag in front of the id names what runs the row: `bot` is a board
+// worker, `sub` a delegate_task child of this session, `main` the Maestro
+// binding row; a dispatched executor row carries no tag, as in the TUI.
+export const kindTag = (row, main) =>
+  main ? 'main' : safeText(row.lane_backend) === 'kanban' ? 'bot' : safeText(row.dispatch_lane) || safeText(row.executor_profile) ? '' : 'sub'
 
 function sessionMetrics(payload) {
   const rows = []
@@ -398,9 +404,10 @@ export const PANE_CSS = `
 .omh-pane-item{display:grid;grid-template-columns:14px minmax(0,1fr);gap:0 4px;align-items:baseline;min-width:0;padding:1px 0}
 .omh-pane-item-glyph{text-align:center;font-family:${MONO};color:var(--ui-text-tertiary)}
 .omh-pane-item-text{min-width:0;overflow-wrap:anywhere}
-.omh-pane-item[data-state=done] .omh-pane-item-text{color:var(--ui-text-quaternary);text-decoration:line-through}
-.omh-pane-item[data-state=active] .omh-pane-item-text{font-weight:600}
-.omh-pane-item-note{display:block;margin-top:1px;padding-left:6px;font-size:11px;font-weight:400;text-decoration:none;color:var(--ui-text-quaternary);overflow-wrap:anywhere}
+.omh-pane-item-label{color:var(--ui-text-primary)}
+.omh-pane-item[data-state=done] .omh-pane-item-label{color:var(--ui-text-quaternary);text-decoration:line-through}
+.omh-pane-item[data-state=active] .omh-pane-item-label{font-weight:600}
+.omh-pane-item-note{display:block;margin-top:1px;padding-left:6px;font-size:11px;color:var(--ui-text-quaternary);overflow-wrap:anywhere}
 .omh-pane-fold{padding:1px 0;font-size:11px;color:var(--ui-text-quaternary)}
 .omh-pane-agents{padding:0 10px 8px;min-width:0}
 .omh-agent-head{display:none}
@@ -579,7 +586,9 @@ function PlanItem({ item, live, unchanged }) {
   const reason = reasonOf(item)
   const depth = depthOf(item)
   const notes = []
-  // Each note is its own line under the text, indented past the text start.
+  // Each note is its own line under the text, indented past the text start,
+  // and a sibling of the label: a text decoration propagates to descendants
+  // and cannot be undone below, so the strike lives on the label alone.
   if (reason) notes.push(div('omh-pane-item-note omh-pane-warn', `${state === 'done' ? 'skipped' : 'waiting'}: ${reason}`, 'reason'))
   if (state === 'active' && !live && unchanged) notes.push(div('omh-pane-item-note', `unchanged ${unchanged}`, 'unchanged'))
   return node(
@@ -587,7 +596,7 @@ function PlanItem({ item, live, unchanged }) {
     { className: 'omh-pane-item', 'data-state': state },
     [
       span(`omh-pane-item-glyph ${toneClass(glyphTone)}`, glyph),
-      node('span', { className: 'omh-pane-item-text', style: depth ? { paddingLeft: `${depth * 0.6}rem` } : undefined }, [safeText(item.text), ...notes])
+      node('span', { className: 'omh-pane-item-text', style: depth ? { paddingLeft: `${depth * 0.6}rem` } : undefined }, [span('omh-pane-item-label', safeText(item.text), 'label'), ...notes])
     ]
   )
 }
@@ -626,8 +635,8 @@ function PlanSection({ payload }) {
       return
     }
     // Every phase is its own header row with its own done/total, and its
-    // items hang under it behind a left rule; the structure the TUI keeps
-    // ('그 구조로 나오게'), drawn as an outline rather than a column.
+    // items hang under it behind a left rule: the structure the TUI keeps,
+    // drawn as an outline rather than a column.
     const phaseDone = group.items.filter(item => item.state === 'done').length
     rows.push(
       node(
@@ -731,9 +740,9 @@ const AGENT_COLUMNS = ['', 'kind', 'id', 'task', 'route', 'state', 'elapsed', 't
 
 function AgentRow({ row, main, extraSeconds, alt }) {
   const board = safeText(row.lane_backend) === 'kanban'
-  const tag = main ? 'main' : board ? 'bot' : safeText(row.dispatch_lane) || safeText(row.executor_profile) ? '' : 'sub'
+  const tag = kindTag(row, main)
   const taskId = (safeText(row.task_id) || safeText(row.role) || 'agent').slice(0, 8)
-  const action = safeText(row.action)
+  const action = longText(row.action)
   const route = routeIdentity(row)
   const routeChildren = []
   routeFragments(route.text).forEach((fragment, index) => {

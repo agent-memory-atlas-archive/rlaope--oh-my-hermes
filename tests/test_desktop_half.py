@@ -165,6 +165,14 @@ const collect = (node, predicate, out = []) => {
   if (node.props && predicate(node.props)) out.push(text(node).join(''))
   return collect(node.props && node.props.children, predicate, out)
 }
+// Notes rendered INSIDE a struck-through label would inherit the strike.
+const notesUnderLabel = (node, inside = false, out = []) => {
+  if (!node || typeof node !== 'object') return out
+  if (Array.isArray(node)) { node.forEach(child => notesUnderLabel(child, inside, out)); return out }
+  const cls = node.props && typeof node.props.className === 'string' ? node.props.className : ''
+  if (inside && cls.includes('omh-pane-item-note')) out.push(text(node).join(''))
+  return notesUnderLabel(node.props && node.props.children, inside || cls.includes('omh-pane-item-label'), out)
+}
 const findClick = node => {
   if (!node || typeof node !== 'object') return null
   if (Array.isArray(node)) { for (const child of node) { const hit = findClick(child); if (hit) return hit } return null }
@@ -189,10 +197,14 @@ for (const [name, scenario] of Object.entries(scenarios)) {
   const byId = {}
   let clicked = []
   let alternates = []
+  let strikeLeaks = []
   for (const c of contributions) {
     const tree = c.render()
     byId[c.id] = text(tree)
-    if (c.id === 'hud') alternates = collect(tree, props => props['data-alt'] === 'true')
+    if (c.id === 'hud') {
+      alternates = collect(tree, props => props['data-alt'] === 'true')
+      strikeLeaks = notesUnderLabel(tree)
+    }
     if (c.id === 'status') {
       const onClick = findClick(tree)
       if (onClick) onClick()
@@ -212,6 +224,7 @@ for (const [name, scenario] of Object.entries(scenarios)) {
     revealed: clicked,
     tips: [...globalThis.__omh.tips],
     alternates,
+    strikeLeaks,
     statusDetail: (mod.statusItem({ gateway: scenario.gateway, data: scenario.data, error: globalThis.__omh.query.error }) || {}).detail || ''
   }
 }
@@ -645,6 +658,10 @@ class DesktopPluginFileTests(unittest.TestCase):
         self.assertTrue(all(name.startswith(("omh-pane", "omh-agent", "omh-bar")) for name in selectors), selectors)
         self.assertEqual(HEX_COLOUR.findall(css), [])
         self.assertIn("var(--ui-", css)
+        # The strike on a finished item is a property of its label alone; a
+        # decoration set any higher would reach the notes beside it.
+        struck = [rule.strip() for rule in re.findall(r"([^\n{]+)\{[^}]*line-through", css)]
+        self.assertEqual(struck, [".omh-pane-item[data-state=done] .omh-pane-item-label"])
 
 
 @unittest.skipUnless(NODE, "node is not installed; the widget harness needs it")
@@ -881,6 +898,12 @@ class DesktopPluginNodeTests(unittest.TestCase):
                 "c · blocked_by_dependency · blocked_by b",
             ],
         )
+
+    def test_a_skipped_note_under_a_finished_item_is_not_struck_through(self) -> None:
+        render = self._drive()["renders"]["maestro_and_board"]
+        self.assertIn("skipped: no bench harness", render["byId"]["hud"])
+        # The note is a sibling of the struck label, never its descendant.
+        self.assertEqual(render["strikeLeaks"], [])
 
     def test_the_status_item_is_compact_and_reveals_the_pane_on_click(self) -> None:
         report = self._drive()["renders"]

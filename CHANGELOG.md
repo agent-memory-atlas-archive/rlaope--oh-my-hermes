@@ -674,8 +674,9 @@ All notable changes will be documented here.
   out as one aligned grid under a row of column labels, 26 px rows with an
   alternating band; rate, `cache N%`, ctx, `turn N (M tools)` and fallback
   live in the row's tooltip; the plan column is capped at 640 px; the DAG block
-  while a graph is active; and a quiet footer notice for a reader error
-  record or a transport failure, over the last payload rather than a blank.
+  while a graph is active; and a quiet footer notice: a reader error record
+  replaces the body with it, a transport failure keeps the last payload
+  under it.
   The status-bar item is compact -- `⚚ 3 agents · 2 running · 1 blocked ·
   3/6`, `⚚ ready` when idle, the detail in its tooltip -- and reveals the
   pane on click; it renders nothing before the first answer, like the Kanban
@@ -689,8 +690,10 @@ All notable changes will be documented here.
   ported and pinned against its examples; the poll keeps the previous answer
   while refetching. Observed: node drove the file with the SDK, React and
   JSX shims replaced by recording fakes, and the built Hermes Desktop app,
-  launched against an isolated home whose session held a six-item plan and
-  two delegation children, showed the structured pane and the status-bar
+  launched against an isolated home whose recorded session held a six-item
+  plan declared for it, one running delegation child seeded from the
+  recorded one, and a two-task board another teammate had placed there,
+  showed the structured pane at 330, 667 and 900 px and the status-bar
   count with no boundary error.
 
 ## 2.0.5 - 2026-09-22
