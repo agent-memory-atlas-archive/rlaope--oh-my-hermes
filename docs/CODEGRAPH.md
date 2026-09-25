@@ -129,7 +129,7 @@ The repo's own `omh codegraph` index is stdlib-`ast` and Python-only; for multi-
 | `omh codegraph summary` | Stats, entrypoint files, and warnings (`omh_codegraph_summary/v1`). |
 | `omh codegraph handoff --task <text>` | Task-ranked focus files and symbols (`omh_codegraph_context/v1`). |
 | `omh codegraph uml` | An interface-level PlantUML diagram plus a render plan (`codebase_uml/v1`). |
-| `omh codegraph tests --changed <paths...>` | The test modules that import the changed files, directly or transitively (`codegraph_test_selection/v1`). |
+| `omh codegraph tests --changed <paths...>` | The test modules the recorded import edges reach from the changed files (`codegraph_test_selection/v1`). |
 
 ### Selecting tests from a changed file set
 
@@ -139,24 +139,43 @@ git diff --name-only origin/main | xargs omh codegraph tests --changed
 ```
 
 The command walks the graph's `imports_internal` edges backwards from each
-changed path and lists every scanned file under a `tests/` (or `test/`)
-directory whose basename matches unittest's default `test*.py` pattern, with
-its import distance (1 means the test imports the changed file directly). A
-source module that merely starts with `test` is reached, never selected. Relative paths resolve against `--repo`. A changed
-module nothing imports is reported as such, not expanded into the whole suite.
-A path that is not a Python module, a directory, a deleted file, or a file the
-scanner excludes is classified (`not_python`, `directory`, `missing`,
-`not_scanned`) rather than dropped. `reached_source_files` lists the
-non-test files in the closure, so a hub such as `src/commands/main.py` explains
-a wide selection.
+changed path and lists every test module those recorded edges reach, with its
+import distance (1 means the test imports the changed file directly). A test
+module is a scanned file under a `tests/` (or `test/`) directory whose basename
+matches unittest's default `test*.py` pattern; a source module that merely
+starts with `test` is reached, never selected. Run a selected path by file:
+the rule does not check whether the suite's discovery enters that directory.
+A changed package `__init__.py` is credited with the importers of every
+scanned file under its own directory, because importing any of them executes
+the `__init__`; it is never given the "nothing imports this module" verdict.
+
+Each `changed_paths` entry keeps the caller's spelling in `path` and puts the
+repo-relative `resolved_path` beside it; a symlink or a case-variant spelling
+is named in the entry's `reason`. Relative paths resolve against `--repo`. A
+changed module nothing imports is reported as such, not expanded into the
+whole suite. A path that is not a Python module, a directory, a deleted file,
+or a file the scanner excludes is classified (`not_python`, `directory`,
+`missing`, `not_scanned`) rather than dropped. `reached_source_files` lists
+the non-test files in the closure, so a hub such as `src/commands/main.py`
+explains a wide selection, and `scanner_warnings` carries the scanner's own
+warnings so a test module that failed to parse is visible next to the
+selection it is missing from.
+
+Exit status: 0 whenever the graph builds and every changed path resolves
+inside `--repo`, including a selection of no tests and `missing`,
+`not_python`, `directory`, or `not_scanned` entries; non-zero only for an
+empty path, a path outside the repository root, or an unreadable repository
+root.
 
 Every payload carries the same fixed `blind_spots` block: dynamic imports,
 fixtures loaded by path, generated artifacts whose gate is a byte comparison
 rather than an import, modules importable only through an extra `PYTHONPATH`
-root (this repo's `tests/` helpers imported by bare name), spawned commands,
-and non-Python changes. Its `claim_boundary` says a selected subset is a
-starting point and never a substitute for the full suite before claiming done.
-The command is pure traversal: nothing is imported, executed, or spawned.
+root (this repo's `tests/` helpers imported by bare name under
+`PYTHONPATH=tests`), package roots that extend `__path__` to other directories,
+spawned commands, and non-Python changes. Its `claim_boundary` says a selected
+subset is a starting point and never a substitute for the full suite before
+claiming done. The command is pure traversal: nothing is imported, executed,
+or spawned.
 
 ## Hermes MCP note
 

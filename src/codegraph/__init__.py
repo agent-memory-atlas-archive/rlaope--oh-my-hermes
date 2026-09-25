@@ -9,7 +9,7 @@ from .uml import (
     render_plan,
     render_plantuml,
 )
-from .test_selection import (
+from .selection import (
     CODEGRAPH_TEST_SELECTION_SCHEMA_VERSION,
     TEST_SELECTION_BLIND_SPOTS,
     TEST_SELECTION_CLAIM_BOUNDARY,

@@ -731,19 +731,27 @@ All notable changes will be documented here.
   gate four times in one session. The new subcommand walks the
   `imports_internal` edges the codegraph scanner already builds backwards from
   each changed path and lists every `test*.py` module under a tests directory
-  that imports it directly or transitively, with the import distance, as text
-  or `--json`
-  (`codegraph_test_selection/v1`). A module nothing imports is reported as
-  such rather than expanded into the whole suite; a non-Python, directory,
-  deleted, or unscanned path is classified, not dropped; the non-test files in
-  the closure are listed so a hub explains a wide selection. Every payload
-  carries a fixed `blind_spots` block (dynamic imports, fixtures loaded by
-  path, generated artifacts gated by byte comparison, helpers importable only
-  through an extra `PYTHONPATH` root, spawned commands, non-Python changes)
-  and a `claim_boundary` saying the subset is a starting point and never a
-  substitute for the full suite. Pure traversal: nothing is imported,
-  executed, or spawned. Deriving a fanout unit's `verification_commands` from
-  its `file_scope` through this selection is a named follow-up (#1697).
+  that those recorded edges reach, with the import distance, as text or
+  `--json` (`codegraph_test_selection/v1`). A changed package `__init__.py` is
+  credited with the importers of every scanned file under its directory, since
+  importing any of them executes the `__init__` and the scanner records no
+  edge for that. A module nothing imports is reported as such rather than
+  expanded into the whole suite; a non-Python, directory, deleted, or
+  unscanned path is classified, not dropped; each entry keeps the caller's
+  spelling with the resolved path beside it, naming a symlink or case-variant
+  spelling; the non-test files in the closure and the scanner's own warnings
+  are listed so a hub explains a wide selection and an unparseable test is not
+  silently absent. Exit status is 0 whenever the graph builds and every path
+  resolves inside the repository. Every payload carries a fixed `blind_spots`
+  block (dynamic imports, fixtures loaded by path, generated artifacts gated
+  by byte comparison, helpers importable only through an extra `PYTHONPATH`
+  root, package roots that extend `__path__`, spawned commands, non-Python
+  changes) and a `claim_boundary` saying the subset is a starting point and
+  never a substitute for the full suite. Pure traversal: nothing is imported,
+  executed, or spawned. `docs/CODEGRAPH.md` now lists OMH's own `omh codegraph`
+  subcommands and is linked from the README, so it leaves the navigation
+  exemption list. Deriving a fanout unit's `verification_commands` from its
+  `file_scope` through this selection is a named follow-up (#1697).
 
 ## 2.0.5 - 2026-09-22
 
