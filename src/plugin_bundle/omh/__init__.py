@@ -15,9 +15,29 @@ def _admit_host() -> None:
         if exc.name == "hermes_cli":
             return  # OMH's host-free import/register smoke is not runtime loading.
         raise
-    error = admission_error(getattr(host, "__version__", None), Path(__file__).with_name("plugin.yaml"))
+    error = admission_error(_host_version(host), Path(__file__).with_name("plugin.yaml"))
     if error is not None:
         raise RuntimeError(error)
+
+
+def _host_version(host: object) -> object:
+    """The release version Hermes' own `requires_hermes` gate compares against.
+
+    Released hosts through 0.21.5 hard-code `hermes_cli.__version__`. On
+    hermes-agent main since the pm store it comes from the install stamp only,
+    so a git checkout without one (a source install, or Hermes' plugin-catalog
+    CI) reports the "0.0.0" placeholder, while
+    `hermes_cli.version_info.get_version_info()` -- what
+    `running_hermes_version()` in hermes_cli/plugins_manifest.py reads --
+    resolves the release from git.
+    """
+    try:
+        version_info = import_module("hermes_cli.version_info")
+    except ModuleNotFoundError as exc:
+        if exc.name != "hermes_cli.version_info":
+            raise
+        return getattr(host, "__version__", None)
+    return getattr(version_info.get_version_info(), "base_version", None)
 
 
 class _PluginContext(Protocol):
