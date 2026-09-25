@@ -298,11 +298,12 @@ while `omh` is registered in Hermes' `plugins.enabled` (what `omh setup` and
 `omh uninstall --registration-only` the file is still copied but the backend
 is not mounted, and the pane says so); the half then appears on the Plugins
 page switched off, because the app keeps every unified-package half off until
-its owner enables it. Turn it on there to get the OMH status line in the
-status bar and the plan todo in an `omh` pane. `omh doctor` reports
-`plugin_desktop_half` for whether the installed bundle carries the files (an
-older bundle warns toward `omh update`); it never claims the half is enabled,
-since that state lives inside the app.
+its owner enables it. Turn it on there to get the `omh` pane (the plan
+checklist, the agent rows with their routed model and metrics, the fanout DAG
+while one is active) and the compact agent and plan count in the status bar.
+`omh doctor` reports `plugin_desktop_half` for whether the installed bundle
+carries the files (an older bundle warns toward `omh update`); it never
+claims the half is enabled, since that state lives inside the app.
 
 An explicit `--source` or `--from-skills-dir` remains a workflow-content-only
 operation, and `--dry-run` never changes the command package. A source checkout
