@@ -1496,7 +1496,8 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # until someone did; and the number cannot see a per-turn regression, because
 # a body is paid per load, not per request. The per-request budgets above
 # (`SKILL_INDEX_CHAR_LIMIT`, `SKILL_INDEX_LINE_CHAR_LIMIT`,
-# `PLUGIN_TOOL_SCHEMA_CHAR_LIMIT`, `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT`) stay
+# `PLUGIN_TOOL_SCHEMA_CHAR_LIMIT`, `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT`, and
+# since the awareness section `PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT`) stay
 # zero-slack ratchets and are what catch per-turn growth; they held through a
 # real skill addition (#1844, six `jev-*` skills) before this change. What a
 # single load costs stays bounded per skill by

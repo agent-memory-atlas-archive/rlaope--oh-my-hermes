@@ -159,11 +159,13 @@ uv run python -m omh.cli docs skill-context-cost
 uv run python -m omh.cli release drift
 ```
 
-`release drift` checks four budgets on text that can ride every request:
+`release drift` checks five budgets on text that can ride every request:
 `skill_index_chars` and `skill_index_line_max_chars` (the index lines, rendered
 with Hermes's 60-character description rule), `plugin_tool_schema_chars` (the
 eager tool-schema ceiling, paid per request only when Hermes's
-`tools.tool_search` is off), and `pre_llm_call_context_chars_max`. A new skill moves the index budget by about one
+`tools.tool_search` is off), `pre_llm_call_context_chars_max`, and
+`pre_llm_call_context_fallback_chars_max` (the same context for a session the
+awareness system prompt section did not render for). A new skill moves the index budget by about one
 line. The first words of the description are what a model reads to decide
 whether to load the skill, so the structure lint rule
 `SKILL_INDEX_OPENING_DISTINCT` fails when two installable skills open their

@@ -35,6 +35,7 @@ _HOST_MAX_SECTIONS_TOTAL_CHARS = 8000
 _HOST_HEADING = "## Plugin Context: "
 
 _PLAIN_REQUEST = "migrate the database schema and fix the tests"
+_ROUTED_REQUEST = "review this PR for bugs before merge"
 
 
 class _Ctx:
@@ -97,6 +98,16 @@ class SectionTestCase(unittest.TestCase):
             session_id=session_id,
             user_message=_PLAIN_REQUEST,
             is_first_turn=True,
+        )
+        return str((payload or {}).get("context", ""))
+
+    def later_turn(self, session_id: str) -> str:
+        payload = llm_hooks.pre_llm_call(
+            omh_home=str(self.omh_home),
+            hermes_home=str(self.hermes_home),
+            session_id=session_id,
+            user_message="thanks",
+            is_first_turn=False,
         )
         return str((payload or {}).get("context", ""))
 
@@ -203,16 +214,6 @@ class DoctorDeliveryTests(SectionTestCase):
     def _check(self, paths):
         return _awareness_delivery_check(paths, now=datetime(2026, 8, 1, tzinfo=UTC))
 
-    def later_turn(self, session_id: str) -> str:
-        payload = llm_hooks.pre_llm_call(
-            omh_home=str(self.omh_home),
-            hermes_home=str(self.hermes_home),
-            session_id=session_id,
-            user_message="thanks",
-            is_first_turn=False,
-        )
-        return str((payload or {}).get("context", ""))
-
     def test_a_section_session_turn_counts_one_delivery(self) -> None:
         paths = self._attempted_long_ago()
         llm_hooks.awareness_system_prompt_section(_session_info("s-doctor"))
@@ -220,13 +221,40 @@ class DoctorDeliveryTests(SectionTestCase):
         self.assertEqual(self.first_turn_context("s-doctor"), "")
         record = read_awareness_delivery(str(self.omh_home))
         self.assertEqual(record["delivery_count"], 1)
-        self.assertEqual(record["last_context_chars"], len(awareness_primer_context()))
+        # Nothing rode the message, and the ledger says so.
+        self.assertEqual(record["last_context_chars"], 0)
         # Counted once per session, not once per turn.
         self.first_turn_context("s-doctor")
         self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 1)
         check = self._check(paths)
         self.assertTrue(check.ok)
         self.assertEqual(check.severity, "ok")
+
+    def test_a_routed_first_turn_counts_the_section_once(self) -> None:
+        llm_hooks.awareness_system_prompt_section(_session_info("s-routed"))
+        payload = llm_hooks.pre_llm_call(
+            omh_home=str(self.omh_home),
+            hermes_home=str(self.hermes_home),
+            session_id="s-routed",
+            user_message=_ROUTED_REQUEST,
+            is_first_turn=True,
+        )
+        context = str((payload or {}).get("context", ""))
+        self.assertIn("[OMH Route Hint]", context)
+        self.assertNotIn(awareness_primer_context(), context)
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 1)
+        # A turn that leaves the primer to the section with nothing else to
+        # inject does not count the section a second time.
+        self.assertEqual(self.first_turn_context("s-routed"), "")
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 1)
+
+    def test_a_re_render_after_the_claim_does_not_re_arm_it(self) -> None:
+        llm_hooks.awareness_system_prompt_section(_session_info("s-rerender"))
+        self.first_turn_context("s-rerender")
+        # A compaction that keeps the id renders the section again.
+        llm_hooks.awareness_system_prompt_section(_session_info("s-rerender"))
+        self.assertEqual(self.first_turn_context("s-rerender"), "")
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 1)
 
     def test_a_render_without_a_turn_is_not_a_delivery(self) -> None:
         # `hermes prompt-size` and a routed review fork render the section
@@ -249,7 +277,50 @@ class DoctorDeliveryTests(SectionTestCase):
         self.assertEqual(check.severity, "warning")
 
 
+class ForkedRenderTests(SectionTestCase):
+    """A routed review fork renders under its parent's session id."""
+
+    def routed_later_turn(self, session_id: str) -> str:
+        payload = llm_hooks.pre_llm_call(
+            omh_home=str(self.omh_home),
+            hermes_home=str(self.hermes_home),
+            session_id=session_id,
+            user_message=_ROUTED_REQUEST,
+            is_first_turn=False,
+        )
+        return str((payload or {}).get("context", ""))
+
+    def test_a_fork_render_for_a_resumed_parent_keeps_the_per_turn_primer(self) -> None:
+        # The parent was resumed after a restart: no render, no first turn in
+        # this process. Its first review fork renders under the parent's id.
+        llm_hooks.awareness_system_prompt_section(_session_info("s-resumed-parent"))
+        self.assertIn(awareness_primer_context(), self.routed_later_turn("s-resumed-parent"))
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 1)
+        self.assertGreater(read_awareness_delivery(str(self.omh_home))["last_context_chars"], 0)
+
+    def test_a_fork_render_is_never_counted_as_a_section_delivery(self) -> None:
+        llm_hooks.awareness_system_prompt_section(_session_info("s-resumed-parent"))
+        # A later turn with nothing to inject: no payload and no section claim.
+        self.assertEqual(self.later_turn("s-resumed-parent"), "")
+        self.assertEqual(read_awareness_delivery(str(self.omh_home))["delivery_count"], 0)
+
+    def test_a_fork_of_a_live_session_keeps_it_on_the_section(self) -> None:
+        llm_hooks.awareness_system_prompt_section(_session_info("s-live"))
+        self.first_turn_context("s-live")
+        llm_hooks.awareness_system_prompt_section(_session_info("s-live"))  # the fork
+        self.assertNotIn(awareness_primer_context(), self.routed_later_turn("s-live"))
+
+
 class SessionBoundTests(SectionTestCase):
+    def test_eviction_is_least_recently_used(self) -> None:
+        cap = llm_hooks._AWARENESS_SECTION_SESSION_CAP
+        for index in range(cap):
+            llm_hooks.awareness_system_prompt_section(_session_info(f"s-{index}"))
+        self.first_turn_context("s-0")  # use makes s-0 the most recent
+        llm_hooks.awareness_system_prompt_section(_session_info(f"s-{cap}"))
+        self.assertIn("s-0", llm_hooks._awareness_section_sessions)
+        self.assertNotIn("s-1", llm_hooks._awareness_section_sessions)
+
     def test_recorded_sessions_are_bounded_oldest_first(self) -> None:
         cap = llm_hooks._AWARENESS_SECTION_SESSION_CAP
         for index in range(cap + 1):

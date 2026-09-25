@@ -146,7 +146,10 @@ def _run_pre_llm_call(
             omh_home.mkdir()
             hermes_home.mkdir()
             if section:
+                # The render, then the session's own first turn confirming it,
+                # so a later-turn scenario measures a session already past it.
                 llm_hooks.awareness_system_prompt_section({"session_id": _SCENARIO_SESSION})
+                llm_hooks._awareness_section_carries_primer(_SCENARIO_SESSION, is_first_turn=True)
             for seed in seeds:
                 seed(omh_home)
             payload = llm_hooks.pre_llm_call(

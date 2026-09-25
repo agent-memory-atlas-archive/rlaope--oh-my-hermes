@@ -477,7 +477,7 @@ def budget_metrics() -> tuple[BudgetMetric, ...]:
     )
 
     return (
-        # The first four can reach the model on every request or turn (the tool
+        # The first five can reach the model on every request or turn (the tool
         # schemas only when Hermes's tool_search is off; with the default bridge
         # they are deferred behind a listing). Everything after them is paid on
         # demand (a tool call, a `skill_view` load) or is a quality signal. Read
