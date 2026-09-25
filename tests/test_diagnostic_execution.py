@@ -329,7 +329,10 @@ class BoundedExecutionTests(unittest.TestCase):
                     maximum_total[0] = max(maximum_total[0], sum(active.values()))
                     if sum(active.values()) == 2:
                         two_running.set()
-                release.wait(timeout=_THREAD_DEADLINE_SECONDS)
+                # Backstop only: the test sets `release` once the barrier deadline
+                # passes, so a failure snapshot reads the state at that deadline
+                # rather than a runner that timed out on its own wait first.
+                release.wait(timeout=2 * _THREAD_DEADLINE_SECONDS)
                 with lock:
                     active[provider] -= 1
                 return ProviderObservation.completed(files, ())
@@ -379,7 +382,10 @@ class BoundedExecutionTests(unittest.TestCase):
                     maximum_total[0] = max(maximum_total[0], sum(active.values()))
                     if sum(active.values()) == 2:
                         two_running.set()
-                release.wait(timeout=_THREAD_DEADLINE_SECONDS)
+                # Backstop only: the test sets `release` once the barrier deadline
+                # passes, so a failure snapshot reads the state at that deadline
+                # rather than a runner that timed out on its own wait first.
+                release.wait(timeout=2 * _THREAD_DEADLINE_SECONDS)
                 with lock:
                     active[provider] -= 1
                 return ProviderObservation.completed(files, ())
