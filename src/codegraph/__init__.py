@@ -9,6 +9,13 @@ from .uml import (
     render_plan,
     render_plantuml,
 )
+from .test_selection import (
+    CODEGRAPH_TEST_SELECTION_SCHEMA_VERSION,
+    TEST_SELECTION_BLIND_SPOTS,
+    TEST_SELECTION_CLAIM_BOUNDARY,
+    render_test_selection_text,
+    select_tests_for_changes,
+)
 from .schema import (
     CLAIM_BOUNDARY,
     CODEGRAPH_ARTIFACT_RELATIVE_PATH,
@@ -25,6 +32,9 @@ __all__ = [
     "CODEGRAPH_ARTIFACT_RELATIVE_PATH",
     "CODEGRAPH_CONTEXT_SCHEMA_VERSION",
     "CODEGRAPH_SCHEMA_VERSION",
+    "CODEGRAPH_TEST_SELECTION_SCHEMA_VERSION",
+    "TEST_SELECTION_BLIND_SPOTS",
+    "TEST_SELECTION_CLAIM_BOUNDARY",
     "build_codegraph",
     "build_handoff_context",
     "build_uml_model",
@@ -34,6 +44,8 @@ __all__ = [
     "render_plan",
     "render_plantuml",
     "render_summary_text",
+    "render_test_selection_text",
+    "select_tests_for_changes",
     "summarize_codegraph",
     "write_codegraph_artifact",
 ]

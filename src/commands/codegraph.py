@@ -10,6 +10,8 @@ from ..codegraph import (
     render_build_text,
     render_handoff_text,
     render_summary_text,
+    render_test_selection_text,
+    select_tests_for_changes,
     summarize_codegraph,
     write_codegraph_artifact,
 )
@@ -68,6 +70,19 @@ def cmd_codegraph_handoff(args: argparse.Namespace) -> int:
         _print_json(context)
     else:
         print(render_handoff_text(context))
+    return 0
+
+
+def cmd_codegraph_tests(args: argparse.Namespace) -> int:
+    try:
+        graph = build_codegraph(args.repo)
+        payload = select_tests_for_changes(graph, list(args.changed))
+    except ValueError as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        print(render_test_selection_text(payload))
     return 0
 
 
@@ -132,6 +147,21 @@ def _add_codegraph_commands(sub) -> None:
     handoff.add_argument("--task", required=True, help="Task description used to rank relevant files and symbols.")
     handoff.add_argument("--json", action="store_true", help="Print the handoff context payload as JSON.")
     handoff.set_defaults(func=cmd_codegraph_handoff)
+
+    tests = codegraph_sub.add_parser(
+        "tests",
+        help="Select the test modules that import changed files, directly or transitively (static traversal).",
+    )
+    tests.add_argument("--repo", default=".", help="Repository root to scan; relative changed paths resolve against it.")
+    tests.add_argument(
+        "--changed",
+        nargs="+",
+        required=True,
+        metavar="PATH",
+        help="Changed file paths (repository-relative or absolute), for example from `git diff --name-only`.",
+    )
+    tests.add_argument("--json", action="store_true", help="Print the test selection payload as JSON.")
+    tests.set_defaults(func=cmd_codegraph_tests)
 
     uml = codegraph_sub.add_parser(
         "uml",

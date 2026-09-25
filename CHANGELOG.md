@@ -725,6 +725,26 @@ All notable changes will be documented here.
   showed the structured pane at 330, 667 and 900 px and the status-bar
   count with no boundary error.
 
+- **`omh codegraph tests --changed <paths...>` names the tests a change
+  reaches.** Picking "the smallest test that proves the claim" was left to
+  judgment, and this repo's own notes record a hand-picked subset missing a
+  gate four times in one session. The new subcommand walks the
+  `imports_internal` edges the codegraph scanner already builds backwards from
+  each changed path and lists every `test*.py` module under a tests directory
+  that imports it directly or transitively, with the import distance, as text
+  or `--json`
+  (`codegraph_test_selection/v1`). A module nothing imports is reported as
+  such rather than expanded into the whole suite; a non-Python, directory,
+  deleted, or unscanned path is classified, not dropped; the non-test files in
+  the closure are listed so a hub explains a wide selection. Every payload
+  carries a fixed `blind_spots` block (dynamic imports, fixtures loaded by
+  path, generated artifacts gated by byte comparison, helpers importable only
+  through an extra `PYTHONPATH` root, spawned commands, non-Python changes)
+  and a `claim_boundary` saying the subset is a starting point and never a
+  substitute for the full suite. Pure traversal: nothing is imported,
+  executed, or spawned. Deriving a fanout unit's `verification_commands` from
+  its `file_scope` through this selection is a named follow-up (#1697).
+
 ## 2.0.5 - 2026-09-22
 
 - **The cut now asks for the site rebuild its own push cannot start.** A cut
