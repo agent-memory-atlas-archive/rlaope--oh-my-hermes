@@ -108,14 +108,6 @@ def documentation_page_classifications() -> tuple[PageClassification, ...]:
             "release-readiness",
         ),
         PageClassification(
-            "docs/CODEGRAPH.md",
-            "repo_internal",
-            "exempt",
-            "Local code-intelligence setup for agents working on this repository. Entered "
-            "from the AGENTS.md CodeGraph section.",
-            "docs-specialist",
-        ),
-        PageClassification(
             "docs/CONTRACT_SUNSET_CANDIDATES.md",
             "working_note",
             "exempt",
