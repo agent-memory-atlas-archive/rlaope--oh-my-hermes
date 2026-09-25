@@ -901,10 +901,11 @@ All notable changes will be documented here.
   is refused. A store that cannot be read is `malformed` and exits 1; a
   missing one exits 0. The tool's `recall` renders through the same
   projection unchanged. `docs/HARNESS_QUALITY.md` gains a Declared Verdicts
-  section and `CONTEXT.md` a Completion dossier entry. Observed: the CLI read
-  a store two handler sessions had written (a PASS claimed observed, a HOLD
-  with one finding claimed prepared, a QA PASS), bound and unbound, and agreed
-  field for field with the tool's recall on the bound read (#1782).
+  section and `CONTEXT.md` a Completion dossier entry. Observed: one handler
+  session wrote a PASS claimed observed, a HOLD with one finding claimed
+  prepared and a QA PASS, then cleared its plan; the CLI read them bound and
+  unbound with the claimed states intact, and a second session's `recall`
+  agreed with the bound read field for field (#1782).
 
 ## 2.0.5 - 2026-09-22
 
