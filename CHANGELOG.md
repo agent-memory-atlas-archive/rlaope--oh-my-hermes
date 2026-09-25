@@ -15,6 +15,15 @@ All notable changes will be documented here.
   `__version__` on released hosts. An unsupported or unknown release is still
   refused.
 
+- **Skill descriptions open on the user's situation.** Hermes shows a model
+  each skill's name and the first 57 characters of its description; on the
+  previous catalog half of those windows began "Hermes ..." and most spent
+  characters on the word "workflow". Every installable description now reads
+  "<situation the user is in>: <what the skill produces>" (for example
+  "Remember a fact for future sessions: ..."), and no two skills share a
+  three-word opening. `SkillDefinition` gains `situations`, 5-10 plain English
+  phrases per skill in the words a user would use; nothing scores or renders
+  it yet. Routing results on both precision corpora are unchanged.
 - **The plugin bundle passes `hermes plugins validate`, and a plugin Hermes
   installed is left to Hermes.** The Hermes install scanner read the dict-key
   constant `PRIVATE_TOKEN = "__omh_egress_attempt_token"` as a hardcoded

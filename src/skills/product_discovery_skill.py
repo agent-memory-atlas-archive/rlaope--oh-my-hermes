@@ -66,7 +66,7 @@ _ALL_INPUTS = (
 
 DEFINITION = SkillDefinition(
     SKILL_NAME,
-    "Test whether a customer problem, segment, and business hypothesis deserve product investment, ending in kill, pivot, persevere, or inconclusive before any PRD.",
+    "Unvalidated early product idea: test whether a customer problem, segment, and business hypothesis deserve product investment, ending in kill, pivot, persevere, or inconclusive before any PRD.",
     (
         "product-discovery-validation",
         "product discovery validation",
@@ -357,4 +357,11 @@ DEFINITION = SkillDefinition(
         "If a pivot changes the problem or segment, open a new decision frame and carry the falsified hypotheses forward as rejected paths.",
     ),
     progressive_disclosure=True,
+    situations=(
+        "is this startup idea worth building",
+        "customer interviews to validate a problem",
+        "will people pay for this",
+        "should we pivot",
+        "test demand before writing a PRD",
+    ),
 )

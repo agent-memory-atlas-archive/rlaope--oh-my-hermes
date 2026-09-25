@@ -57,6 +57,7 @@ def _definition(
     bad: SkillExample,
     final_checklist: tuple[str, ...],
     recovery_notes: tuple[str, ...] = (),
+    situations: tuple[str, ...] = (),
 ) -> SkillDefinition:
     return SkillDefinition(
         name,
@@ -84,12 +85,13 @@ def _definition(
         recovery_notes=(*_COMMON_RECOVERY, *recovery_notes),
         host_requires_tools=(JEV_REQUIRED_TOOL,),
         progressive_disclosure=True,
+        situations=situations,
     )
 
 
 JEV_ASK_DEFINITION = _definition(
     "jev-ask",
-    "Jev ask: typed yes/no, pick-one, or scored questions to Jev with your own key; returns probabilities, never prose.",
+    "Jev asked for yes/no or pick-one odds: Jev ask: typed yes/no, pick-one, or scored questions to Jev with your own key; returns probabilities, never prose.",
     ("jev-ask", "ask jev", "jev question", "jev score"),
     "Use when the user asks Jev a typed question about supplied text -- whether it does something, which of named options fits, or how it rates on an ordered scale -- or wants help writing such questions.",
     category="gateway",
@@ -127,11 +129,18 @@ JEV_ASK_DEFINITION = _definition(
         "The reported numbers match the tool result, with the served model and cost source.",
         "A non-answer was reported as its status, not as an answer.",
     ),
+    situations=(
+        "have jev rate this text",
+        "jev probability that this is true",
+        "let jev pick one of these options",
+        "typed question for jev",
+        "rate this with jev on a scale",
+    ),
 )
 
 JEV_ROUTE_DEFINITION = _definition(
     "jev-route",
-    "Jev route pick: answer an OMH route question about which workflow fits, recorded without re-routing.",
+    "Undecided OMH route handed to Jev: Jev route pick: answer an OMH route question about which workflow fits, recorded without re-routing.",
     ("jev-route", "ask jev which workflow", "jev pick the workflow"),
     "Use when an OMH route came back undecidable with a `route_question` block, the answerer ladder lists `omh_jev_ask`, and the user asks Jev to pick the workflow.",
     category="gateway",
@@ -167,11 +176,18 @@ JEV_ROUTE_DEFINITION = _definition(
         "The block was sent unchanged and its digest matches the recorded answer.",
         "No workflow was dispatched on Jev's answer alone.",
     ),
+    situations=(
+        "let jev choose the workflow",
+        "jev breaks the routing tie",
+        "route question for jev",
+        "jev decides which skill fits",
+        "undecidable route sent to jev",
+    ),
 )
 
 JEV_FAILURE_TRIAGE_DEFINITION = _definition(
     "jev-failure-triage",
-    "Jev failure triage: retry, fix a dependency, ask for access, or change approach on a failing run.",
+    "Failing run handed to Jev for a next move: Jev failure triage: retry, fix a dependency, ask for access, or change approach on a failing run.",
     ("jev-failure-triage", "jev failure triage", "ask jev if this failure is transient"),
     "Use when a command, test, or build failed or keeps failing, the user asked Jev, and a quick typed signal should pick the next move before the ordinary triage prepares a fix.",
     category="review",
@@ -206,11 +222,18 @@ JEV_FAILURE_TRIAGE_DEFINITION = _definition(
         "The preset outcome and its rule are reported beside the raw answers.",
         "`build-failure-triage` or `agent-debug` still owns the fix.",
     ),
+    situations=(
+        "jev should I retry this",
+        "is this failure flaky according to jev",
+        "jev next move on a failing test",
+        "jev read on this error",
+        "jev triage for the broken build",
+    ),
 )
 
 JEV_REVIEW_GATE_DEFINITION = _definition(
     "jev-review-gate",
-    "Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.",
+    "Wants Jev risk flags on a diff under review: Jev review flags for a diff: auth, tests, migration risk, severity; flags only, never approves a merge.",
     ("jev-review-gate", "jev review gate", "ask jev to review this diff"),
     "Use when a diff is under review and the user asks Jev for typed flags as an extra reviewer signal.",
     category="review",
@@ -245,11 +268,18 @@ JEV_REVIEW_GATE_DEFINITION = _definition(
         "Every file sent was named to the user first.",
         "`code-review` still owns the verdict.",
     ),
+    situations=(
+        "jev flag risks in this PR",
+        "jev check the diff for auth issues",
+        "extra reviewer signal from jev",
+        "jev migration risk on this change",
+        "jev severity for this diff",
+    ),
 )
 
 JEV_ACTION_CHECK_DEFINITION = _definition(
     "jev-action-check",
-    "Jev action check before a risky command: secrets, outbound sends, blast radius; can only add a hold.",
+    "Risky command screened by Jev: Jev action check before a risky command: secrets, outbound sends, blast radius; can only add a hold.",
     ("jev-action-check", "jev action check", "ask jev if this command is safe", "jev risk check"),
     "Use before running a command or write the user asked Jev to screen, especially under a permissive approval mode.",
     category="review",
@@ -283,11 +313,18 @@ JEV_ACTION_CHECK_DEFINITION = _definition(
         "The outcome was one of hold, refuse_recommended, or no_extra_hold, with its rule.",
         "Nothing was run on the strength of `no_extra_hold` alone.",
     ),
+    situations=(
+        "jev screen this command first",
+        "is this rm safe per jev",
+        "jev check before sending the email",
+        "jev blast radius check",
+        "hold this command if jev objects",
+    ),
 )
 
 JEV_DONE_CHECK_DEFINITION = _definition(
     "jev-done-check",
-    "Jev done check: does the gathered evidence support the completion claim? It can only object.",
+    "Completion claim tested by Jev: Jev done check: does the gathered evidence support the completion claim? It can only object.",
     ("jev-done-check", "jev done check", "ask jev if this is done", "jev evidence check"),
     "Use before claiming a task complete, when the user asks Jev to test each completion claim against observed output rather than the agent's own summary.",
     category="review",
@@ -320,6 +357,13 @@ JEV_DONE_CHECK_DEFINITION = _definition(
     final_checklist=(
         "Each claim has its own outcome and rule.",
         "No claim was reported done on `no_objection` alone.",
+    ),
+    situations=(
+        "jev confirm the task is really done",
+        "jev check my completion claim",
+        "does jev agree it is finished",
+        "jev objects if not done",
+        "jev verifies against the output",
     ),
 )
 

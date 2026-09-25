@@ -38,7 +38,7 @@ _INPUT_OWNER = "decision owner"
 
 DEFINITION = SkillDefinition(
     "sales-pipeline-review",
-    "Turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review.",
+    "CRM pipeline or sales forecast to review: turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review.",
     (
         "sales-pipeline-review",
         "sales pipeline review",
@@ -293,4 +293,11 @@ DEFINITION = SkillDefinition(
         "If a connector is unavailable, keep every CRM correction proposed and every alert or message unsent, and name the connector boundary as the next observable step.",
     ),
     progressive_disclosure=True,
+    situations=(
+        "which deals are stuck",
+        "is our forecast realistic",
+        "enough pipeline for the quarter",
+        "review this salesforce export",
+        "deals slipping to next quarter",
+    ),
 )

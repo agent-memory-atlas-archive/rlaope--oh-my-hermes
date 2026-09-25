@@ -553,13 +553,13 @@ either does. Read it as a shape and never as a constant.
         "instructions": "Which OMH workflow is the best fit for this request? This is a relative choice among the listed options: pick the closest fit, or `none` when the request asks for none of them.",
         "options": {
           "none": "No OMH workflow applies; answer the request directly.",
-          "oh-my-hermes": "Router guidance for using oh-my-hermes workflow skills inside Hermes Agent.",
-          "plan": "Hermes Plan workflow: structured planning before execution."
+          "oh-my-hermes": "Choosing among OMH skills for a request: router guidance for using oh-my-hermes workflow skills inside Hermes Agent.",
+          "plan": "Unplanned feature or bugfix: structured planning before execution."
         }
       },
       "fits::plan": {
         "type": "noul",
-        "instructions": "Does this request ask for the work `plan` does? `plan`: Hermes Plan workflow: structured planning before execution. Answer for this workflow alone, independently of the others."
+        "instructions": "Does this request ask for the work `plan` does? `plan`: Unplanned feature or bugfix: structured planning before execution. Answer for this workflow alone, independently of the others."
       }
     },
     "thresholds": {"fits_dispatch": 0.8, "fits_clarify": 0.5}

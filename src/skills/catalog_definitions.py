@@ -97,7 +97,7 @@ _MODEL_SETUP_FIVE_STEP_BAR = (
 _DEFINITIONS = [
     SkillDefinition(
         "oh-my-hermes",
-        "Router guidance for using oh-my-hermes workflow skills inside Hermes Agent.",
+        "Choosing among OMH skills for a request: router guidance for using oh-my-hermes workflow skills inside Hermes Agent.",
         (
             "oh-my-hermes",
             "omh",
@@ -177,10 +177,17 @@ _DEFINITIONS = [
             expected="Show the workflow picker or ask what the user wants to do next; do not infer a coding workflow.",
             why="A bare product name is a picker or clarification signal, not implementation evidence.",
         ),
+        situations=(
+            "which OMH workflow fits this request",
+            "I don't know which workflow to use",
+            "route my request to the right skill",
+            "help me pick the right skill",
+            "unsure where this request belongs",
+        ),
     ),
     SkillDefinition(
         "meta-router",
-        "Meta-routing guidance for a leading /omh command: reason over the imperative task, consult the live workflow catalog, and select or chain the right workflow(s).",
+        "Message opens with /omh and a task: meta-routing guidance for a leading /omh command: reason over the imperative task, consult the live workflow catalog, and select or chain the right workflow(s).",
         ("/omh", "./omh"),
         "Use when the user opens a message with the /omh or ./omh command followed by an imperative task; reason over the task, consult the live OMH catalog, and select or chain the right workflow(s).",
         category="router",
@@ -226,6 +233,13 @@ _DEFINITIONS = [
             prompt="omh add dark mode",
             expected="Do not meta-route; a bare `omh` alias without a leading slash command is a picker/other-lane signal.",
             why="Meta-routing triggers only on a leading /omh or ./omh command token, not on a bare alias.",
+        ),
+        situations=(
+            "slash omh followed by a task",
+            "/omh prefix on my request",
+            "route this task through the catalog",
+            "chain several workflows for one job",
+            "omh command with an instruction",
         ),
     ),
     SkillDefinition(
@@ -321,7 +335,7 @@ _DEFINITIONS = [
     ),
     SkillDefinition(
         "loop",
-        "Hermes Loop workflow: agentic interviewer -> planner -> researcher -> builder -> reviewer cycles until a real gate.",
+        "Ambitious goal needing many iterative cycles: agentic interviewer -> planner -> researcher -> builder -> reviewer cycles until a real gate.",
         (
             "loop",
             "./loop",
@@ -426,6 +440,14 @@ _DEFINITIONS = [
             "Resume paused native goals with re-registered gates; external goals follow driver recovery. Transfers require observed stopped/absent reconciliation; handoffs never dispatch.",
             "If the loop runs out of next actions, re-read the scoped files, recombine the near-miss attempts, then escalate to a more radical change before declaring the loop blocked.",
         ),
+        situations=(
+            "keep working until the goal is met",
+            "goal with no known path yet",
+            "iterate with feedback over many sessions",
+            "resume after running out of tokens",
+            "long-running project goal",
+            "keep improving this until it is good",
+        ),
     ),
     SkillDefinition(
         "ultraprocess",
@@ -524,7 +546,7 @@ _DEFINITIONS = [
     ),
     SkillDefinition(
         "context",
-        "Project terminology alignment workflow: look up, capture, correct, and align the words a repository uses before planning or handoff.",
+        "Repository vocabulary unclear or inconsistent: project terminology alignment workflow: look up, capture, correct, and align the words a repository uses before planning or handoff.",
         (
             "ulw-context",
             "$context",
@@ -618,10 +640,18 @@ _DEFINITIONS = [
             "If frontier round or decision identity cannot be recovered, close with a named recovery blocker instead of restarting or emitting another round.",
             "If the user moves from terminology to implementation, summarize confirmed understanding and hand off to `ralplan`, `ulw-plan`, or the selected coding owner only after a separate go-ahead.",
         ),
+        situations=(
+            "what does this term mean in our repo",
+            "we use two names for the same thing",
+            "glossary for this project",
+            "naming is inconsistent across the code",
+            "agree on terminology before planning",
+            "domain language drift",
+        ),
     ),
     SkillDefinition(
         "deep-interview",
-        "Hermes Deep Interview workflow: one-question-at-a-time clarification.",
+        "Vague, underspecified request: one-question-at-a-time clarification.",
         (
             "deep-interview",
             "$deep-interview",
@@ -676,10 +706,18 @@ _DEFINITIONS = [
             expected="Proceed to diagnosis or implementation instead of interviewing.",
             why="The required facts are already available, so more questions would slow the workflow.",
         ),
+        situations=(
+            "I'm not sure what I want yet",
+            "requirements are fuzzy",
+            "ask me questions before building",
+            "help me figure out the scope",
+            "clarify before you guess",
+            "ambiguous feature idea",
+        ),
     ),
     SkillDefinition(
         "jit-learn",
-        "Just-in-time learning workflow: select and confirm an immediate learning target, research credible sources, and prepare an application-first brief without popularity ranking.",
+        "Blocked and choosing a learning target: just-in-time learning workflow: select and confirm an immediate learning target, research credible sources, and prepare an application-first brief without popularity ranking.",
         (
             "jit-learn",
             "learn next",
@@ -773,6 +811,14 @@ _DEFINITIONS = [
             "If sources or links cannot be checked, leave the affected section empty with the retrieval reason instead of adding a generic recommendation.",
             "If the target becomes a syllabus, supplied-paper explanation, source inventory, already-scoped research question, or OMH self-improvement request, preserve the sibling boundary and route accordingly.",
         ),
+        situations=(
+            "what should I learn to get unblocked",
+            "recommend books or courses for my problem",
+            "learning resources I can apply this week",
+            "what topic would help me most right now",
+            "podcasts or creators on this topic",
+            "I keep hitting a knowledge gap",
+        ),
     ),
     SkillDefinition(
         "team",
@@ -816,7 +862,7 @@ _DEFINITIONS = [
     ),
     SkillDefinition(
         "ultrawork",
-        "Ultrawork - split an accepted plan into disjoint parallel lanes with per-lane acceptance criteria, verification commands, and owners; prevents two lanes editing the same file.",
+        "Accepted plan awaiting implementation: split it into disjoint parallel lanes with per-lane acceptance criteria, verification commands, and owners; prevents two lanes editing the same file.",
         (
             "ultrawork",
             "$ultrawork",
@@ -1002,11 +1048,18 @@ _DEFINITIONS = [
             "[capability:durable_checkpoint] If the goal ledger is stale or missing, inspect .omh/goals and ask which checkpoint to resume before continuing.",
             "[capability:durable_checkpoint] If a blocker checkpoint exists, keep the goal open and record the blocker plus the smallest unblock action.",
         ),
+        situations=(
+            "split the job across several workers",
+            "run several coding lanes at once",
+            "big multi-part change across modules",
+            "fan an accepted plan out to multiple agents",
+            "keep two workers off the same file",
+            "one owner per lane with its own checks",
+        ),
     ),
     SkillDefinition(
         "maestro",
-        "Maestro - prepares the handoff for the coding agent you already chose, composing its prompt from that "
-        "agent's own installed skills; never selects the owner and never executes the work itself.",
+        "Coding owner already chosen, handoff pending: prepares the handoff for the coding agent you already chose, composing its prompt from that agent's own installed skills; never selects the owner and never executes the work itself.",
         (
             # No bare "maestro" token: it is an ordinary English word ("who is
             # the maestro of this orchestra?") and a bare-token trigger would
@@ -1175,6 +1228,13 @@ _DEFINITIONS = [
             expected="Ask `choose_executor` for the coding owner before composing anything; never pick one on the user's behalf.",
             why="No coding owner has been explicitly chosen yet, so composing a handoff would select the owner silently.",
         ),
+        situations=(
+            "write the prompt for codex to do this",
+            "hand this task to claude code",
+            "compose instructions for my coding agent",
+            "prepare instructions for the external coding CLI",
+            "give this job to the agent I chose",
+        ),
     ),
     SkillDefinition(
         "research",
@@ -1183,7 +1243,7 @@ _DEFINITIONS = [
         # dropped clauses ("saturation-style", "in comparable open-source
         # repos", "across independent sources") live in the quality bar, which
         # the gate does not budget.
-        "Deep research engine - grounding for specs and decisions: study open-source reference implementations with pinned refs, gather live web evidence with citation discipline, verify contested claims, and distill a decision-grounding dossier that planning consumes; for a decision brief use research-brief, for upstream guidance use web-research.",
+        "Deep dive before a decision: deep research engine - grounding for specs and decisions: study open-source reference implementations with pinned refs, gather live web evidence with citation discipline, verify contested claims, and distill a decision-grounding dossier that planning consumes; for a decision brief use research-brief, for upstream guidance use web-research.",
         (
             # No bare `research` token: it is an ordinary English word that
             # appears inside delivery-cycle and catalog-question messages
@@ -1334,10 +1394,18 @@ _DEFINITIONS = [
             "If enough evidence already exists and the real request is planning, hand off to ralplan with the recorded dossier.",
             "If the audience answer arrives after retrieval started, keep the evidence and re-render rather than re-running: the dossier feeds both branches.",
         ),
+        situations=(
+            "how do other open source projects solve this",
+            "survey prior work before we design",
+            "dig deep before writing the spec",
+            "verify these conflicting claims",
+            "evidence dossier for an architecture choice",
+            "study how others built it",
+        ),
     ),
     SkillDefinition(
         "web-research",
-        "Web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`.",
+        "Current-facts lookup on the web: web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`.",
         (
             # The lookup half of the pre-split `research` trigger list. Every
             # phrase here names retrieval or citation; the phrases naming depth,
@@ -1443,10 +1511,18 @@ _DEFINITIONS = [
             "If sources conflict, present both with their retrieval dates and say which one is primary.",
             "If leads keep expanding past one round, hand the question to `research` with the sources already gathered.",
         ),
+        situations=(
+            "what is the latest version of this library",
+            "check the official documentation for this",
+            "find a source for this claim",
+            "what changed in the pricing this week",
+            "is this still true today",
+            "search online and cite it",
+        ),
     ),
     SkillDefinition(
         "product-docs",
-        "Current-source-first documentation for OMH itself: product identity, public capability catalog, model routing, local state, and long-term memory.",
+        "Explaining OMH itself: current-source-first documentation for OMH itself: product identity, public capability catalog, model routing, local state, and long-term memory.",
         (
             "product-docs",
             "OMH documentation",
@@ -1534,10 +1610,17 @@ _DEFINITIONS = [
             "If network retrieval is unavailable, use a clean local checkout or installed package only with its commit or version and an explicit freshness caveat.",
             "If a documented local path is absent, report that the install or profile does not expose it instead of treating absence as corruption.",
         ),
+        situations=(
+            "how does oh my hermes pick models",
+            "where does omh keep its files",
+            "explain how omh memory works",
+            "is this an omh feature or a hermes feature",
+            "how omh is put together",
+        ),
     ),
     SkillDefinition(
         "source-finder",
-        "Source candidate inventory - prepare typed source candidates and acquisition status before downstream work; use ulw-research to fetch and cite them, or research-brief to turn them into a decision-ready brief.",
+        "Gathering candidate papers, datasets, or repos: source candidate inventory - prepare typed source candidates and acquisition status before downstream work; use ulw-research to fetch and cite them, or research-brief to turn them into a decision-ready brief.",
         (
             "source-finder",
             "source finder",
@@ -1636,10 +1719,18 @@ _DEFINITIONS = [
             "If a candidate lacks a link or file reference, keep it candidate_prepared and ask for the next observable source step.",
             "If the user wants to process a selected source, route to the downstream workflow instead of continuing source acquisition.",
         ),
+        situations=(
+            "gather candidate sources for a project",
+            "which datasets exist for this benchmark",
+            "list github repos worth evaluating",
+            "where can I download this paper",
+            "arxiv links for this area",
+            "collect public slides and specs",
+        ),
     ),
     SkillDefinition(
         "research-brief",
-        "Business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department.",
+        "Market, competitor, or pricing question: business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department.",
         (
             "research-brief",
             "business-research",
@@ -1682,10 +1773,18 @@ _DEFINITIONS = [
             "The request is only fresh links, citations, or current facts without a business question or decision audience; use `research`.",
             "Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `source-finder`.",
         ),
+        situations=(
+            "compare competitors before we set pricing",
+            "market sizing with sources",
+            "what customers say about our pricing",
+            "vendor comparison with evidence",
+            "competitive landscape brief",
+            "evidence for this business call",
+        ),
     ),
     SkillDefinition(
         "research-department",
-        "Research operations department - coordinate Scout, Analyst, and Briefer work with source-inbox and status boundaries; for one decision brief use research-brief, and for typed candidates before research starts use source-finder.",
+        "Recurring market or topic research: research operations department - coordinate Scout, Analyst, and Briefer work with source-inbox and status boundaries; for one decision brief use research-brief, and for typed candidates before research starts use source-finder.",
         (
             "research-department",
             "research department",
@@ -1766,10 +1865,18 @@ _DEFINITIONS = [
             expected="Ask for observed synthesis-tool and gateway delivery evidence or mark those states as not_observed.",
             why="The workflow pack can prepare the operating pattern, but it cannot prove external tool execution or delivery.",
         ),
+        situations=(
+            "daily competitor monitoring",
+            "weekly roundup of new papers",
+            "set up a research team of agents",
+            "track market changes over time",
+            "incoming sources with regular briefings",
+            "notebooklm-backed research synthesis",
+        ),
     ),
     SkillDefinition(
         "paper-learning",
-        "Hermes Paper Learning workflow: explain a supplied paper or paper/PDF at a selected level while preserving full section coverage and source evidence boundaries.",
+        "Paper or paper PDF to understand: explain a supplied paper or paper/PDF at a selected level while preserving full section coverage and source evidence boundaries.",
         (
             "paper-learning",
             "paper learning",
@@ -1874,6 +1981,14 @@ _DEFINITIONS = [
             "If the paper is longer than one `read_file` window, call `omh_document_plan` (action=plan with the pages, lines, and outline the first read showed) and walk its numbered ranges, marking each covered.",
             "If the user asks for validation, citation checking, math proof review, or reproduction, create a separate observed-evidence or coding handoff path.",
         ),
+        situations=(
+            "walk me through this research paper",
+            "I don't understand this paper",
+            "explain an arxiv paper in simple terms",
+            "paper summary without losing detail",
+            "beginner explanation of this pdf paper",
+            "expert level breakdown of a paper",
+        ),
     ),
     SkillDefinition(
         "strategy-brief",
@@ -1927,10 +2042,18 @@ _DEFINITIONS = [
             "The question is how to run a hiring process — scorecards, interview loops, candidate comparison — rather than whether to hire at all; use `people-ops`.",
             "The user wants Jev's typed probabilities for a yes/no, pick-one, or scored question over supplied text rather than tradeoffs and a recommendation; use `jev-ask`.",
         ),
+        situations=(
+            "should we hire or use a contractor",
+            "which direction should we take",
+            "pros and cons of two plans",
+            "enterprise or smb first",
+            "big bets for next quarter",
+            "make a call on this tradeoff",
+        ),
     ),
     SkillDefinition(
         "meeting-brief",
-        "Hermes Meeting Brief workflow: agenda, prompts, decisions, and record template.",
+        "Upcoming meeting that lacks an agenda: agenda, prompts, decisions, and record template.",
         (
             "meeting-brief",
             "meeting brief",
@@ -1977,10 +2100,17 @@ _DEFINITIONS = [
             expected="Ask for meeting notes or route to an ops/status summary with explicit evidence gaps.",
             why="A prepared agenda cannot be treated as observed minutes or decisions.",
         ),
+        situations=(
+            "prepare for tomorrow's meeting",
+            "what should we discuss in the sync",
+            "agenda for the leadership meeting",
+            "questions to raise in the review meeting",
+            "decisions we need from this meeting",
+        ),
     ),
     SkillDefinition(
         "feedback-triage",
-        "Hermes Feedback Triage workflow: cluster customer signals and choose the next workflow.",
+        "Unsorted customer feedback and bug reports: cluster customer signals and choose the next workflow.",
         (
             "feedback-triage",
             "customer-feedback-triage",
@@ -2039,10 +2169,18 @@ _DEFINITIONS = [
             expected="Route to planning or coding handoff instead of re-triaging.",
             why="The decision is already accepted, so triage would add delay without improving evidence.",
         ),
+        situations=(
+            "group these support complaints",
+            "is this a bug or a feature request",
+            "what are users complaining about",
+            "sort app store reviews by theme",
+            "customers report failed payments",
+            "prioritize feedback themes",
+        ),
     ),
     SkillDefinition(
         "finance-analysis",
-        "Turn finance and accounting inputs into a decision-ready variance, cash, and close-risk brief.",
+        "Budget overruns, cash risk, or close issues: turn finance and accounting inputs into a decision-ready variance, cash, and close-risk brief.",
         SPECIALIST_DOMAIN_TRIGGERS["finance-analysis"],
         "Use when supplied ledger, budget, forecast, revenue, expense, cash-flow, or close context needs a bounded analysis and decision brief.",
         category="operations",
@@ -2165,10 +2303,18 @@ _DEFINITIONS = [
             expected="Route to `live-info-operator`, not `finance-analysis`.",
             why="A live exchange rate needs observed provider data rather than a finance analysis brief.",
         ),
+        situations=(
+            "why are we over budget",
+            "explain expense variances this quarter",
+            "cash runway risk",
+            "risks in the month end close",
+            "actuals against forecast for the CFO",
+            "burn rate review",
+        ),
     ),
     SkillDefinition(
         "people-ops",
-        "Turn hiring and people context into a fair, structured recruiting or people-operations brief.",
+        "Hiring or people-process decisions: turn hiring and people context into a fair, structured recruiting or people-operations brief.",
         SPECIALIST_DOMAIN_TRIGGERS["people-ops"],
         "Use when a team needs a role brief, hiring plan, interview rubric, candidate-debrief structure, onboarding outline, or people-process decision support.",
         category="operations",
@@ -2220,10 +2366,18 @@ _DEFINITIONS = [
             expected="Route to `connector-operator`, not `people-ops`.",
             why="Sending invitations is an explicit external calendar action.",
         ),
+        situations=(
+            "how should we structure our interviews",
+            "compare two candidates fairly",
+            "write a scorecard for this role",
+            "onboarding plan for a new hire",
+            "job description and hiring plan",
+            "run a fair hiring debrief",
+        ),
     ),
     SkillDefinition(
         "legal-compliance-review",
-        "Surface contract and compliance risks, questions, and escalation points before a legal decision or action.",
+        "Contract, NDA, or policy with legal exposure: surface contract and compliance risks, questions, and escalation points before a legal decision or action.",
         # The domain table doubles as this skill's +54 route cue, so only
         # phrases unambiguous on their own belong in it. The bare markup words
         # are not: `redline` as a cue claimed "the engine is running at the
@@ -2373,10 +2527,19 @@ _DEFINITIONS = [
             expected="Route to `security-safety-review`, not `legal-compliance-review`.",
             why="The target is technical security risk rather than contract or compliance analysis.",
         ),
+        situations=(
+            "review this NDA",
+            "risky clauses in this contract",
+            "redline this vendor agreement",
+            "GDPR or DPA obligations",
+            "liability and indemnity clause",
+            "questions to ask our lawyer",
+            "terms of service compliance check",
+        ),
     ),
     SkillDefinition(
         "support-operations",
-        "Turn a support case into a clear customer reply, severity path, and owned next step.",
+        "Customer support case needs a reply or escalation: turn a support case into a clear customer reply, severity path, and owned next step.",
         SPECIALIST_DOMAIN_TRIGGERS["support-operations"],
         "Use when one or a bounded set of support contacts needs response drafting, urgency classification, incident/escalation routing, and follow-up ownership.",
         category="triage",
@@ -2429,10 +2592,18 @@ _DEFINITIONS = [
             expected="Route to `feedback-triage`, not `support-operations`.",
             why="A historical signal backlog needs product-pattern triage rather than case-level support guidance.",
         ),
+        situations=(
+            "angry customer email to answer",
+            "should this ticket go to engineering",
+            "draft a support response",
+            "customer cannot log in",
+            "how urgent is this ticket",
+            "reply to a refund request",
+        ),
     ),
     SkillDefinition(
         "curriculum-design",
-        "Turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.",
+        "Teaching goal that needs a course or syllabus: turn a learning goal into a teachable curriculum, assessment plan, and learner-ready sequence.",
         SPECIALIST_DOMAIN_TRIGGERS["curriculum-design"],
         "Use when an educator or enablement owner needs outcomes, scope and sequence, lesson/module design, assessment criteria, and differentiation assumptions.",
         category="planning",
@@ -2550,10 +2721,17 @@ _DEFINITIONS = [
             expected="Route to `paper-learning`, not `curriculum-design`.",
             why="A supplied paper explanation is not a curriculum-design request.",
         ),
+        situations=(
+            "design a six week course",
+            "training program for new hires",
+            "syllabus with weekly quizzes",
+            "lesson plan for a workshop",
+            "learning path with assessments",
+        ),
     ),
     SkillDefinition(
         "localization-review",
-        "Make a product or content release locale-ready with terminology, cultural-fit, and quality-review guidance.",
+        "Translated product or content release: make a product or content release locale-ready with terminology, cultural-fit, and quality-review guidance.",
         SPECIALIST_DOMAIN_TRIGGERS["localization-review"],
         "Use when multiple strings, a product surface, a market release, or a locale-sensitive document needs terminology, context, consistency, cultural-fit, and QA guidance beyond one-off translation.",
         category="review",
@@ -2605,10 +2783,17 @@ _DEFINITIONS = [
             expected="Answer directly or route to `content-operator`, not `localization-review`.",
             why="A one-off sentence has no product locale QA or release-review objective.",
         ),
+        situations=(
+            "review our japanese translations",
+            "i18n strings before launch",
+            "translation glossary consistency",
+            "does this copy fit the korean market",
+            "locale QA checklist",
+        ),
     ),
     SkillDefinition(
         "sales-development",
-        "Turn an account or market opportunity into a focused discovery, qualification, and next-step brief.",
+        "Prospect or account worth pursuing: turn an account or market opportunity into a focused discovery, qualification, and next-step brief.",
         SPECIALIST_DOMAIN_TRIGGERS["sales-development"],
         "Use when a seller or business-development owner needs account context, buyer hypotheses, qualification questions, value narrative, partner/outreach plan, and a non-executing next-step sequence.",
         category="strategy",
@@ -2726,10 +2911,18 @@ _DEFINITIONS = [
             expected="Route to `content-operator`, not `sales-development`.",
             why="A one-off social post has no account qualification or discovery objective.",
         ),
+        situations=(
+            "prepare for a discovery call",
+            "qualify this lead",
+            "plan for winning an enterprise prospect",
+            "questions to ask the buyer",
+            "outbound approach for this company",
+            "MEDDIC or BANT qualification",
+        ),
     ),
     SkillDefinition(
         "product-brief",
-        "Turn product evidence into a decision-ready PRD, prioritization frame, and roadmap brief.",
+        "PRD or roadmap priorities to decide: turn product evidence into a decision-ready PRD, prioritization frame, and roadmap brief.",
         SPECIALIST_DOMAIN_TRIGGERS["product-brief"],
         "Use when a product owner needs a problem frame, user/outcome definition, PRD, prioritization/roadmap options, dependencies, acceptance shape, and decision record before delivery planning.",
         category="planning",
@@ -2783,10 +2976,18 @@ _DEFINITIONS = [
             expected="Route to `ultrawork` or `ralplan`, not `product-brief`.",
             why="Accepted implementation work should move into planning or delivery rather than recreate a PRD.",
         ),
+        situations=(
+            "write the product spec",
+            "what should we build next quarter",
+            "prioritize the feature backlog",
+            "requirements for this product change",
+            "roadmap options and tradeoffs",
+            "RICE scoring for features",
+        ),
     ),
     SkillDefinition(
         "ops-review",
-        "Hermes Ops Review workflow: status, risks, blockers, priorities, and follow-ups.",
+        "Recurring operating status and blockers: status, risks, blockers, priorities, and follow-ups.",
         (
             "ops-review",
             "ops review",
@@ -2823,10 +3024,17 @@ _DEFINITIONS = [
             "The review is over sales stages, forecast categories, deal aging, or seller forecast rather than generic operating status; use `sales-pipeline-review`.",
             "The primary output is durable cadence history, minutes, a decision log, or action history; use `operating-rhythm`.",
         ),
+        situations=(
+            "what is blocked across the team",
+            "summarize risks for this week",
+            "status of the support queue and releases",
+            "weekly blockers and owners",
+            "operations update for leadership",
+        ),
     ),
     SkillDefinition(
         "operating-rhythm",
-        "Hermes Operating Rhythm workflow: meeting minutes, scrum/sprint records, retros, decisions, and follow-up history.",
+        "Keeping minutes, retros, and decision history: meeting minutes, scrum/sprint records, retros, decisions, and follow-up history.",
         (
             "operating-rhythm",
             "operating rhythm",
@@ -2877,10 +3085,17 @@ _DEFINITIONS = [
             expected="Route implementation to a plan or selected executor/runtime handoff after action items are accepted.",
             why="Operating records can capture follow-ups, but implementation is a separate observed work stream.",
         ),
+        situations=(
+            "keep our meeting notes organized",
+            "sprint retro write-up",
+            "track action items across meetings",
+            "standup history for the team",
+            "running log of team decisions",
+        ),
     ),
     SkillDefinition(
         "report-package",
-        "Hermes Report Package workflow: weekly/monthly reports, executive briefs, PPT-ready outlines, and upload packages.",
+        "Periodic report for executives: weekly/monthly reports, executive briefs, PPT-ready outlines, and upload packages.",
         (
             "report-package",
             "report package",
@@ -2937,10 +3152,17 @@ _DEFINITIONS = [
             expected="Route to `reliability-review` and require metric or incident evidence.",
             why="Report packaging cannot satisfy reliability closure evidence.",
         ),
+        situations=(
+            "monthly update for the board",
+            "slides for the exec review",
+            "turn these notes into a status report",
+            "quarterly business review outline",
+            "executive summary of this month",
+        ),
     ),
     SkillDefinition(
         "materials-package",
-        "Hermes Materials Package workflow: decks, PDFs, spreadsheets, documents, HWP, Markdown, and binary export handoffs.",
+        "PPT, PDF, Excel, or HWP output to produce: decks, PDFs, spreadsheets, documents, HWP, Markdown, and binary export handoffs.",
         (
             "materials-package",
             "material package",
@@ -3017,10 +3239,18 @@ _DEFINITIONS = [
             expected="Ask for observed delivery evidence or record the delivery as not_observed instead of claiming it happened.",
             why="A prepared material artifact cannot prove export, approval, or delivery.",
         ),
+        situations=(
+            "convert this excel sheet to a pdf",
+            "make a powerpoint from these notes",
+            "compare two pdf files",
+            "pull the tables out of a pdf",
+            "create a docx from this outline",
+            "hwp document for a korean agency",
+        ),
     ),
     SkillDefinition(
         "img-summary",
-        "Image prompt cards - turn meetings, reports, PRs, issues, research, and releases into domain-aware image prompt cards.",
+        "Image card or infographic of content: image prompt cards - turn meetings, reports, PRs, issues, research, and releases into domain-aware image prompt cards.",
         (
             "img-summary",
             "img summary",
@@ -3171,10 +3401,18 @@ _DEFINITIONS = [
             expected="Ask for visual_observation/v1 delivery evidence or report delivery as not_observed.",
             why="A prompt card cannot prove generated image, QA, or delivery evidence.",
         ),
+        situations=(
+            "make an infographic of this PR",
+            "picture that sums up the meeting",
+            "shareable visual for the release",
+            "thumbnail for this report",
+            "image prompt for this announcement",
+            "cut out the backdrop of this photo",
+        ),
     ),
     SkillDefinition(
         "apple-design",
-        "Hermes Apple design workflow: prepare native Apple UI or Apple marketing product-visual direction, review, and improvement briefs with evidence-backed remediation handoffs.",
+        "Designing or reviewing an iOS, macOS, or Apple-style UI: prepare native Apple UI or Apple marketing product-visual direction, review, and improvement briefs with evidence-backed remediation handoffs.",
         (
             "apple-design",
             "apple design",
@@ -3266,10 +3504,18 @@ _DEFINITIONS = [
             "If the platform/version, convention, or target state is missing, ask for it before treating a guideline as applicable.",
             "If no supplied screen or code exists, prepare the brief and mark visual status not_observed rather than inferring a rendered result.",
         ),
+        situations=(
+            "does this iphone screen follow the HIG",
+            "ipad app design review",
+            "macos app layout feedback",
+            "liquid glass style for our app",
+            "apple style product hero image",
+            "SwiftUI screen polish",
+        ),
     ),
     SkillDefinition(
         "design-orchestration",
-        "Hermes design orchestration workflow: prepare a bounded design direction, existing-lane composition, and executor-neutral handoff.",
+        "Entire design problem to delegate: prepare a bounded design direction, existing-lane composition, and executor-neutral handoff.",
         (
             "design-orchestration",
             "design orchestration",
@@ -3348,10 +3594,17 @@ _DEFINITIONS = [
             "If only a raw brief exists, let Hermes retain it in chat and create an opaque user-supplied reference instead of storing the brief.",
             "If the request narrows to implementation, accessibility, or rendered QA, route to the existing specialist rather than expanding this orchestration surface.",
         ),
+        situations=(
+            "take over the design of this product",
+            "I don't know where to start on design",
+            "own the design end to end",
+            "figure out the design direction",
+            "design this app for me",
+        ),
     ),
     SkillDefinition(
         "design-quality-gate",
-        "Hermes Design Quality Gate workflow: enforce superior content, design, layout, publishing, and visual QA gates.",
+        "Deliverable demands premium polish: enforce superior content, design, layout, publishing, and visual QA gates.",
         (
             "design-quality-gate",
             "design quality gate",
@@ -3452,10 +3705,17 @@ _DEFINITIONS = [
             "If the baseline or references are missing, prepare the gate with an explicit comparative-quality gap instead of calling the result premium.",
             "If render QA is unavailable, keep PASS unavailable and ask for the smallest screenshot, deck/PDF render, or operator observation that proves the target surface.",
         ),
+        situations=(
+            "premium finish for the brochure pdf",
+            "the deck needs to look professional",
+            "print-ready polish check",
+            "the design looks cheap",
+            "premium look for our website",
+        ),
     ),
     SkillDefinition(
         "award-bar-score",
-        "Hermes award-bar score workflow: score a web surface against published design-award judging axes and name the binding constraint.",
+        "Aiming for design-award quality: score a web surface against published design-award judging axes and name the binding constraint.",
         (
             "award-bar-score",
             "award bar score",
@@ -3550,10 +3810,17 @@ _DEFINITIONS = [
             "If no rendered evidence exists, keep every axis not_observed and route the capture to visual-qa before scoring.",
             "If the award body publishes no weights, score the axes separately and report the total as unweighted rather than inventing a ratio.",
         ),
+        situations=(
+            "could this site win an awwwards prize",
+            "rate our website design",
+            "what holds our landing page back",
+            "daily site award contender",
+            "score the ui ux and innovation",
+        ),
     ),
     SkillDefinition(
         "frontend",
-        "Hermes frontend workflow: prepare design-system-driven web and terminal (TUI) UI creation, redesign, polish, accessibility, performance, and visual QA handoffs.",
+        "Building or polishing a web or terminal UI: prepare design-system-driven web and terminal (TUI) UI creation, redesign, polish, accessibility, performance, and visual QA handoffs.",
         (
             "frontend",
             "front-end",
@@ -3709,10 +3976,19 @@ _DEFINITIONS = [
             "If the target surface is unclear, prepare the brief with a route/component gap instead of inventing pages.",
             "If no visual reference exists, set a domain-fit quality bar and request references only when the decision changes layout or brand direction.",
         ),
+        situations=(
+            "make this dashboard look less generic",
+            "make the layout responsive",
+            "build a marketing page",
+            "set up a component library",
+            "add scroll effects to the hero",
+            "react page styling",
+            "layout for a terminal app",
+        ),
     ),
     SkillDefinition(
         "frontend-refactor",
-        "Hermes frontend refactor workflow: behavior-preserving refactor of UI code - preview the full change plan first, apply as a second explicit step, and work impact-ordered from state architecture down to naming polish.",
+        "Oversized or tangled UI component: behavior-preserving refactor of UI code - preview the full change plan first, apply as a second explicit step, and work impact-ordered from state architecture down to naming polish.",
         (
             "frontend-refactor",
             "front-refactor",
@@ -3806,10 +4082,18 @@ _DEFINITIONS = [
             "If a change turns out to alter behavior mid-apply, revert that change, record it as a finding, and keep the rest of the pass.",
             "If the component resists extraction because state is tangled, run the state ladder first and re-attempt decomposition after.",
         ),
+        situations=(
+            "this react component is 800 lines",
+            "too many useState booleans",
+            "useEffect chains everywhere",
+            "clean up the prop passing",
+            "break up a giant component",
+            "restructure the ui without changing behavior",
+        ),
     ),
     SkillDefinition(
         "backend",
-        "Hermes backend workflow: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.",
+        "Designing an API, server, or data-layer change: prepare server, API, and data-layer contracts — auth boundary, error paths, response shape, and schema/migration discipline — before implementation.",
         (
             "backend",
             "back-end",
@@ -3936,10 +4220,18 @@ _DEFINITIONS = [
             "If the stack or datastore is unknown, prepare the contract stack-neutral and name the stack as the one blocking input.",
             "If the auth model cannot be established, stop at the auth boundary gap instead of designing endpoints that assume a trust level.",
         ),
+        situations=(
+            "design a rest endpoint",
+            "postgres tables and migrations",
+            "who can call this api",
+            "pagination and error responses",
+            "design a webhook receiver",
+            "retire an old endpoint",
+        ),
     ),
     SkillDefinition(
         "rust",
-        "Hermes Rust workflow: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.",
+        "Rust ownership, lifetime, or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.",
         (
             "rust",
             "rust code",
@@ -4046,10 +4338,18 @@ _DEFINITIONS = [
             "If the crate cannot be inspected, escalate by default and say the verdict is conservative rather than measured.",
             "If the toolchain cannot run Miri or a sanitizer for the escalated change, keep the change blocked and name the smallest substitute proof instead of downgrading the verdict.",
         ),
+        situations=(
+            "the compiler rejects my borrows",
+            "my struct will not satisfy the lifetimes",
+            "is this unsafe code sound",
+            "ffi bindings to a c library",
+            "clippy warnings to fix",
+            "cargo will not compile",
+        ),
     ),
     SkillDefinition(
         "native-debugging",
-        "Hermes native-debugging workflow: prepare hypothesis-driven debugging of native binaries and instruct the executor to drive a DAP debugger instead of printf.",
+        "Native program crashes or corrupts memory: prepare hypothesis-driven debugging of native binaries and instruct the executor to drive a DAP debugger instead of printf.",
         (
             "native-debugging",
             "native debugging",
@@ -4152,10 +4452,19 @@ _DEFINITIONS = [
             "If the fault does not reproduce, make reproduction the first hypothesis and plan the observation that would establish it, rather than debugging a fault no one can trigger.",
             "If no debug adapter or symbols are available, say so, plan the coarser evidence path, and keep root cause unclaimed instead of upgrading a guess.",
         ),
+        situations=(
+            "binary crashes with signal 11",
+            "segfault on startup",
+            "read a crash dump",
+            "memory gets corrupted in c++",
+            "debug with gdb or lldb",
+            "freed memory is used again",
+            "crash only in the release build",
+        ),
     ),
     SkillDefinition(
         "accessibility-audit",
-        "Hermes Accessibility Audit workflow: prepare WCAG, keyboard, focus, screen-reader, target-size, and reflow evidence gates for UI surfaces.",
+        "Screen-reader or keyboard accessibility gaps: prepare WCAG, keyboard, focus, screen-reader, target-size, and reflow evidence gates for UI surfaces.",
         (
             "accessibility-audit",
             "accessibility audit",
@@ -4275,10 +4584,18 @@ _DEFINITIONS = [
             "If automated scan output exists without keyboard or screen-reader evidence, keep the verdict HOLD and request the smallest focus/announcement trace.",
             "If the request is mostly visual layout or CJK clipping, route to visual-qa while preserving accessibility follow-up checks.",
         ),
+        situations=(
+            "is our app usable by blind users",
+            "wcag compliance check",
+            "keyboard only navigation",
+            "text is hard to read against the background",
+            "a11y review before launch",
+            "ADA compliance for the website",
+        ),
     ),
     SkillDefinition(
         "visual-qa",
-        "Hermes visual-qa workflow: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.",
+        "Rendered UI needing a visual verdict: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces.",
         (
             "visual-qa",
             "visual qa",
@@ -4432,10 +4749,18 @@ _DEFINITIONS = [
             "If no capture exists, produce the QA plan and mark verdict BLOCKED_BY_MISSING_RENDER_EVIDENCE.",
             "If capture lineage is missing or mismatched, keep HOLD and request the smallest matching recapture set.",
         ),
+        situations=(
+            "does the page look right on mobile",
+            "compare screenshots before and after",
+            "text is cut off on the button",
+            "visual regression check",
+            "layout looks off in the browser",
+            "verify the ui with screenshots",
+        ),
     ),
     SkillDefinition(
         "build-failure-triage",
-        "Hermes Build Failure Triage workflow: classify build, typecheck, lint, test, CI, and DCO failures into minimal safe fix handoffs.",
+        "Build or CI failure to triage: classify build, typecheck, lint, test, CI, and DCO failures into minimal safe fix handoffs.",
         (
             "build-failure-triage",
             "build failure triage",
@@ -4549,10 +4874,18 @@ _DEFINITIONS = [
             "If the failure looks environmental or credentialed, mark BLOCKED_BY_ENVIRONMENT and avoid patch handoff.",
             "If a fix has already been applied, route to verification-gate for fresh evidence instead of re-triaging stale failures.",
         ),
+        situations=(
+            "the pipeline is red",
+            "tests broke after my change",
+            "npm run build errors",
+            "github actions job is failing",
+            "type errors after an upgrade",
+            "why is ci failing",
+        ),
     ),
     SkillDefinition(
         "workspace-audit",
-        "Hermes Workspace Audit workflow: map repository, skill, prompt, plugin, MCP, hook, config, and runtime surfaces before strengthening or operating OMH.",
+        "Workspace setup inventory and gaps: map repository, skill, prompt, plugin, MCP, hook, config, and runtime surfaces before strengthening or operating OMH.",
         (
             "workspace-audit",
             "workspace audit",
@@ -4631,10 +4964,17 @@ _DEFINITIONS = [
             expected="Refuse secret disclosure, keep the audit read-only, and prepare a separate remediation handoff if needed.",
             why="Workspace audit is inventory and risk mapping, not unsafe config mutation or secret extraction.",
         ),
+        situations=(
+            "what tools and plugins are set up here",
+            "audit our agent setup",
+            "list skills prompts and hooks",
+            "find gaps in our workspace",
+            "what is configured in this repo",
+        ),
     ),
     SkillDefinition(
         "production-audit",
-        "Hermes Production Audit workflow: evaluate release, deploy, security, observability, rollback, docs, and support readiness without claiming production access.",
+        "Imminent production launch or release: evaluate release, deploy, security, observability, rollback, docs, and support readiness without claiming production access.",
         (
             "production-audit",
             "production audit",
@@ -4709,10 +5049,18 @@ _DEFINITIONS = [
             expected="Block deploy/health claims without observed operator evidence and route deploy to an explicit authorized workflow.",
             why="Production audit can assess readiness, but it cannot secretly deploy or observe live health.",
         ),
+        situations=(
+            "are we ready to go live",
+            "launch checklist",
+            "can we ship this release",
+            "pre-release risk review",
+            "is rollback ready",
+            "go or no-go decision",
+        ),
     ),
     SkillDefinition(
         "verification-gate",
-        "Hermes Verification Gate workflow: define and record build, lint, typecheck, test, security, docs, generated-output, and CI evidence before completion or merge.",
+        "Proof a change is done before merge: define and record build, lint, typecheck, test, security, docs, generated-output, and CI evidence before completion or merge.",
         (
             "verification-gate",
             "verification gate",
@@ -4798,10 +5146,18 @@ _DEFINITIONS = [
             expected="Return HOLD/BLOCK and list missing or stale checks instead of claiming readiness.",
             why="A verification gate is useful only if planned checks and observed results stay separate.",
         ),
+        situations=(
+            "is this PR ready to merge",
+            "what checks prove this works",
+            "did all the tests pass",
+            "evidence before closing the task",
+            "derived files no longer match their source",
+            "definition of done checklist",
+        ),
     ),
     SkillDefinition(
         "agent-evaluation",
-        "Hermes Agent Evaluation workflow: compare executor or agent choices on reproducible tasks using quality, cost, time, tool, and evidence metrics.",
+        "Choosing between coding agents on evidence: compare executor or agent choices on reproducible tasks using quality, cost, time, tool, and evidence metrics.",
         (
             "agent-evaluation",
             "agent evaluation",
@@ -4877,10 +5233,17 @@ _DEFINITIONS = [
             expected="Reject universal ranking and require observed runs or mark the recommendation as ungrounded.",
             why="Agent evaluation must be reproducible and evidence-backed.",
         ),
+        situations=(
+            "is codex or claude better for this",
+            "benchmark our coding agents",
+            "which agent should be our default",
+            "fair comparison between agents",
+            "agent bake-off on real tasks",
+        ),
     ),
     SkillDefinition(
         "rules-distill",
-        "Hermes Rules Distill workflow: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance.",
+        "Turn repeated lessons into written rules: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance.",
         (
             "rules-distill",
             "rules distill",
@@ -4952,10 +5315,17 @@ _DEFINITIONS = [
             expected="Keep it as a low-confidence candidate or regression case until repeated evidence and review approval exist.",
             why="Rule distillation should not turn one-off anecdotes into global behavior.",
         ),
+        situations=(
+            "what rules should go in AGENTS.md",
+            "principles from our review comments",
+            "learn rules from past failures",
+            "guidelines from what keeps going wrong",
+            "best practices from agent traces",
+        ),
     ),
     SkillDefinition(
         "codebase-onboarding",
-        "Hermes Codebase Onboarding workflow: create a repo map, reading path, glossary, risk map, and first-task runway for unfamiliar codebases.",
+        "Unfamiliar repository needing a guided tour: create a repo map, reading path, glossary, risk map, and first-task runway for unfamiliar codebases.",
         (
             "codebase-onboarding",
             "codebase onboarding",
@@ -5030,10 +5400,17 @@ _DEFINITIONS = [
             expected="Mark architecture as unobserved and inspect source evidence before making claims.",
             why="Onboarding is only useful when grounded in current repo evidence.",
         ),
+        situations=(
+            "I just joined this project",
+            "where do I start reading this code",
+            "explain the structure of this repo",
+            "what should my first task be",
+            "how is this codebase organized",
+        ),
     ),
     SkillDefinition(
         "codegraph-refresh",
-        "Hermes Codegraph Refresh workflow: refresh local code intelligence, summarize repo structure, and prepare task-scoped codegraph handoff context without overclaiming execution.",
+        "Outdated code index or codemap: refresh local code intelligence, summarize repo structure, and prepare task-scoped codegraph handoff context without overclaiming execution.",
         (
             "codegraph-refresh",
             "codegraph refresh",
@@ -5128,10 +5505,17 @@ _DEFINITIONS = [
             "If no task focus is supplied, prepare build/summary guidance and ask for focus only when a handoff pack would otherwise be misleading.",
             "If the index is stale or missing, report the stale/missing state and next safe command rather than treating prior summaries as current.",
         ),
+        situations=(
+            "the codemap is out of date",
+            "rebuild the code navigation index",
+            "stale symbol index after a big merge",
+            "refresh code intelligence",
+            "context pack for the next coding pass",
+        ),
     ),
     SkillDefinition(
         "codebase-uml",
-        "OMH Codebase UML workflow: turn a repository into one readable, interface-level PlantUML architecture picture - packages or modules, the public symbols other units actually import, bounded import edges - and get it rendered to a single PNG a chat surface can show.",
+        "Architecture picture of a codebase: turn a repository into one readable, interface-level PlantUML architecture picture - packages or modules, the public symbols other units actually import, bounded import edges - and get it rendered to a single PNG a chat surface can show.",
         (
             "codebase-uml",
             "codebase uml",
@@ -5238,10 +5622,17 @@ _DEFINITIONS = [
             "If the picture is still unreadable, lower `--max-nodes`, narrow `--focus`, or raise `--depth` by one, and say which knob changed.",
             "If Graphviz `dot` is missing, rerun with `--layout smetana`; the layout differs but the content is identical.",
         ),
+        situations=(
+            "draw a diagram of our modules",
+            "show how packages depend on each other",
+            "architecture image for a new teammate",
+            "picture of this package's classes",
+            "visual map of the codebase for slack",
+        ),
     ),
     SkillDefinition(
         "context-budget-review",
-        "Hermes Context Budget Review workflow: plan compact context, token/cost budgets, summarization checkpoints, and overflow recovery before long agent work.",
+        "Context window or token budget at risk: plan compact context, token/cost budgets, summarization checkpoints, and overflow recovery before long agent work.",
         (
             "context-budget-review",
             "context budget review",
@@ -5326,10 +5717,18 @@ _DEFINITIONS = [
             expected="Reject goal shrinking and instead compact context while preserving the full objective and evidence gaps.",
             why="Budget review optimizes context handling, not the user's requested end state.",
         ),
+        situations=(
+            "the conversation is getting too long",
+            "keep key context across sessions",
+            "summarize before we hit the limit",
+            "when should we summarize",
+            "context is about to overflow",
+            "reuse cached prompts well",
+        ),
     ),
     SkillDefinition(
         "security-safety-review",
-        "Hermes Security Safety Review workflow: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution.",
+        "Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution.",
         (
             "security-safety-review",
             "security safety review",
@@ -5423,10 +5822,18 @@ _DEFINITIONS = [
             expected="Refuse secret disclosure and permission mutation, then prepare a redacted risk matrix and explicit remediation handoff.",
             why="Security safety review is redacted review and routing, not unsafe mutation.",
         ),
+        situations=(
+            "could this agent leak secrets",
+            "prompt injection risk in this automation",
+            "is this plugin safe to install",
+            "a key leaked and needs rotating",
+            "dangerous rm commands in scripts",
+            "tool permissions are too broad",
+        ),
     ),
     SkillDefinition(
         "automation-blueprint",
-        "Hermes Scheduled Ops Blueprint workflow: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.",
+        "Recurring scheduled job or reminder: design recurring Hermes operations with schedule, delivery, silence policy, context chain, and prepared-vs-observed status.",
         (
             "automation-blueprint",
             "scheduled ops",
@@ -5513,10 +5920,18 @@ _DEFINITIONS = [
             expected="Ask for observed Hermes/gateway delivery evidence or report the delivery as not_observed instead of claiming it happened.",
             why="A blueprint can prepare the scheduled operation, but it cannot prove runtime execution or delivery.",
         ),
+        situations=(
+            "send me a summary each morning",
+            "check this daily and ping slack",
+            "cron job for a report",
+            "notify me only when it changes",
+            "post a timed update to discord",
+            "put this recurring task on a schedule",
+        ),
     ),
     SkillDefinition(
         "reliability-review",
-        "Hermes Reliability Review workflow: postmortems, SLOs, error budgets, incident follow-ups, and service reliability evidence.",
+        "Postmortem for an outage or SLO miss: postmortems, SLOs, error budgets, incident follow-ups, and service reliability evidence.",
         (
             "reliability-review",
             "reliability review",
@@ -5571,10 +5986,17 @@ _DEFINITIONS = [
             expected="Use `report-package` unless the report specifically asks for reliability evidence review.",
             why="Report packaging and reliability validation are independent operations surfaces.",
         ),
+        situations=(
+            "write up last week's outage",
+            "how much downtime budget is left",
+            "uptime target review",
+            "stop this incident from recurring",
+            "incident follow-up actions",
+        ),
     ),
     SkillDefinition(
         "idea-to-deploy",
-        "Hermes Idea-to-Deploy workflow: shape an app idea into decisions, delivery handoff, verification, release, and monitoring status.",
+        "App idea headed for launch: shape an app idea into decisions, delivery handoff, verification, release, and monitoring status.",
         (
             "idea-to-deploy",
             "idea to deploy",
@@ -5621,10 +6043,17 @@ _DEFINITIONS = [
             "The task is already a concrete repo change whose stopping point is one PR-ready cycle, not product or release operations; use `ultrawork`.",
             "The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly instead of opening a product delivery loop.",
         ),
+        situations=(
+            "build and launch this app idea",
+            "new project from scratch",
+            "take this from idea to production",
+            "empty repo to first release",
+            "MVP through to deployment",
+        ),
     ),
     SkillDefinition(
         "llm-app-dev",
-        "Hermes LLM App Development workflow: prepare a build handoff for an LLM-powered feature with a pinned provider boundary, schema-first outputs, versioned prompt files, grounded retrieval, and an eval suite as a shipped deliverable.",
+        "LLM-powered feature to build: LLM app development: prepare a build handoff for an LLM-powered feature with a pinned provider boundary, schema-first outputs, versioned prompt files, grounded retrieval, and an eval suite as a shipped deliverable.",
         (
             "llm-app-dev",
             "$llm-app-dev",
@@ -5740,10 +6169,18 @@ _DEFINITIONS = [
             "If the comparison run did not emit tokens or cost, leave those fields null and say the harness did not report them; never reconstruct them from pricing tables.",
             "If a public-board send returned no confirmed outcome, do not retry: read the board back or resolve the receipt first, because a duplicate public post cannot be withdrawn the way a failed private write can be repeated.",
         ),
+        situations=(
+            "add a chatbot to our app",
+            "RAG over our documents",
+            "get JSON back from a model reliably",
+            "evaluate prompt changes",
+            "pin the model version",
+            "extract invoice fields with an llm",
+        ),
     ),
     SkillDefinition(
         "cto-loop",
-        "Hermes CTO Loop workflow: roadmap, PM, technical tradeoffs, risk, delivery, release, and follow-up operating cadence.",
+        "Engineering leadership over roadmap and risk: roadmap, PM, technical tradeoffs, risk, delivery, release, and follow-up operating cadence.",
         (
             "cto-loop",
             "cto loop",
@@ -5782,10 +6219,17 @@ _DEFINITIONS = [
         do_not_use_when=(
             "The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly or use `strategy-brief` for a decision brief instead of starting a leadership operating loop.",
         ),
+        situations=(
+            "act as our cto for this launch",
+            "run pm dev qa and ops together",
+            "decisions a tech lead would make",
+            "tech roadmap and shipping risks",
+            "risky launch across several teams",
+        ),
     ),
     SkillDefinition(
         "deploy-and-monitor",
-        "Hermes Deploy-and-Monitor workflow: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.",
+        "Release rollout needing health signals: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.",
         (
             "deploy-and-monitor",
             "deploy and monitor",
@@ -5828,10 +6272,17 @@ _DEFINITIONS = [
         do_not_use_when=(
             "An incident has already been declared and the work is commanding it -- severity, commander, running timeline, recovery verification -- rather than watching a release; use `live-incident-response`.",
         ),
+        situations=(
+            "roll out this version safely",
+            "watch metrics after the deploy",
+            "when should we roll back",
+            "is the new version holding up in production",
+            "ship to production and keep an eye on it",
+        ),
     ),
     SkillDefinition(
         "ultraqa",
-        "Hermes UltraQA workflow: adversarial QA and fix loops.",
+        "Hostile scenario testing: adversarial QA and fix loops.",
         (
             "ultraqa",
             "$ultraqa",
@@ -5865,10 +6316,17 @@ _DEFINITIONS = [
             "For probes that must run in Hermes-owned isolation or outlive this session, load `references/board-fanin.md`: one probe row per scenario in its own worktree, one fixer row whose `parents` is every probe, re-verification through the review lane, and findings only through bounded readback.",
             "When Hermes owns the coding path, read `hermes_coding_harness/v1` before saying build, verification, review, docs, or PR-prep evidence exists.",
         ),
+        situations=(
+            "try to break this feature",
+            "edge cases before release",
+            "end to end qa of the install flow",
+            "throw nasty inputs at the installer",
+            "failure scenarios for the setup wizard",
+        ),
     ),
     SkillDefinition(
         "plan",
-        "Hermes Plan workflow: structured planning before execution.",
+        "Unplanned feature or bugfix: structured planning before execution.",
         (
             "plan",
             "$plan",
@@ -5907,10 +6365,17 @@ _DEFINITIONS = [
             "Only prepare coding handoff guidance after the plan is accepted.",
             ENGINE_FIT_RECOMMENDATION_RULE,
         ),
+        situations=(
+            "how should we build this feature",
+            "break this work into steps",
+            "plan before we start coding",
+            "steps to add this safely",
+            "reproduce the bug then plan the fix",
+        ),
     ),
     SkillDefinition(
         "ralplan",
-        "Hermes Ralplan workflow: consensus planning with review gates.",
+        "High-stakes proposal needing approval: consensus planning with review gates.",
         (
             "ralplan",
             "$ralplan",
@@ -5998,10 +6463,17 @@ _DEFINITIONS = [
             "If current-source evidence is missing, route a `research` step before accepting the plan.",
             "If the user asks for implementation after acceptance, recommend the follow-on path that fits the work's shape (`ultrawork` with the matching capability — durable checkpoint, coordinated lanes, single-owner persistence, or one delivery cycle — or a direct selected executor handoff) with a one-line fit reason, and start it only on the user's explicit go-ahead — never auto-start an engine from acceptance alone.",
         ),
+        situations=(
+            "plan this so it can be reviewed",
+            "compare approaches before implementing",
+            "done criteria and test commands",
+            "turn this issue into a PR plan",
+            "risky refactor needs a sign-off",
+        ),
     ),
     SkillDefinition(
         "adversarial-consensus",
-        "Hermes Adversarial Consensus workflow: independent perspectives attack a proposal, then distill into a bundle a separate planner consumes.",
+        "Proposal facing adversarial scrutiny: independent perspectives attack a proposal, then distill into a bundle a separate planner consumes.",
         (
             "adversarial-consensus",
             "$adversarial-consensus",
@@ -6102,10 +6574,17 @@ _DEFINITIONS = [
             "If a round produces no objections at all, treat that as a roster defect rather than consensus: state which angle is missing and add or replace a seat before distilling.",
             "If distillation would need a fifth bucket, the extra content is a plan trying to escape; move it to the planner handoff instead of widening the bucket set.",
         ),
+        situations=(
+            "poke holes in our migration plan",
+            "devil's advocate on this design",
+            "argue against the approach we picked",
+            "stress test the proposal from many angles",
+            "red team our architecture decision",
+        ),
     ),
     SkillDefinition(
         "code-review",
-        "Hermes Code Review workflow: bug-first review with evidence.",
+        "Pull request or changes to vet: bug-first review with evidence.",
         (
             "code-review",
             "$code-review",
@@ -6190,10 +6669,17 @@ _DEFINITIONS = [
             "For maintainability judgement calls, load `omh-code-review/references/smell-baseline.md`; it names the twelve baseline smells with their fixes and the repo-standards-override rule.",
             "When one bug-first pass is not enough, load `omh-code-review/references/review-lenses.md` and run the five lenses separately; the verification-gap lens asks whether anything would go red if the changed behavior broke.",
         ),
+        situations=(
+            "review my pull request",
+            "look for bugs in this diff",
+            "spot logic errors in this change",
+            "second pair of eyes on my code",
+            "does the readme match the code",
+        ),
     ),
     SkillDefinition(
         "ai-slop-cleaner",
-        "Hermes AI slop cleaner workflow: delete AI-generated slop, dead code, and duplication while observable behavior stays identical.",
+        "Messy or AI-generated code to clean up: delete AI-generated slop, dead code, and duplication while observable behavior stays identical.",
         (
             "ai-slop-cleaner",
             "$ai-slop-cleaner",
@@ -6244,10 +6730,17 @@ _DEFINITIONS = [
             "Prefer deletion, reuse, and boundary repair over new abstractions.",
             "Rerun verification after cleanup before claiming behavior is preserved, and close with the four-part report: changed files, simplifications, behavior lock, remaining risks.",
         ),
+        situations=(
+            "remove dead code",
+            "too much duplicated logic",
+            "clean up what the ai wrote",
+            "simplify without changing behavior",
+            "delete unused helpers",
+        ),
     ),
     SkillDefinition(
         "refactor-plan",
-        "Hermes refactor planning workflow: turn a decided boundary-changing refactor into a phased plan - reconnaissance, contracts-first phase order, per-phase verification and rollback, a files table, and an explicit approval gate before any edit.",
+        "Decided cross-module refactor to phase: refactor planning - turn a decided boundary-changing refactor into a phased plan - reconnaissance, contracts-first phase order, per-phase verification and rollback, a files table, and an explicit approval gate before any edit.",
         (
             "refactor-plan",
             "refactor plan",
@@ -6339,10 +6832,17 @@ _DEFINITIONS = [
             "If a phase cannot be made independently green, split it further; two half-phases beat one unabortable one.",
             "If reconnaissance finds the direction itself is unsettled, route back to `ralplan` before ordering phases.",
         ),
+        situations=(
+            "split this module into two",
+            "move to the next major framework version",
+            "move code between packages safely",
+            "rollback plan for each step",
+            "migrate a large codebase in stages",
+        ),
     ),
     SkillDefinition(
         "tech-debt-audit",
-        "Hermes Tech Debt Audit workflow: build the severity-by-effort debt ledger from observed repo evidence - orient, audit the named dimensions with file:line citations, rank fixes and quick wins - and reconcile RESOLVED/NEW/CARRIED against the previous ledger on rerun.",
+        "Accumulated tech debt to rank: build the severity-by-effort debt ledger from observed repo evidence - orient, audit the named dimensions with file:line citations, rank fixes and quick wins - and reconcile RESOLVED/NEW/CARRIED against the previous ledger on rerun.",
         (
             "tech-debt-audit",
             "tech debt",
@@ -6431,6 +6931,13 @@ _DEFINITIONS = [
             "If a finding cannot be cited to file:line, demote it to an open question and keep it out of the ranked table.",
             "If the previous ledger's ids no longer match the tree, map them by dimension plus path before declaring anything RESOLVED.",
         ),
+        situations=(
+            "what should we clean up first",
+            "rank our worst code problems",
+            "two weeks of cleanup budget",
+            "quick wins in the codebase",
+            "debt report for planning",
+        ),
     ),
     SkillDefinition(
         "best-practice-research",
@@ -6502,7 +7009,7 @@ _DEFINITIONS = [
     ),
     SkillDefinition(
         "inference-serving",
-        "OMH Inference Serving workflow: choose the serving engine and quantization from decision tables, prepare deployment as an idempotent runbook with observed-only verification, and measure the endpoint with the standard TTFT/TPOT/goodput protocol.",
+        "Self-hosted LLM serving on GPUs: choose the serving engine and quantization from decision tables, prepare deployment as an idempotent runbook with observed-only verification, and measure the endpoint with the standard TTFT/TPOT/goodput protocol.",
         (
             "inference-serving",
             "inference serving",
@@ -6601,10 +7108,18 @@ _DEFINITIONS = [
             "If deployment verification fails, walk the failure ladder (toolkit, shared memory, permissions, token) before editing manifests.",
             "If a benchmark misses the verify targets, go to the symptom->flag table and re-measure one change at a time.",
         ),
+        situations=(
+            "host qwen on our A100s",
+            "should we use vllm or llama.cpp",
+            "pick a quantization level",
+            "set up an inference endpoint in kubernetes",
+            "measure ttft and throughput",
+            "is prefix caching worth it",
+        ),
     ),
     SkillDefinition(
         "model-optimization",
-        "OMH Model Optimization workflow: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.",
+        "Onboarding a newly released model generation: when a model family ships a new generation or changes its serving contract, walk the recognition, research, calibration, routing, and measurement process that keeps model handling honest and current.",
         (
             "model-optimization",
             "model optimization",
@@ -6700,10 +7215,17 @@ _DEFINITIONS = [
             "If the model cannot be measured (no served route, no credentials), ship the calibration with its research provenance and record the measurement as the named follow-up.",
             "If a later measurement shows the calibration worse than baseline, revise or remove it in the same change that reports the number.",
         ),
+        situations=(
+            "a new gpt version came out",
+            "support the latest glm release",
+            "should we route to the new model",
+            "update calibration for a model",
+            "onboard the new claude release",
+        ),
     ),
     SkillDefinition(
         "ultraperf",
-        "Ultraperf - find where a system is actually slow, leaking, or expensive across runtime, memory, token cost, storage, rendering, inference, CI, and query domains, then fix one measured hot path at a time behind a regression budget.",
+        "Unexplained slowness, leaks, or cost spikes: find where a system is actually slow, leaking, or expensive across runtime, memory, token cost, storage, rendering, inference, CI, and query domains, then fix one measured hot path at a time behind a regression budget.",
         (
             "ultraperf",
             "$ultraperf",
@@ -6820,12 +7342,19 @@ _DEFINITIONS = [
             "If the re-measure does not move, revert the change and re-rank hypotheses instead of stacking fixes.",
             "If the goal turns out to be one declared metric with a budget, keep the loop and start from that baseline instead of profiling for a hot path.",
         ),
+        situations=(
+            "the app got slow and we don't know why",
+            "memory keeps growing",
+            "ci takes too long",
+            "cloud bill went up and we don't know why",
+            "the page is janky",
+            "database queries are slow",
+        ),
     ),
     SkillDefinition(
         "wiki",
         (
-            "Hermes adaptation for wiki construction blueprints and retained knowledge capture with "
-            "destination-aware external knowledge connection guidance."
+            "Scattered knowledge needing a wiki: wiki construction blueprints and retained knowledge capture with destination-aware external knowledge connection guidance."
         ),
         (
             "wiki",
@@ -6896,10 +7425,17 @@ _DEFINITIONS = [
             "If the destination is unknown, record the missing facts and keep the guidance vendor-neutral.",
             "If the fact may be stale, record the staleness warning and next refresh action.",
         ),
+        situations=(
+            "set up a team wiki in notion",
+            "organize my obsidian vault",
+            "we keep answering the same questions",
+            "shared notes system for the team",
+            "where should our docs live",
+        ),
     ),
     SkillDefinition(
         "ask",
-        "Hermes adaptation for consulting an external advisor when configured.",
+        "Outside AI critique wanted: consulting an external advisor when configured.",
         (
             "ask",
             "$ask",
@@ -6939,10 +7475,17 @@ _DEFINITIONS = [
             "The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.",
             "The user wants typed yes/no, pick-one, or scored probabilities from Jev over supplied text; use `jev-ask`.",
         ),
+        situations=(
+            "what would gemini say about this",
+            "get another model to critique this",
+            "outside review of my plan",
+            "consult a different ai",
+            "cross-check this with claude",
+        ),
     ),
     SkillDefinition(
         "cancel",
-        "Hermes adaptation for ending active workflow state cleanly.",
+        "Aborting an active workflow: ending active workflow state cleanly.",
         ("cancel", "$cancel", "stop the workflow", "abort the run", "cancel the loop"),
         "Use to cleanly end active adapted workflow state.",
         category="operator",
@@ -6953,10 +7496,17 @@ _DEFINITIONS = [
         required_inputs=("active workflow state", "cancellation intent"),
         expected_outputs=("cleared state", "safe stop summary"),
         artifact_expectations=("state clear record when state exists",),
+        situations=(
+            "stop what you are doing",
+            "abort this loop",
+            "end the current run",
+            "kill the workflow",
+            "cancel everything in progress",
+        ),
     ),
     SkillDefinition(
         "skill",
-        "Hermes adaptation for managing local skills.",
+        "Installing, removing, or editing skills: managing local skills.",
         ("skill", "$skill", "skills", "manage skills"),
         "Use for local skill listing, search, add, remove, or edit tasks.",
         category="operator",
@@ -6967,10 +7517,17 @@ _DEFINITIONS = [
         required_inputs=("skill action", "target skill name or directory"),
         expected_outputs=("skill inventory or mutation result", "verification note"),
         artifact_expectations=("manifest update when managed skills change",),
+        situations=(
+            "which skills are installed",
+            "remove a skill",
+            "install a new skill",
+            "edit a skill file",
+            "search my skills",
+        ),
     ),
     SkillDefinition(
         "doctor",
-        "Hermes adaptation for diagnosing oh-my-hermes installation health.",
+        "OMH install misbehaving: diagnosing oh-my-hermes installation health.",
         ("doctor", "$doctor", "diagnose omh", "installation health"),
         "Use to diagnose OMH installation and Hermes config registration.",
         category="operator",
@@ -7008,10 +7565,17 @@ _DEFINITIONS = [
             "If plugin register smoke fails, reinstall the plugin bundle with setup --with-plugin --force before claiming plugin readiness.",
             "If omh is missing from PATH, use the installer-reported absolute command path and then re-run doctor.",
         ),
+        situations=(
+            "omh is not working",
+            "skills are not showing up",
+            "check my omh install",
+            "setup looks wrong after an update",
+            "hermes does not see omh",
+        ),
     ),
     SkillDefinition(
         "capability-toggle",
-        "Hermes adaptation for turning one OMH capability family on or off so an install can be tailored instead of taken whole.",
+        "Tailoring enabled OMH families: turning one OMH capability family on or off so an install can be tailored instead of taken whole.",
         (
             "capability-toggle",
             "capability policy",
@@ -7069,10 +7633,17 @@ _DEFINITIONS = [
             "If a disable would remove a core skill, refuse that part and report it; core skills are the floor doctor checks for.",
             "If files were kept with --keep-files, say the policy changed but the files remain so the state is not misread as a full removal.",
         ),
+        situations=(
+            "I don't want omh memory features",
+            "turn off coding orchestration",
+            "use only some omh features",
+            "switch the research features back on",
+            "trim what omh offers",
+        ),
     ),
     SkillDefinition(
         "running-work-board",
-        "Hermes adaptation for showing which coding units are running right now, on which runtime and model, with observed tokens and elapsed time.",
+        "Live view of running coding units: showing which coding units are running right now, on which runtime and model, with observed tokens and elapsed time.",
         (
             "running-work-board",
             # No short English phrase lives here. The scorer credits shared
@@ -7136,10 +7707,17 @@ _DEFINITIONS = [
             "If a marker is stale because a process died, report it as observed-start-without-end instead of claiming the unit is running.",
             "If tokens are unknown for a runtime with no structured output, say the runtime does not report them.",
         ),
+        situations=(
+            "what is running now",
+            "which model is working on this",
+            "how long has the task been running",
+            "elapsed time per running unit",
+            "show active coding units",
+        ),
     ),
     SkillDefinition(
         "todo-checklist",
-        "Continue or finish the accepted work from conversation context, preserve rejected ideas, and report evidence-bounded completion. Also declare and advance the metadata-only plan checklist without starting a delivery engine.",
+        "Resume or finish the work we agreed on: continue or finish the accepted work from conversation context, preserve rejected ideas, and report evidence-bounded completion. Also declare and advance the metadata-only plan checklist without starting a delivery engine.",
         (
             "todo-checklist",
             # The bare `todo` token is held in `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`
@@ -7227,10 +7805,18 @@ _DEFINITIONS = [
             "If the panel shows nothing, read the current projection with `action=show` before re-declaring, so an existing checklist is not overwritten.",
             "If the user redirects the session away from the plan, record that on the write rather than deleting the checklist or marking its items done.",
         ),
+        situations=(
+            "keep going with the plan",
+            "pick up where we left off",
+            "finish the rest of the tasks",
+            "show me the checklist",
+            "track progress on this migration",
+            "mark the next step done",
+        ),
     ),
     SkillDefinition(
         "model-setup",
-        "Hermes Model Setup workflow: diagnose role-slot model configuration, guide provider connection, and apply changes only after diff approval.",
+        "Model and provider configuration changes: diagnose role-slot model configuration, guide provider connection, and apply changes only after diff approval.",
         (
             "model-setup",
             "hermes model setup",
@@ -7339,10 +7925,17 @@ _DEFINITIONS = [
             "If an OAuth provider (OpenAI Codex/ChatGPT, Anthropic, Qwen OAuth) needs login or an account switch, know that the TUI `/model` picker only handles inline API-key entry and is a no-op for OAuth: guide the user to `/setup` inside the TUI (it suspends the TUI and runs the interactive wizard, including provider login) or to `hermes model` in another terminal (interactive provider selection with browser OAuth), then `/model --refresh` back in the TUI.",
             "If a provider hit its quota or rate limit, guide Hermes pooled credentials instead of abandoning the provider: `hermes auth add` registers an additional account for the same provider, `hermes auth status` shows which credential is exhausted, and `hermes auth reset` clears recorded exhaustion after limits recover; delegation lanes can also route around the exhausted ecosystem via the category chains' cross-provider tails.",
         ),
+        situations=(
+            "connect my openai key",
+            "change the default model",
+            "log in with a different provider account",
+            "rate limit on my provider",
+            "cheaper model for quick tasks",
+        ),
     ),
     SkillDefinition(
         "parallel-tools",
-        "Hermes Parallel Tools workflow: check version currency and parallel-tool capability status, then apply an update only after diff approval.",
+        "Parallel tool-call capability in doubt: check version currency and parallel-tool capability status, then apply an update only after diff approval.",
         (
             "parallel-tools",
             "parallel tools",
@@ -7407,10 +8000,17 @@ _DEFINITIONS = [
             "If the installed version cannot be read, report the read failure and stop before recommending an update.",
             "If the update command is unavailable for the user's install path, name the blocker instead of guessing a fix.",
         ),
+        situations=(
+            "is my hermes version current",
+            "can hermes call tools in parallel",
+            "update hermes for faster tool use",
+            "parallel tool support status",
+            "hermes version check",
+        ),
     ),
     SkillDefinition(
         "websearch-setup",
-        "Hermes Web Search Setup workflow: diagnose scraper and auxiliary extract-model configuration, guide account setup, and apply each change as its own diff approval.",
+        "Expensive or unconfigured web search: diagnose scraper and auxiliary extract-model configuration, guide account setup, and apply each change as its own diff approval.",
         (
             "websearch-setup",
             "web search setup",
@@ -7476,10 +8076,17 @@ _DEFINITIONS = [
             "If the scraper provider prerequisite is unmet, mark that step \"not applicable\" and continue with the auxiliary model routing step alone.",
             "If either diff is rejected, keep the other step's state independent and do not roll both back together.",
         ),
+        situations=(
+            "web search costs too much",
+            "add a scraper api key",
+            "cheaper model for page extraction",
+            "configure the search provider",
+            "search setup for hermes",
+        ),
     ),
     SkillDefinition(
         "morning-brief",
-        "Morning brief SETUP (one-time) - connects mail and calendar MCP with read-and-draft-only scope and diff approval; produces the configuration, not the daily brief itself.",
+        "Mail and calendar brief configuration: morning brief SETUP (one-time) - connects mail and calendar MCP with read-and-draft-only scope and diff approval; produces the configuration, not the daily brief itself.",
         (
             "morning-brief",
             "morning brief",
@@ -7543,6 +8150,13 @@ _DEFINITIONS = [
         recovery_notes=(
             "If the mail or calendar prerequisite is unmet, mark that surface \"not applicable\" and offer the brief scoped to whichever surface is connected.",
             "If authentication fails, guide reauthorization or reissuance through secure entry or user-side setup; do not request the failed credential in chat or silently retry it.",
+        ),
+        situations=(
+            "connect gmail and calendar",
+            "daily summary of my inbox",
+            "configure a morning digest",
+            "read-only email access",
+            "calendar integration setup",
         ),
     ),
 ]
@@ -7612,8 +8226,7 @@ _DEFINITIONS.append(
     SkillDefinition(
         "buzz",
         (
-            "Connect and operate Hermes as a native Buzz community agent, deliver local media with verified relay "
-            "receipts, or diagnose a self-hosted Buzz relay without inventing transport evidence."
+            "Buzz community agent setup or relay trouble: connect and operate Hermes as a native Buzz community agent, deliver local media with verified relay receipts, or diagnose a self-hosted Buzz relay without inventing transport evidence."
         ),
         (
             "connect Hermes to Buzz",
@@ -7694,6 +8307,13 @@ _DEFINITIONS.append(
             "If self-host readiness is green but media fails, inspect MinIO and disk separately from relay readiness.",
         ),
         aliases=("omh-buzz",),
+        situations=(
+            "join my buzz community",
+            "post an image to buzz",
+            "buzz relay is not connecting",
+            "self-host a buzz relay",
+            "configure the buzz gateway",
+        ),
     )
 )
 
@@ -7701,7 +8321,7 @@ _DEFINITIONS.append(
 _DEFINITIONS.append(
     SkillDefinition(
         "github-issue-intake",
-        "GitHub issue intake workflow: turn a public chat report into a confirmed, verified issue package.",
+        "Chat report that should become a GitHub issue: turn a public chat report into a confirmed, verified issue package.",
         (
             "github-issue-intake",
             "github issue intake",
@@ -7794,6 +8414,13 @@ _DEFINITIONS.append(
             expected="Report that creation, labeling, and any GitHub mutation stay unobserved until an authorized connector returns read-back evidence.",
             why="A prepared package is not issue creation, label application, or any GitHub mutation evidence.",
         ),
+        situations=(
+            "turn this bug report into an issue",
+            "log this on github",
+            "someone reported a bug in discord",
+            "check for duplicate issues first",
+            "write up an issue for the maintainers",
+        ),
     )
 )
 
@@ -7801,7 +8428,7 @@ _DEFINITIONS.append(
 _DEFINITIONS.append(
     SkillDefinition(
         "long-document-reading",
-        "Long document reading workflow: read a very large PDF, contract, manual, or report through Hermes in page-anchored ranges with a coverage ledger.",
+        "Huge PDF or document to read in full: read a very large PDF, contract, manual, or report through Hermes in page-anchored ranges with a coverage ledger.",
         (
             "long-document-reading",
             "long document reading",
@@ -7922,6 +8549,13 @@ _DEFINITIONS.append(
             "If the document is encrypted, ask for the password or stop; `pdf_read.py` and `pdf_split.py` accept `--password`.",
             "If most pages are scanned and the goal needs them all, stop and get approval for the per-page OCR job before spending one vision call per page.",
         ),
+        situations=(
+            "300 page pdf to summarize",
+            "read the entire manual",
+            "annual report too long for one read",
+            "list every obligation in this contract",
+            "document too big to paste",
+        ),
     )
 )
 
@@ -7929,7 +8563,7 @@ _DEFINITIONS.append(
 _DEFINITIONS.append(
     SkillDefinition(
         "application-threat-model",
-        "Application threat model workflow: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds.",
+        "Attack paths into an operated system: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds.",
         (
             "application-threat-model",
             "application threat model",
@@ -8060,6 +8694,14 @@ _DEFINITIONS.append(
             "If the user asks for exploit code, give the precondition and the detection signal instead, then hand remediation to an executor.",
             "If the request turns out to be about the agent's own prompts, tools, or credentials, stop and hand it to `security-safety-review`.",
         ),
+        situations=(
+            "attack surface of our payment api",
+            "attack paths into this service",
+            "security architecture of our system",
+            "STRIDE for our system",
+            "where does trust change hands",
+            "what could a hacker do to us",
+        ),
     )
 )
 
@@ -8067,7 +8709,7 @@ _DEFINITIONS.append(
 _DEFINITIONS.append(
     SkillDefinition(
         "live-incident-response",
-        "Live incident response workflow: command an incident that is still open -- severity as declared live state, commander and roles, an append-only timeline, a recorded temporary mitigation, verified recovery, and the customer notice.",
+        "Production is down or an incident is open: command an incident that is still open -- severity as declared live state, commander and roles, an append-only timeline, a recorded temporary mitigation, verified recovery, and the customer notice.",
         (
             "live-incident-response",
             "live incident response",
@@ -8206,6 +8848,13 @@ _DEFINITIONS.append(
             "If the recovery signal is not stated, ask which signal and which value counts as healthy before calling anything recovered.",
             "If the incident turns out to be closed, hand the postmortem to `reliability-review` and leave this record as the timeline it reads.",
             "If a connector call fails or returns nothing, keep the send prepared and name the channel that is unconfirmed instead of assuming delivery.",
+        ),
+        situations=(
+            "customers cannot use the app right now",
+            "need someone to run the incident",
+            "sev1 in progress",
+            "status page update during the outage",
+            "mitigate the outage now",
         ),
     )
 )

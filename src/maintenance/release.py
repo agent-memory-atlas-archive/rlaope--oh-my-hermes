@@ -426,7 +426,17 @@ PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6260
 # 422908 -> 438876: the six default-installed `jev-*` skills add their
 # capability rows. Re-derived from the producer after rebasing past the
 # observed_check_results declaration (#1788).
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 438876
+# 438876 -> 441446: every skill description now opens on the user's situation
+# ("Remember a fact for future sessions: ...") before what the skill produces,
+# so the visible index window says when to load it. The capability rows carry
+# the description, and the situation lead adds about 20 chars per row. The
+# index budgets above do not move: Hermes cuts each line to 60 chars either
+# way. Re-derived from the producer.
+# 441446 -> 441476: review follow-up rewords eight situation openings to
+# drop words the negative-control corpus uses (margins back to main's) and
+# to say what the user wants; net +30 across those rows. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 441476
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
