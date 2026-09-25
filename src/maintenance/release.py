@@ -169,7 +169,20 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 59258
 # replays each turn's injection from `api_content` on every later turn, so this
 # accumulates in history. `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT` above still
 # bounds the primer alone.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 6260
+# 6260 -> 5214: the awareness primer (1044 chars plus its "\n\n" join) leaves
+# the fenced context for the `omh.awareness` system prompt section, which
+# every admitted host (Hermes >= 0.20.2) freezes into a new session's system
+# prompt. The scenarios now measure that host; the primer's own limit above
+# bounds the section, far under the host's 4,000-char per-section cap.
+# Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5214
+# The same scenario set on the fallback: a session the awareness section did
+# not render for (a restart resume, a legacy id-rotating compaction, a refused
+# section, an older host) still gets the primer in the fenced context, so its
+# largest turn is `all_surfaces_without_section`. Landed at the value the
+# producer measured (6260, the pre-section ceiling), so the fallback cannot
+# grow unseen behind the lower section-host limit above.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 6260
 # 340000 -> 349637: three capability-skill sections were added by the domain
 # skill pack (`backend`, `rust`, `native-debugging`), on top of the
 # `llm-app-dev` section that landed on main under the old ceiling. Each section
@@ -1483,7 +1496,8 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # until someone did; and the number cannot see a per-turn regression, because
 # a body is paid per load, not per request. The per-request budgets above
 # (`SKILL_INDEX_CHAR_LIMIT`, `SKILL_INDEX_LINE_CHAR_LIMIT`,
-# `PLUGIN_TOOL_SCHEMA_CHAR_LIMIT`, `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT`) stay
+# `PLUGIN_TOOL_SCHEMA_CHAR_LIMIT`, `PRE_LLM_CALL_CONTEXT_CHAR_LIMIT`, and
+# since the awareness section `PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT`) stay
 # zero-slack ratchets and are what catch per-turn growth; they held through a
 # real skill addition (#1844, six `jev-*` skills) before this change. What a
 # single load costs stays bounded per skill by

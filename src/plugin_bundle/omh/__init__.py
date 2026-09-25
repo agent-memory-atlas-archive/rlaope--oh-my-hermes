@@ -41,7 +41,7 @@ def _host_supports_hook(hook_name: str, *, require_declared: bool = False) -> bo
     return hook_name in valid_hooks
 
 
-def _register_optional_surface(ctx: object, method_name: str, *args: object) -> None:
+def _register_optional_surface(ctx: object, method_name: str, *args: object, **kwargs: object) -> None:
     """Call a host registration method when this host offers one.
 
     OMH must not assume a Hermes context shape: assuming one is what silently
@@ -52,7 +52,7 @@ def _register_optional_surface(ctx: object, method_name: str, *args: object) -> 
     if not callable(method):
         return
     try:
-        _ = method(*args)
+        _ = method(*args, **kwargs)
     except (TypeError, ValueError):
         return
 
@@ -126,7 +126,12 @@ def register(ctx: _PluginContext) -> None:
         from .egress_attempts import register as register_egress_attempts
         register_egress_attempts(ctx, egress_config)
 
-    from .hooks.llm_hooks import pre_llm_call
+    from .hooks.llm_hooks import (
+        AWARENESS_SECTION_ID,
+        AWARENESS_SECTION_MAX_CHARS,
+        awareness_system_prompt_section,
+        pre_llm_call,
+    )
     from .hooks.result_transforms import transform_tool_result
     from .hooks.session_hooks import on_session_end, on_session_start, subagent_start
     from .hooks.tool_hooks import post_tool_call, pre_tool_call
@@ -301,6 +306,17 @@ def register(ctx: _PluginContext) -> None:
     )
     _ = ctx.register_hook("on_session_end", on_session_end)
     _ = ctx.register_hook("pre_llm_call", pre_llm_call)
+    # The session-stable primer moves into the system prompt where the host
+    # offers a section for it; `pre_llm_call` keeps delivering it for any
+    # session the section did not render for (`llm_hooks`).
+    _register_optional_surface(
+        ctx,
+        "register_system_prompt_section",
+        AWARENESS_SECTION_ID,
+        awareness_system_prompt_section,
+        position="after_memory",
+        max_chars=AWARENESS_SECTION_MAX_CHARS,
+    )
     _ = ctx.register_hook("pre_tool_call", pre_tool_call)
     _register_optional_hook(ctx, "on_session_start", on_session_start)
     _register_optional_hook(ctx, "post_tool_call", post_tool_call)

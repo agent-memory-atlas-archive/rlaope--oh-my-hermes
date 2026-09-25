@@ -3,6 +3,7 @@ from __future__ import annotations
 from .. import runtime_paths
 
 from collections import Counter
+from collections.abc import Mapping
 import errno
 from datetime import datetime, timezone
 import hashlib
@@ -200,6 +201,129 @@ def _record_delivery(
         return
 
 
+# The primer is the one part of this hook's output that never depends on the
+# turn, so on a host that offers `register_system_prompt_section` (Hermes
+# 0.20.2, tag v2026.8.16) it lives in the system prompt instead: rendered once
+# per new session, frozen there, and rendered again at a compaction boundary.
+# In the user message it went out on the first turn and again after any
+# compaction that dropped it, and it sat behind the fence's "NOT the person's
+# words" note rather than where the host puts standing guidance.
+#
+# The host renders the callable, then may still skip the text: over
+# `max_chars`, empty, or past the 8,000-char budget shared by every plugin's
+# sections. The first two are checked here before the session is recorded.
+# The shared budget cannot be seen from here, and the host spends it in
+# sorted-id order (`render_system_prompt_sections`), so a plugin whose section
+# id sorts before `omh.awareness` is charged first. A session that loses it
+# gets no primer; the host logs a warning when that happens.
+#
+# Every prompt the host builds renders the callable, not only a live
+# session's: `hermes prompt-size` builds an inspection agent, and a routed
+# background-review fork builds its own prompt. Both now carry the primer.
+# A render alone is not counted as a delivery: the first `pre_llm_call` that
+# leaves the primer to a trusted session's section is
+# (`_claim_section_delivery`), and the prompt-size build runs none.
+#
+# A session without a trusted record keeps the per-turn primer, and can then
+# carry it twice, once in each place. It never carries it zero times, with
+# two stated exceptions: a section the host drops past the shared budget
+# above, and a fork of a parent with no history (see the trust rule below).
+# The cases:
+# - an older host, or a section the host refused;
+# - a resume after a restart, where the host restores the section from the
+#   persisted prompt without calling this;
+# - a legacy compaction that rotates the session id: the host rebuilds the
+#   prompt (`_rebuild_system_prompt_at_boundary`) before it assigns the new id
+#   (`agent.session_id = new_session_id` in `conversation_compression.py`), so
+#   the render records the old id and the next turn runs under the new one;
+# - a session whose record was never confirmed by its own first turn (below);
+# - an id evicted past `_AWARENESS_SECTION_SESSION_CAP`.
+AWARENESS_SECTION_ID = "omh.awareness"
+# The host's per-section ceiling (`MAX_SYSTEM_PROMPT_SECTION_CHARS`). The
+# primer's own budget is `AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT`, far below it.
+AWARENESS_SECTION_MAX_CHARS = 4000
+# A render alone does not prove the session's own prompt carries the
+# section. A routed background-review fork builds its own prompt under the
+# PARENT's id (`review_agent.session_id = agent.session_id`,
+# `agent/background_review.py`), so a parent resumed after a restart --
+# restored without the section -- would be recorded by its first review and
+# lose the per-turn primer. A record is therefore trusted only when the
+# session's own first turn follows it: Hermes builds that turn's prompt
+# (`restore_or_build_system_prompt`, `agent/turn_context.py`) before it runs
+# `pre_llm_call` with `is_first_turn` true, which it sets from an empty
+# history (same file). A fork runs with the parent's history, so its turn is
+# never a first turn. A compaction that keeps the id re-renders a session
+# already trusted. The residual gap: a fork of a parent with no history at
+# all would pass as a first turn.
+#
+# Each recorded id maps to its state, least recently used first. Bounded
+# rather than cleared at a lifecycle hook: Hermes fires `on_session_end` at
+# every turn's end, so clearing there would put the primer back into the
+# next turn. An evicted id falls back to the per-turn primer, the safe
+# direction.
+_SECTION_RECORDED = "recorded"
+_SECTION_TRUSTED = "trusted"
+_SECTION_COUNTED = "counted"
+_AWARENESS_SECTION_SESSION_CAP = 1024
+_awareness_section_lock = threading.Lock()
+_awareness_section_sessions: dict[str, str] = {}
+
+
+def _touch_section_session(session_id: str, state: str) -> None:
+    """Set a recorded session's state and mark it most recently used. Lock held."""
+    _awareness_section_sessions.pop(session_id, None)
+    _awareness_section_sessions[session_id] = state
+    while len(_awareness_section_sessions) > _AWARENESS_SECTION_SESSION_CAP:
+        del _awareness_section_sessions[next(iter(_awareness_section_sessions))]
+
+
+def awareness_system_prompt_section(session_info: object) -> str:
+    """The primer, for Hermes to freeze into a new session's system prompt.
+
+    The text is the same for every session. `session_info` is read only for
+    the session id, to record that a prompt built under it carries the primer.
+    """
+    primer = awareness_primer_context()
+    session_id = str(session_info.get("session_id") or "") if isinstance(session_info, Mapping) else ""
+    if session_id and 0 < len(primer.strip()) <= AWARENESS_SECTION_MAX_CHARS:
+        with _awareness_section_lock:
+            state = _awareness_section_sessions.get(session_id, _SECTION_RECORDED)
+            _touch_section_session(session_id, state)
+    return primer
+
+
+def _awareness_section_carries_primer(session_id: str, *, is_first_turn: bool) -> bool:
+    """Whether this session's own prompt carries the section.
+
+    The session's first turn promotes a record made before it; nothing else does.
+    """
+    with _awareness_section_lock:
+        state = _awareness_section_sessions.get(session_id) if session_id else None
+        if state is None:
+            return False
+        if state == _SECTION_RECORDED:
+            if not is_first_turn:
+                return False
+            state = _SECTION_TRUSTED
+        _touch_section_session(session_id, state)
+        return True
+
+
+def _claim_section_delivery(session_id: str) -> bool:
+    """True once per trusted session: the turn that counts its section delivery."""
+    with _awareness_section_lock:
+        if _awareness_section_sessions.get(session_id) != _SECTION_TRUSTED:
+            return False
+        _awareness_section_sessions[session_id] = _SECTION_COUNTED
+        return True
+
+
+def _reset_awareness_section_state() -> None:
+    """Test seam: forget which sessions rendered the awareness section."""
+    with _awareness_section_lock:
+        _awareness_section_sessions.clear()
+
+
 def _primer_already_in_api_history(conversation_history: object, primer: str) -> bool:
     """Whether Hermes already persisted this primer in an API-content sidecar.
 
@@ -392,6 +516,7 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     route_hint_context = ""
     route_hint_payload: dict[str, object] | None = None
     route_fingerprint = ""
+    section_primer_skipped = False
     session_id = str(kwargs.get("session_id", "") or "")
     # Read once per turn and handed to every surface that branches on it, so
     # the plan line, the claim-finding suppression and the router cannot
@@ -504,7 +629,13 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     )
     if should_include_awareness:
         primer = awareness_primer_context()
-        if not _primer_already_in_api_history(kwargs.get("conversation_history"), primer):
+        if _awareness_section_carries_primer(session_id, is_first_turn=is_first_turn):
+            # The primer is in this session's system prompt. The first turn
+            # that relies on it is the section's delivery for `omh doctor`,
+            # claimed below at the ledger write whether or not anything else
+            # is injected.
+            section_primer_skipped = True
+        elif not _primer_already_in_api_history(kwargs.get("conversation_history"), primer):
             context_parts.append(primer)
         payload["omh_context_brief"] = build_context_brief(
             request_message,
@@ -685,6 +816,15 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         and not status.get("active_executors")
         and not show_running_work
     ):
+        if section_primer_skipped and _claim_section_delivery(session_id):
+            # Nothing rode this turn's message: zero chars injected.
+            _record_delivery(
+                delivered=True,
+                route_hint=False,
+                context_chars=0,
+                omh_home=omh_home,
+                session_id=session_id,
+            )
         return None
 
     if status.get("active_executors"):
@@ -746,6 +886,10 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
             "that failure only: not execution, review, CI, merge-readiness, or merge evidence."
         )
     payload["context"] = fence_omh_context(context_parts)
+    if section_primer_skipped:
+        # This delivery is the section's too; claimed so a later empty turn
+        # does not count it again.
+        _claim_section_delivery(session_id)
     _record_delivery(
         delivered=True,
         route_hint=bool(route_hint_context),
