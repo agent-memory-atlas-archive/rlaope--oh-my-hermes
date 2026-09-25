@@ -110,9 +110,7 @@ class WeakEvidenceRouteTests(unittest.TestCase):
     def test_a_review_verb_without_a_change_set_asks(self) -> None:
         # `review` alone is a token twenty skills list; with no PR, diff, or
         # change as its object it is not the review shape.
-        route = self._assert_weak_clarify("review the onboarding flow for rough edges")
-        # The declined winner leads the shortlist.
-        self.assertEqual(route["candidate_handoff"]["candidates"][0]["skill"], route["candidate_skill"])
+        self._assert_weak_clarify("review the onboarding flow for rough edges")
 
     def test_the_declined_winner_leads_even_where_the_ranking_would_not(self) -> None:
         from omh.routing.lexical_shortlist import lexical_ranking

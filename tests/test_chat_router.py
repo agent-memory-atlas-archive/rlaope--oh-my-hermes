@@ -3098,36 +3098,36 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(route_owner_harness(citation_check, allow_clarify=True), "research")
 
         paper_explanation = route_chat_message("explain this paper at expert level", source="discord")
-        self.assertEqual(route_owner(paper_explanation, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "paper-learning")
-        self.assertEqual(route_owner_harness(paper_explanation, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "paper-learning")
+        self.assertEqual(route_owner(paper_explanation), "paper-learning")
+        self.assertEqual(route_owner_harness(paper_explanation), "paper-learning")
 
         negated_source_finder = route_chat_message("source-finder 말고 이 논문 쉽게 설명해줘", source="discord")
-        self.assertEqual(route_owner(negated_source_finder, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "paper-learning")
-        self.assertEqual(route_owner_harness(negated_source_finder, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "paper-learning")
+        self.assertEqual(route_owner(negated_source_finder), "paper-learning")
+        self.assertEqual(route_owner_harness(negated_source_finder), "paper-learning")
 
         attached_paper = route_chat_message("첨부한 논문을 초보자 수준으로 풀어줘", source="discord")
-        self.assertEqual(route_owner(attached_paper, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "paper-learning")
-        self.assertEqual(route_owner_harness(attached_paper, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "paper-learning")
+        self.assertEqual(route_owner(attached_paper), "paper-learning")
+        self.assertEqual(route_owner_harness(attached_paper), "paper-learning")
 
         recurring = route_chat_message("weekly paper review", source="discord")
-        self.assertEqual(route_owner(recurring, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "research-department")
-        self.assertEqual(route_owner_harness(recurring, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "research-department")
+        self.assertEqual(route_owner(recurring), "research-department")
+        self.assertEqual(route_owner_harness(recurring), "research-department")
 
         file_export = route_chat_message("turn this PDF into a PPT package", source="discord")
-        self.assertEqual(route_owner(file_export, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "materials-package")
-        self.assertEqual(route_owner_harness(file_export, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "materials-package")
+        self.assertEqual(route_owner(file_export), "materials-package")
+        self.assertEqual(route_owner_harness(file_export), "materials-package")
 
         image_card = route_chat_message("make an image summary card from this research", source="discord")
-        self.assertEqual(route_owner(image_card, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "img-summary")
-        self.assertEqual(route_owner_harness(image_card, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "img-summary")
+        self.assertEqual(route_owner(image_card), "img-summary")
+        self.assertEqual(route_owner_harness(image_card), "img-summary")
 
         official_docs = route_chat_message("find official docs for the current OpenAI API version", source="discord")
-        self.assertEqual(route_owner(official_docs, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "web-research")
-        self.assertEqual(route_owner_harness(official_docs, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "research")
+        self.assertEqual(route_owner(official_docs), "web-research")
+        self.assertEqual(route_owner_harness(official_docs), "research")
 
         best_practice = route_chat_message("find best practice docs for Python packaging", source="discord")
-        self.assertEqual(route_owner(best_practice, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "web-research")
-        self.assertEqual(route_owner_harness(best_practice, allow_clarify=message in _REPINNED_SOURCE_FINDER_ROUTES_TYPED_ACQUISITION_WITHOUT_STEALING_RELA), "research")
+        self.assertEqual(route_owner(best_practice), "web-research")
+        self.assertEqual(route_owner_harness(best_practice), "research")
 
     def test_explicit_workflow_learning_feedback_wins_over_domain_terms(self) -> None:
         cases = (

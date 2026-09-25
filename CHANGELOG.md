@@ -8,9 +8,11 @@ All notable changes will be documented here.
   otherwise hands Hermes the shortlist.** A confident score dispatches only
   on an explicit or named invocation, the winner's own trigger phrase (unless
   another skill said an equal phrase), or a trusted intent guard.
-  Canonical requests without a phrase of their own ("the CI build is failing
-  on main", "review PR 1234", "deploy the app to production") ask, with the
-  intended skill first on the shortlist, for Hermes or the user to confirm. Every guard is classified in
+  The pinned canonical requests without a phrase of their own ("the CI build
+  is failing on main", "review PR 1234", "deploy the app to production") ask,
+  with the intended skill first on the shortlist, for Hermes or the user to
+  confirm; paraphrases of them ("restyle the settings screen", "look over this
+  merge request") are not guaranteed the same order. Every guard is classified in
   `GUARD_DISPATCH_TRUST`, trusted only where its predicate is intent-shaped
   and its measured record supports it; guard fast paths answer to the same
   table. Everything else -- trigger tokens, a one-word name, a context-only
