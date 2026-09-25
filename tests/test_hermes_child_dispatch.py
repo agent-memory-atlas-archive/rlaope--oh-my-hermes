@@ -73,7 +73,6 @@ args = sys.argv[1:]
 (root / "home-modes.json").write_text(json.dumps({
     name: oct(os.stat(os.environ[name]).st_mode & 0o777) for name in ("HOME", "HERMES_HOME")
 }), encoding="utf-8")
-Path(os.environ["HERMES_HOME"]).joinpath("state.db").write_text("ephemeral", encoding="utf-8")
 # Mirrors the installed Hermes CLI (0.21.x): `-z/--oneshot PROMPT` takes the
 # prompt from argv and never reads stdin, so a "-" there is the literal
 # prompt "-"; only `chat --query-file -` reads stdin (#1824). Hermes writes
@@ -87,11 +86,33 @@ else:
     raise SystemExit("no Hermes query transport in argv")
 (root / "prompt-seen").write_text(prompt, encoding="utf-8")
 (root / "started").touch()
-if "--usage-file" in args:
-    Path(args[args.index("--usage-file") + 1]).write_text(json.dumps({
-        "estimated_cost_usd": 0.125, "total_tokens": 18, "api_calls": 1,
-        "failure": "SECRET_FAILURE_TEXT_MUST_NOT_ESCAPE",
-    }), encoding="utf-8")
+state_db = Path(os.environ["HERMES_HOME"]) / "state.db"
+if "state-db-not-sqlite" in prompt:
+    state_db.write_text("ephemeral", encoding="utf-8")
+elif "no-state-db" not in prompt:
+    # What a finished `chat --query-file - --quiet` turn leaves in the
+    # disposable home: one `sessions` row whose usage columns Hermes summed
+    # per API call (`queue_token_counts`), the only place this transport
+    # records tokens and cost (#1831). Columns OMH does not read carry text
+    # that must not escape; the row is written before the prompt keywords
+    # below, so a failed turn's spend is on file the way Hermes leaves it.
+    import sqlite3
+    with sqlite3.connect(state_db) as db:
+        db.execute(
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT,"
+            " parent_session_id TEXT, started_at REAL NOT NULL, ended_at REAL, end_reason TEXT,"
+            " title TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,"
+            " cache_read_tokens INTEGER DEFAULT 0, cache_write_tokens INTEGER DEFAULT 0,"
+            " reasoning_tokens INTEGER DEFAULT 0, billing_provider TEXT, estimated_cost_usd REAL,"
+            " cost_status TEXT, cost_source TEXT, api_call_count INTEGER DEFAULT 0)"
+        )
+        db.execute(
+            "INSERT INTO sessions VALUES (?, 'oneshot', ?, NULL, 1.0, 2.0, 'cli_close',"
+            " 'SECRET_TITLE_TEXT_MUST_NOT_ESCAPE', 11, 7, 3, 0, 2, ?, 0.125, 'estimated',"
+            " 'official_docs_snapshot', 1)",
+            ("20260925_000000_abc123", args[args.index("--model") + 1], args[args.index("--provider") + 1]),
+        )
+    state_db.chmod(0o600)
 if "spawn-descendant" in prompt:
     child = subprocess.Popen([
         sys.executable, "-c",
@@ -243,7 +264,7 @@ class HermesChildDispatchTests(unittest.TestCase):
         self.assertNotIn("-z", argv)
         self.assertNotIn(prompt, json.dumps(argv))
 
-    def test_real_fake_hermes_uses_secret_free_argv_and_reports_no_usage(self) -> None:
+    def test_real_fake_hermes_uses_secret_free_argv_and_reports_state_db_usage(self) -> None:
         secret = "SECRET_PROMPT_84f3c7"
         observed = []
         result = dispatch_hermes_child(
@@ -280,8 +301,27 @@ class HermesChildDispatchTests(unittest.TestCase):
             (result.status, result.stdout.replace("\r\n", "\n"), result.exit_code),
             ("completed", "fake Hermes provider response\n", 0),
         )
-        # Hermes reports usage for `-z` only; the stdin transport has none.
-        self.assertEqual(result.usage, {})
+        # Hermes writes its usage report for `-z` only; on the stdin
+        # transport the child's spend is read from the `sessions` rows of
+        # its disposable state.db before that home is removed (#1831).
+        self.assertEqual(
+            result.usage,
+            {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "cache_read_tokens": 3,
+                "cache_write_tokens": 0,
+                "reasoning_tokens": 2,
+                "total_tokens": 18,
+                "api_calls": 1,
+                "estimated_cost_usd": 0.125,
+                "model": "fake/model",
+                "provider": "fake-provider",
+                "cost_status": "estimated",
+                "cost_source": "official_docs_snapshot",
+            },
+        )
+        self.assertNotIn("SECRET_TITLE_TEXT", repr(result.usage))
         self.assertEqual([item.status for item in observed], ["prepared", "running", "completed"])
         self.assertTrue(all(secret not in repr(item) for item in observed))
         self.assertEqual(child_env["OMH_ISOLATED_HERMES_ROUTING"], "disabled")
@@ -562,12 +602,29 @@ class HermesChildDispatchTests(unittest.TestCase):
         }
         self.assertEqual(remaining, prior_drainers)
 
-    def test_nonzero_exit_is_failed(self) -> None:
+    def test_nonzero_exit_is_failed_and_usage_is_still_read(self) -> None:
         result = dispatch_hermes_child(
             self.request("fail"), dispatch_policy="ask_before_dispatch", confirmed=True
         )
-        self.assertEqual((result.status, result.exit_code, result.usage), ("failed", 9, {}))
+        self.assertEqual(
+            (result.status, result.exit_code, result.usage["api_calls"], result.usage["total_tokens"]),
+            ("failed", 9, 1, 18),
+        )
         self.assertTrue(result.cleanup_verified)
+
+    def test_usage_stays_empty_when_the_child_left_no_readable_ledger(self) -> None:
+        # Absent, never zero (AGENTS.md, Reporting Our Own Numbers): a home
+        # the child never wrote and a state.db that is not a database both
+        # read as no usage, and the disposable home is removed either way.
+        for prompt in ("no-state-db", "state-db-not-sqlite"):
+            with self.subTest(prompt=prompt):
+                result = dispatch_hermes_child(
+                    self.request(prompt), dispatch_policy="ask_before_dispatch", confirmed=True
+                )
+                self.assertEqual((result.status, result.usage), ("completed", {}))
+                self.assertTrue(result.cleanup_verified)
+                isolated = json.loads((self.root / "isolated-paths.json").read_text(encoding="utf-8"))
+                self.assertFalse(Path(isolated["HERMES_HOME"]).exists())
 
     def test_timeout_sends_sigterm_then_sigkill_and_leaves_no_orphan(self) -> None:
         result = dispatch_hermes_child(

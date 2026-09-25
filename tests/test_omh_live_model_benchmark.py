@@ -404,9 +404,9 @@ class OmhLiveAdapterTests(unittest.TestCase):
                 encoding="utf-8",
             )
             # Mirrors the installed Hermes CLI: only `chat --query-file -`
-            # reads stdin, and no usage report is written on that path
-            # (`--usage-file` is `-z`-only), so the child reports no
-            # tokens or cost (#1824, #1831).
+            # reads stdin (#1824). This fake writes no state.db into its
+            # disposable home, so the child has no usage ledger to read and
+            # reports no tokens or cost (#1831).
             hermes.write_text(
                 "#!/usr/bin/env python3\n"
                 "import sys\n"
@@ -448,7 +448,7 @@ class OmhLiveAdapterTests(unittest.TestCase):
             self.assertEqual(trials[0]["task_digest"], trials[1]["task_digest"])
             self.assertEqual(trials[1]["route"]["model_family"], "qwen")
             self.assertEqual(trials[1]["observation"]["status"], "completed")
-            # Absent, never zero: the chat transport carries no usage report.
+            # Absent, never zero: a home without a usage ledger reads as none.
             self.assertEqual(
                 (trials[1]["observation"]["tools"], trials[1]["observation"]["tokens"], trials[1]["observation"]["cost_usd"]),
                 (None, None, None),

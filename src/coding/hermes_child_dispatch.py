@@ -31,6 +31,7 @@ from .hermes_child_evaluation import (
     HermesChildEvaluationContext,
     seal_evaluation_binding,
 )
+from ._hermes_child_usage import read_hermes_child_usage
 from ._hermes_child_process import (
     BoundedStreamCapture,
     PipeDrainer,
@@ -174,11 +175,20 @@ class HermesChildResult:
     exit_code: int | None
     stdout: str
     stderr: str
-    # Empty on the `chat --query-file -` transport: Hermes writes its usage
-    # report only for `-z/--oneshot`, and that mode cannot read the prompt from
-    # stdin (#1824). The observation still copies this mapping into its
-    # session record (`omh coding hermes-child dispatch`), which is why the
-    # field stays.
+    # The child's spend in the `-z --usage-file` vocabulary (token counts,
+    # `api_calls`, `model`, `provider`, `estimated_cost_usd` with the
+    # `cost_status`/`cost_source` that explain it), summed from the `sessions`
+    # rows of its disposable `HERMES_HOME/state.db` after it exits
+    # (`_hermes_child_usage`). Hermes writes the usage-file report for
+    # `-z/--oneshot` alone and that mode cannot read a prompt from stdin
+    # (#1824), so on this transport the ledger is the only source (#1831).
+    # Empty, never zero, when the child recorded no API call or the file is
+    # missing or unreadable. On `timed_out` or `cancelled` the child was
+    # killed, and deltas still in Hermes' daemon token-writer queue at that
+    # moment are lost, so the mapping is a lower bound of the spend and
+    # carries no marker saying so; the status is the marker. The observation
+    # copies this mapping into its session record
+    # (`omh coding hermes-child dispatch`).
     usage: Mapping[str, object]
     cleanup_verified: bool
     termination_signals: tuple[int, ...]
@@ -441,6 +451,11 @@ def _dispatch_guarded(
         stderr_truncation = _capture_truncation_record(
             stderr_capture, source="hermes child stderr capture"
         )
+        if process is not None:
+            # After the child has exited and its pipes are drained, before
+            # the disposable home goes: the read is bounded, read-only, and
+            # never raises; a home the child never wrote leaves `usage` empty.
+            usage = read_hermes_child_usage(hermes_home)
         try:
             scratch.cleanup()
         except OSError:
@@ -500,7 +515,9 @@ def _argv(request: HermesChildRequest) -> tuple[str, ...]:
     # visible to the child -- prints its first-run guidance on stdout and
     # exits 1, which `-z` did not; the verdict parsers need a literal tag, so
     # that text reads as no verdict. `--usage-file` is a `-z`-only report and
-    # is not passed: this path writes none, so `usage` stays empty. Safe mode
+    # is not passed: this path writes none, so the child's spend is read from
+    # the `sessions` rows of its disposable `HERMES_HOME/state.db` instead
+    # (`_hermes_child_usage`, #1831). Safe mode
     # is the strongest customization boundary in the installed Hermes CLI;
     # explicit ignore flags keep the contract visible and compatible.
     command = (

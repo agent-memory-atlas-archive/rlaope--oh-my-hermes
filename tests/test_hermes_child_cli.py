@@ -35,6 +35,23 @@ elif args[:3] == ["chat", "--query-file", "-"]:
 else:
     raise SystemExit("no Hermes query transport in argv")
 (root / "prompt.txt").write_text(prompt, encoding="utf-8")
+# The `sessions` row a finished quiet turn leaves in the disposable home,
+# the only place the chat transport records tokens and cost (#1831).
+import sqlite3
+with sqlite3.connect(Path(os.environ["HERMES_HOME"]) / "state.db") as db:
+    db.execute(
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT,"
+        " parent_session_id TEXT, started_at REAL NOT NULL, input_tokens INTEGER DEFAULT 0,"
+        " output_tokens INTEGER DEFAULT 0, cache_read_tokens INTEGER DEFAULT 0,"
+        " cache_write_tokens INTEGER DEFAULT 0, reasoning_tokens INTEGER DEFAULT 0,"
+        " billing_provider TEXT, estimated_cost_usd REAL, cost_status TEXT, cost_source TEXT,"
+        " api_call_count INTEGER DEFAULT 0)"
+    )
+    db.execute(
+        "INSERT INTO sessions VALUES ('20260925_000000_abc123', 'oneshot', ?, NULL, 1.0,"
+        " 11, 7, 0, 0, 0, ?, 0.125, 'estimated', 'official_docs_snapshot', 1)",
+        (args[args.index("--model") + 1], args[args.index("--provider") + 1]),
+    )
 if "hang" in prompt:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     while True:
@@ -181,6 +198,14 @@ class HermesChildCliTests(unittest.TestCase):
                 self.assertEqual(status, expected_code, stderr)
                 payload = json.loads(stdout)
                 self.assertEqual(payload["status"], expected_status)
+                if expected_status != "timed_out":
+                    # The child's spend reaches the observation from the
+                    # `sessions` row of its disposable state.db, with the
+                    # provenance that explains the cost (#1831).
+                    self.assertEqual(
+                        (payload["tokens"], payload["cost_usd"], payload["cost_status"], payload["cost_source"]),
+                        (18, 0.125, "estimated", "official_docs_snapshot"),
+                    )
                 argv = json.loads((self.root / "argv.json").read_text(encoding="utf-8"))
                 self.assertNotIn(prompt, json.dumps(argv))
                 self.assertEqual(argv[:3], ["chat", "--query-file", "-"])
