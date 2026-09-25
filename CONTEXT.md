@@ -341,6 +341,32 @@ fall back to guessing which session is reading.
 _Avoid_: writing to it, treating it as a published API, reading a non-`tui`
 lease as a TUI identity
 
+**Hermes child usage ledger**:
+The `sessions` rows of the disposable `HERMES_HOME/state.db` that
+`omh coding hermes-child dispatch` hands its child, read once after the child
+exits and before that home is removed (`src/coding/_hermes_child_usage.py`).
+Hermes writes its `--usage-file` report for `-z/--oneshot` alone, and that mode
+cannot read a prompt from stdin, so on the `chat --query-file -` transport the
+ledger is the only record of the turn's spend: every API call queues
+`input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`,
+`reasoning_tokens`, `api_call_count`, `estimated_cost_usd`, `cost_status`,
+`cost_source`, `model`, and `billing_provider` into the row
+(`agent/turn_usage.py` → `SessionDB.queue_token_counts`), drained at turn
+finalize and again when the quiet CLI exits. The home belongs to that child
+alone, so every row in the file is its spend and the rows are summed (a
+context-compression rotation opens a second row under the first); the result
+is the `-z` report's vocabulary, which the observation builder already reads.
+The columns have been in the table since Hermes 2026-04, before the
+`requires_hermes` floor.
+
+This is a read-only coupling to a Hermes-private file shape, the same class as
+the lease registry above: widening `requires_hermes` includes checking that
+the table and these column names still hold. If the shape moves, the read goes
+quiet and `usage` stays empty — never zero, never estimated.
+_Avoid_: writing to it, reading it before the child has exited, reading any
+`state.db` other than the disposable one the dispatcher created, treating an
+empty result as a measured zero
+
 ### Fault domains
 
 **OMH install fault**:

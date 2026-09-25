@@ -75,9 +75,14 @@ omh coding hermes-child cancel --run-id child-1 --json
 isolated child, and records `routing_observation/v1`. Status, tool count, token
 usage, and cost are shown only when Hermes produced observed telemetry; OMH
 does not estimate missing values. The child runs as `hermes chat --query-file -`,
-the one Hermes transport that reads a prompt from stdin, and Hermes writes its
-usage report for `-z` alone, so token usage and cost are absent for a Hermes
-child today (#1831).
+the one Hermes transport that reads a prompt from stdin. Hermes writes its
+`--usage-file` report for `-z` alone, so on this transport the child's tokens,
+`api_calls`, model, and `estimated_cost_usd` with the `cost_status`/`cost_source`
+that explain it are read after exit from the `sessions` rows of the child's own
+disposable `HERMES_HOME/state.db`, the ledger Hermes fills per API call and the
+`-z` report summarizes; the home is removed right after. A child that recorded
+no API call, or left no readable ledger, reports no usage rather than zeros
+(see Host surfaces OMH reads in `CONTEXT.md`).
 
 The same boundary has a separate, explicit loaded-skill capability probe:
 

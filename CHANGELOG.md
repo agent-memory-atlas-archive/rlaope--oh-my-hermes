@@ -760,7 +760,32 @@ All notable changes will be documented here.
   with the owner's provider; the Fable and Sol routes in the Desktop clip were
   chosen by the category chains and then re-dispatched on the served model,
   which the session narrates on screen.
-
+- **A Hermes child on the chat transport reports its tokens and cost again.**
+  Since #1830 the child spawned by `omh coding hermes-child dispatch` runs as
+  `hermes chat --query-file - --quiet`, and Hermes writes its `--usage-file`
+  report for `-z/--oneshot` alone, so the observation carried `usage: {}` and
+  paired-run cells and `--final-review` lenses showed no tokens or cost. The
+  numbers were never lost: every API call of the turn queues its token deltas,
+  priced cost, `cost_status` and `cost_source` into the child's `sessions` row
+  of `HERMES_HOME/state.db`, drained when the turn finalizes and again when
+  the quiet CLI exits, and the dispatcher hands each child a disposable home of
+  its own. After the child exits and before that home is removed, the
+  dispatcher now reads every `sessions` row there, read-only, and sums them
+  into the `-z` report's vocabulary (`input_tokens`, `output_tokens`,
+  cache and reasoning counts, `total_tokens`, `api_calls`, `model`,
+  `provider`, `estimated_cost_usd`, `cost_status`, `cost_source`), which the
+  observation builder already turns into `tokens`, `cost_usd`, `cost_status`
+  and `cost_source`. `--format stream-json` was measured and not chosen: its
+  terminal record carries tokens but no cost, and every tool result of the
+  turn would land on stdout ahead of it. The prompt still never enters argv,
+  nothing beyond the final response is read from stdout, and `usage` stays
+  empty, never zero, when the ledger records no API call or the file is
+  missing, not a database, or shaped differently; text columns are bounded
+  and screened the way the removed usage-file reader screened them. The
+  coupling is recorded in `CONTEXT.md` (Host surfaces OMH reads) beside the
+  lease registry. The test fakes now leave a real SQLite `sessions` row in
+  the disposable home, so the dispatch suite proves the numbers travel end to
+  end and the CLI observation carries them (#1831).
 
 ## 2.0.5 - 2026-09-22
 
