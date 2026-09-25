@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin admits a Hermes git checkout by the release it resolves, not
+  the install stamp's placeholder.** Released Hermes through 0.21.5 hard-codes
+  `hermes_cli.__version__`; hermes-agent main now serves it from the install
+  stamp only, so a checkout without one -- a source install, and the
+  plugin-catalog CI that clones Hermes to run `hermes plugins validate` --
+  reports `0.0.0`, and OMH refused to register there. The bundle now reads
+  `hermes_cli.version_info.get_version_info().base_version` when the host has
+  it, the value Hermes' own `requires_hermes` gate compares, and falls back to
+  `__version__` on released hosts. An unsupported or unknown release is still
+  refused.
+
 - **The plugin bundle passes `hermes plugins validate`, and a plugin Hermes
   installed is left to Hermes.** The Hermes install scanner read the dict-key
   constant `PRIVATE_TOKEN = "__omh_egress_attempt_token"` as a hardcoded

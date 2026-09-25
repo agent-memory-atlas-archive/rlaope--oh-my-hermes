@@ -81,3 +81,55 @@ else:
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stderr, "")
                 self.assertEqual(json.loads(result.stdout), {"imported": True, "refused": True})
+
+    def run_register_with_stamped_host(self, stamp_version: str, release_version: str) -> subprocess.CompletedProcess[str]:
+        """A host whose `__version__` is the install-stamp value and whose
+        `version_info` resolves the release, like hermes-agent main since the pm store."""
+        with TemporaryDirectory(prefix="omh-stamped-host-") as directory:
+            root = Path(directory)
+            package = root / "hermes_cli"
+            package.mkdir()
+            (package / "__init__.py").write_text(f"__version__ = {stamp_version!r}\n", encoding="utf-8")
+            (package / "version_info.py").write_text(
+                "class _Info:\n"
+                f"    base_version = {release_version!r}\n"
+                "def get_version_info():\n"
+                "    return _Info()\n",
+                encoding="utf-8",
+            )
+            script = """
+import json
+from omh.plugin_bundle.omh import _admit_host
+try:
+    _admit_host()
+except RuntimeError as exc:
+    print(json.dumps({"admitted": False, "reason": str(exc)}))
+else:
+    print(json.dumps({"admitted": True}))
+"""
+            environment = {
+                "PATH": os.defpath,
+                "PYTHONPATH": os.pathsep.join((str(root), str(ROOT / "src"))),
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+            if "SYSTEMROOT" in os.environ:
+                environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+            return subprocess.run(
+                [sys.executable, "-c", script], cwd=ROOT, env=environment,
+                text=True, capture_output=True, timeout=30,
+            )
+
+    def test_admission_reads_the_release_a_stamp_less_checkout_resolves(self) -> None:
+        # The "0.0.0" placeholder is what a git checkout without an install
+        # stamp reports as `__version__`; the release comes from version_info.
+        result = self.run_register_with_stamped_host("0.0.0", "0.21.5")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"admitted": True})
+
+    def test_admission_still_refuses_an_unsupported_release_behind_a_stamp(self) -> None:
+        for stamp, release in (("0.21.5", "0.22.0"), ("0.0.0", "0.21.0"), ("0.0.0", "unknown")):
+            with self.subTest(stamp=stamp, release=release):
+                result = self.run_register_with_stamped_host(stamp, release)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertFalse(payload["admitted"], payload)
