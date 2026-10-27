@@ -123,8 +123,9 @@ DEFINITION = SkillDefinition(
         "layer, named for what it delivers, never a list of its nodes (the panel draws those); advance it as each "
         "layer settles.",
         "For each call `omh_dag` returns, run its route (`omh_delegate_route`, set or fallback as given), then "
-        "`delegate_task` with the tasks unchanged; never more calls than it returned. Then end the turn with "
-        "one status line; never wait or poll.",
+        "`delegate_task` with the tasks unchanged; never more calls than it returned. A call whose route names a "
+        "`backend` (Hermes' model_map or profile_routes) runs no route tool: its tasks already carry what that "
+        "backend takes. Then end the turn with one status line; never wait or poll.",
         "On each completion read the node's handoff file and call `omh_dag action=settle` (accepted, failed, or "
         "blocked; a provider error is failed with provider_error). Dispatch what it returns in the same turn.",
         "When the run reports done, check each node against its SCOPE and the goal criteria: extend the run when "
@@ -200,6 +201,11 @@ def run_loop_reference() -> str:
    goes in a call of its own): run its `route` with `omh_delegate_route` (`set`, or `fallback`), then one
    `delegate_task` with its `tasks` unchanged. The goal ends with `[dag:<run>/<node>]`; that marker is how
    OMH ties the child to its node. A node after a repaired one is told to read the repair's handoff files.
+   When Hermes (0.22.5+) runs a delegation backend other than `default`, the route names that `backend`
+   instead and no route tool runs. Under `model_map` each task carries the user's `option` for its category
+   (a retry takes the category's next option; a category no option matches carries none and runs on the
+   backend's default). Under `profile_routes` OMH picks no profile: the tasks go as they are. Views name the
+   option Hermes reports the child ran on, and a lane keeps its category only when that is the option handed out.
 3. `calls` never exceeds the free background slots (`slots.free`): a call past them would run blocking.
    In a one-shot session, `calls` also never carries more tasks than the remaining one-shot budget;
    nodes past it are listed in `held_for_slots`, and `slots.oneshot` shows the limit, the spent count

@@ -52,7 +52,9 @@ from ..owner_preference_record import (
     OWNER_PREFERENCE_SCHEMA_VERSION,
     explicit_choice,
 )
+from ..delegation_backend_mode import DEFAULT_BACKEND, category_options, read_backend_mode
 from ..delegation_routing import read_delegation_settings
+from ..hermes_delegation import effective_mixture_category_chains, load_model_provider_routes
 from ..host_observation import host_session_id
 from ..host_process import process_alive
 from ..sqlite_readonly import connect_readonly
@@ -656,7 +658,7 @@ def _ready(
             pinned = True
     calls, held = ([], []) if waits else dag_run.calls_for(
         record, derived, free_slots=slots["free"], per_call=slots["cap"], omh_home=omh_home, now=now, skip=coding,
-        task_budget=task_budget)
+        task_budget=task_budget, backend=delegation_backend(omh_home, hermes_home))
     # With the one-shot budget spent, a held node never gets a child: once nothing else is out, it is the parent's.
     spent_out = task_budget is not None and held and task_budget - sum(len(call["tasks"]) for call in calls) <= 0
     mine: list[str] = []
@@ -671,6 +673,9 @@ def _ready(
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, children, now)
     extra: dict[str, Any] = {"calls": calls, "slots": slots}
+    backend_say = _backend_say(calls)
+    if backend_say:
+        say = " ".join(part for part in (say, backend_say) if part)
     if held:
         extra["held_for_slots"] = held
     if mine:
@@ -708,6 +713,39 @@ def _ready(
         instruction = TERMINAL_INTERRUPTED if waits == "interrupted" else TERMINAL_FIRST
         say = " ".join(part for part in (say, instruction.format(backend=record["backend"])) if part)
     return _result(action, record, derived, shown, say=say, extra=extra)
+
+
+def _backend_say(calls: list[dict[str, Any]]) -> str:
+    """What the parent does with calls under a non-default Hermes delegation backend, or ``""``."""
+    routes = [call["route"] for call in calls if "backend" in call["route"]]
+    if not routes:
+        return ""
+    backend = routes[0]["backend"]
+    if backend == "model_map":
+        loose = sorted({route["category"] for route in routes if route.get("status") != "option_selected"})
+        text = ("Hermes routes children with its model_map backend: do not call omh_delegate_route; pass the "
+                "tasks unchanged, each with its `option`.")
+        if loose:
+            text += (f" No option of the user's runs {', '.join(loose)}: those tasks carry none and run on the "
+                     "backend's default.")
+        return text
+    return (f"Hermes routes children with its {backend} backend, which OMH does not route: do not call "
+            "omh_delegate_route, and pass the tasks unchanged.")
+
+
+def delegation_backend(omh_home: Path, hermes_home: Path) -> dict[str, Any] | None:
+    """Hermes' delegation backend for `calls_for`; ``None`` under `default` (routes go through omh_delegate_route).
+
+    Under `model_map` it carries each category's option names in chain
+    order. Read-only: nothing in the user's config is written.
+    """
+    mode = read_backend_mode(hermes_home)
+    if mode["backend"] == DEFAULT_BACKEND:
+        return None
+    routes, _status = load_model_provider_routes(omh_home)
+    chains = effective_mixture_category_chains(omh_home, hermes_home)
+    return {"backend": mode["backend"], "status": mode["status"],
+            "options": category_options(mode, chains, routes)}
 
 
 def _result(action: str, record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]],
