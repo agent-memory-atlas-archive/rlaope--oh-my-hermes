@@ -30,6 +30,8 @@ from omh.tui.terminal import (
     KITTY_KEYBOARD_PUSH,
     MODIFY_OTHER_KEYS_OFF,
     MODIFY_OTHER_KEYS_ON,
+    MOUSE_DRAG_OFF,
+    MOUSE_DRAG_ON,
     MOUSE_REPORTING_OFF,
     MOUSE_REPORTING_ON,
     BACKGROUND_QUERY,
@@ -269,10 +271,14 @@ class CursorReplyTests(unittest.TestCase):
 class MouseReportingSequenceTests(unittest.TestCase):
     def test_clicks_and_the_wheel_in_sgr_form_and_never_motion(self) -> None:
         self.assertEqual(MOUSE_REPORTING_ON, "\x1b[?1000h\x1b[?1006h")
-        self.assertEqual(MOUSE_REPORTING_OFF, "\x1b[?1006l\x1b[?1000l")
+        self.assertEqual(MOUSE_REPORTING_OFF, "\x1b[?1006l\x1b[?1002l\x1b[?1000l")  # a drag's motion goes off too
         for motion_mode in ("?1002", "?1003"):
             with self.subTest(mode=motion_mode):
                 self.assertNotIn(motion_mode, MOUSE_REPORTING_ON)
+
+    def test_a_drag_adds_only_a_held_buttons_motion(self) -> None:
+        self.assertEqual((MOUSE_DRAG_ON, MOUSE_DRAG_OFF), ("\x1b[?1002h", "\x1b[?1002l"))
+        self.assertNotIn("?1003", MOUSE_DRAG_ON + MOUSE_REPORTING_OFF)  # motion with no button held: never
 
     def test_the_restore_sequence_always_switches_mouse_reports_off(self) -> None:
         # Written on every exit, a crash and a signal included, whether or not they were turned on.
@@ -397,6 +403,27 @@ class TerminalPtyTests(unittest.TestCase):
             term.set_mouse(True)
             self.master_output()
         self.assertFalse(term.mouse_reporting)
+        self.assertTrue(self.master_output().endswith(RESTORE_SEQUENCE.encode()))
+
+    def test_a_drag_turns_on_over_the_reports_and_off_without_them(self) -> None:
+        term = Terminal(self.slave, self.slave)
+        with term:
+            self.master_output()
+            term.set_mouse(True, drag=True)
+            self.assertEqual(self.master_output(), (MOUSE_REPORTING_ON + MOUSE_DRAG_ON).encode())
+            self.assertEqual((term.mouse_reporting, term.mouse_drag), (True, True))
+            term.set_mouse(True, drag=True)
+            self.assertEqual(self.master_output(), b"")
+            term.set_mouse(True)  # the agent list again: clicks only
+            self.assertEqual(self.master_output(), MOUSE_DRAG_OFF.encode())
+            term.set_mouse(True, drag=True)
+            self.assertEqual(self.master_output(), MOUSE_DRAG_ON.encode())
+            term.set_mouse(False)
+            self.assertEqual(self.master_output(), MOUSE_REPORTING_OFF.encode())
+            self.assertEqual((term.mouse_reporting, term.mouse_drag), (False, False))
+            term.set_mouse(True, drag=True)
+            self.master_output()
+        self.assertFalse(term.mouse_drag)
         self.assertTrue(self.master_output().endswith(RESTORE_SEQUENCE.encode()))
 
     def test_mouse_reports_are_turned_off_when_the_block_raises_or_a_signal_exits(self) -> None:

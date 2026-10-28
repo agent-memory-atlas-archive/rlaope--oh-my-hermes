@@ -26,7 +26,9 @@ from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.app import BELL, App
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
 from omh.tui.style import Span
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock, block_rows
+from omh.tui.transcript import (
+    NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock, block_rows, rail_cell,
+)
 
 LONG_COMMAND = "\n".join(f"echo line {n}" for n in range(1, 21))
 LONG_APPROVAL = ServerRequest(
@@ -201,7 +203,7 @@ class QuestionOutcomeTests(unittest.TestCase):
     def test_a_question_that_went_unanswered_leaves_its_tool_row_a_red_mark_too(self) -> None:
         # Hermes' clarify result says how the wait ended (`outcome`); only `submitted` was an answer.
         def mark(app) -> tuple[Span, Span]:
-            """The call row's rail and its mark: the first and third spans of `┃ ✗ clarify(…)`."""
+            """The call row's rail and its mark: the first and third spans of `  ✗ clarify(…)` (the rail's painted cell)."""
             (group,) = [block for block in app.transcript.blocks if isinstance(block, ToolGroup)]
             row = block_rows(group, 80, app.theme)[0]
             return row[0], row[2]
@@ -220,14 +222,14 @@ class QuestionOutcomeTests(unittest.TestCase):
                 press(app, Key(ESCAPE))
                 screen = complete(app, outcome)
                 (row,) = [line for line in screen if "clarify" in line and "Which colour?" in line and "·" not in line]
-                self.assertTrue(row.startswith("┃ ✗ clarify("), row)
-                self.assertEqual(mark(app), (Span("┃", app.theme.error), Span("✗", app.theme.error)))
+                self.assertTrue(row.startswith("  ✗ clarify("), row)
+                self.assertEqual(mark(app), (rail_cell(app.theme.error), Span("✗", app.theme.error)))
                 self.assertIn(f"⎿  {words}", "\n".join(screen))
         app, _client = opened(COLOUR)
         press(app, Key(ENTER))
         (row,) = [line for line in complete(app, "submitted") if "clarify" in line and "·" not in line]
-        self.assertTrue(row.startswith("┃ ● clarify("), row)
-        self.assertEqual(mark(app), (Span("┃", app.theme.ok), Span("●", app.theme.ok)))
+        self.assertTrue(row.startswith("  ● clarify("), row)
+        self.assertEqual(mark(app), (rail_cell(app.theme.ok), Span("●", app.theme.ok)))
 
     def test_hermes_notice_says_why_under_the_cross_when_it_gives_one(self) -> None:
         app, _client = make_app(busy=True)

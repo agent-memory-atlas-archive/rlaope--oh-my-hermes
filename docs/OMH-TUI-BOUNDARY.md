@@ -152,7 +152,8 @@ never re-sent.
 ## Look
 
 Its look is the rail and kind colours the owner picked on 2026-10-22: each
-transcript block on a `┃` rail with no fill (grey for the person's prompt, the
+transcript block on a rail with no fill, one cell painted in the rail's colour
+that holds a space so a selection copies no bar (grey for the person's prompt, the
 skin's accent for a reply, a call's state colour for the call), a call's state
 in its mark's glyph and colour as the dag view draws it (running blue `○`, done
 green `●`, failed red `✗`), its name in its tool family's hue at 4.5:1 on dark
@@ -192,9 +193,16 @@ queued prompt that happens to start with `!`. A rewind (Esc Esc on an empty
 composer, `/rewind`) cuts the session's history before the prompt the person
 picked, and only when they send the prompt that replaces it (`prompt.submit`
 with `truncate_before_row_id` and `confirm_truncate`). Mouse reporting is on in
-one state only, the agent list open, and off in every other and on every exit.
-A plain left click on an agent opens its log, one on the list's `main` row
-leaves the list, and every other report does nothing. A report that starts
+two states only, the agent list open and a pager on the alternate screen
+(which has no scrollback to take away; there it also reports a held button's
+motion, mode 1002, never 1003), and off in every other and on every exit. A
+plain left click on an agent opens its log, one on the list's `main` row
+leaves the list, and every other report there does nothing. In a pager the
+wheel scrolls, and a drag, a double click or a triple click copies what it
+selected, rails and a reply's margin left out: as OSC 52 to a terminal that
+honours it as it ships (kitty, Ghostty, WezTerm, Alacritty, outside tmux),
+through `pbcopy` on a Mac with no SSH between it and the screen, and otherwise
+as OSC 52 the footer says was only sent. A report that starts
 while reporting is on, or within 0.5 s after it goes off, types nothing if it
 arrives whole within 0.8 s of its first byte. If 300 ms pass after that byte
 without the next, the byte is read as Esc, and the rest is dropped only if it

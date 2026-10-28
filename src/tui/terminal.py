@@ -21,9 +21,10 @@ and then Ctrl+Enter arrives as Enter. Whether the reports really come is
 as one.
 
 Mouse reporting is off unless `set_mouse(True)` turns it on, and then only
-clicks and the wheel are reported, in SGR form; motion tracking is never
-asked for. Every exit turns it off again (`mouse_reporting` says whether it
-is on).
+clicks and the wheel are reported, in SGR form. `set_mouse(True, drag=True)`
+adds the motion of a held button (the pager's drag to select); motion with no
+button held is never asked for. Every exit turns both off again
+(`mouse_reporting` and `mouse_drag` say whether they are on).
 
 `query_background` asks the terminal for its background colour once, before
 the first frame, so the theme can be measured against the background the
@@ -86,9 +87,12 @@ MODIFY_OTHER_KEYS_ON = f"{CSI}>4;2m"
 MODIFY_OTHER_KEYS_OFF = f"{CSI}>4m"
 # Mouse reports: button presses and releases, the wheel included (xterm mode
 # 1000), sent in SGR form (1006) so any column and row can be reported. Never
-# 1002 or 1003: those report motion too.
+# 1003, which reports motion with no button held too.
 MOUSE_REPORTING_ON = f"{CSI}?1000h{CSI}?1006h"
-MOUSE_REPORTING_OFF = f"{CSI}?1006l{CSI}?1000l"
+# The motion of a held button as well (1002), only on top of the above and only for a drag to select.
+MOUSE_DRAG_ON = f"{CSI}?1002h"
+MOUSE_DRAG_OFF = f"{CSI}?1002l"
+MOUSE_REPORTING_OFF = f"{CSI}?1006l{MOUSE_DRAG_OFF}{CSI}?1000l"
 # Written on exit even after a crash mid-frame: the screen hides the cursor and
 # turns autowrap off while it paints, and a shell must not inherit either. The
 # key and mouse reports are switched off whether or not they were asked for, as
@@ -289,8 +293,9 @@ class Terminal:
         self._keyboard_request = keyboard_protocol_request(environ or {})
         # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
         self.keyboard_protocol = False
-        # True while mouse reports are on (`set_mouse`).
+        # True while mouse reports are on (`set_mouse`), and while they include a held button's motion.
         self.mouse_reporting = False
+        self.mouse_drag = False
 
     def __enter__(self) -> Terminal:
         if termios is None:
@@ -326,7 +331,7 @@ class Terminal:
         if saved is None:
             return
         self.keyboard_protocol = False
-        self.mouse_reporting = False
+        self.mouse_reporting = self.mouse_drag = False
         hung_up = False
         try:
             self.write(RESTORE_SEQUENCE)
@@ -354,16 +359,22 @@ class Terminal:
             self.__enter__()
         return True
 
-    def set_mouse(self, enabled: bool) -> None:
-        """Turn mouse reports on or off; writes nothing when they already are.
+    def set_mouse(self, enabled: bool, drag: bool = False) -> None:
+        """Turn mouse reports on or off, with a held button's motion (`drag`) or without; writes nothing when they
+        already are so.
 
         Only inside the `with` block: turned on outside it, nothing would turn
         them off again, and every click would type escape codes into the shell.
         """
-        if enabled == self.mouse_reporting or (enabled and self._saved is None):
+        drag = enabled and drag
+        if (enabled, drag) == (self.mouse_reporting, self.mouse_drag) or (enabled and self._saved is None):
             return
-        self.write(MOUSE_REPORTING_ON if enabled else MOUSE_REPORTING_OFF)
-        self.mouse_reporting = enabled
+        if not enabled:
+            self.write(MOUSE_REPORTING_OFF)
+        else:
+            switch = "" if drag == self.mouse_drag else MOUSE_DRAG_ON if drag else MOUSE_DRAG_OFF
+            self.write(("" if self.mouse_reporting else MOUSE_REPORTING_ON) + switch)
+        self.mouse_reporting, self.mouse_drag = enabled, drag
 
     def query_background(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[str | None, bytes, int | None]:
         """The background colour (`#RRGGBB`, or None), the input that arrived meanwhile, and the cursor's 1-based row.

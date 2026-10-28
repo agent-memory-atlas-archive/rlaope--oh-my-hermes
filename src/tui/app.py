@@ -190,6 +190,7 @@ from .panels import (
 )
 from .dag_pager import DagPager
 from .bot_board import BoardReader, BotBoard
+from .clipboard import COPY_OSC52, COPY_PBCOPY, copy_route, pbcopy
 from .prompts import CLOSED_CHOICES, Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import (
     CARRIAGE_RETURN,
@@ -668,6 +669,13 @@ PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 EXIT_HINT = "ctrl+c again to exit"  # on the info line while a second Ctrl+C would exit
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
+# What a drag in the pager copied, on the footer's last row for COPY_NOTE_SECONDS. A copy that went out as OSC 52 to a
+# terminal not known to honour it says it was sent, never that it was copied: no terminal answers one.
+COPY_NOTE_SECONDS = 2.0
+COPIED_NOTE = "copied {count} chars to clipboard"
+COPY_SENT_NOTE = "copy sent ({why})"
+OSC52_UNCONFIRMED = "terminal may not support OSC 52"
+OSC52_IN_TMUX = "tmux passes it on only with set-clipboard on"
 # The completion menu's name column: at least this wide, wider for the longest name it lists (OMH skills are
 # `omh-*` and `ulw-*` slugs) up to half the terminal; a name longer than that pushes only its own summary.
 MENU_NAME_CELLS = 16
@@ -761,7 +769,7 @@ class TerminalLike(Protocol):
     def resized(self) -> bool: ...
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
-    def set_mouse(self, enabled: bool) -> None: ...
+    def set_mouse(self, enabled: bool, drag: bool = False) -> None: ...
     def suspend(self) -> bool: ...
 
 
@@ -1520,6 +1528,9 @@ class App(ModesMixin, AgentViewMixin):
         self.tail_spacer = False  # `_tail` put a blank row above the working row, the first row to give way
         self.badge_cache: tuple[object, Line] = (None, ())  # `_badge_line`'s last row and what it was drawn from
         self.pager: Pager | None = None
+        self.copy_noted_at: float | None = None  # when the pager's footer started saying what a copy did
+        self.platform = sys.platform  # where `copy_route` looks for `pbcopy`
+        self.pbcopy: Callable[[str], bool] = partial(pbcopy, environ=environ)
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         # What reads the bot board (Ctrl+S, `/bots`) off this thread: made when it first opens, kept for the session
         # and paused while the board is closed, so a read stuck on a stalled file system never adds a thread.
@@ -2046,6 +2057,8 @@ class App(ModesMixin, AgentViewMixin):
             due.append(tail)
         if self.notification is not None and self.notification.expires_at < math.inf:
             due.append(self.notification.expires_at)
+        if self.copy_noted_at is not None:
+            due.append(self.copy_noted_at + COPY_NOTE_SECONDS)
         if self.escape_armed is not None:
             due.append(self.escape_armed[1] + DOUBLE_ESCAPE_SECONDS)
         if self.exit_armed_at is not None:
@@ -2056,6 +2069,11 @@ class App(ModesMixin, AgentViewMixin):
         """Take a ttl notification off the screen once its time is up."""
         if self.notification is not None and self.clock() >= self.notification.expires_at:
             self.notification = None
+            self.dirty = True
+        if self.copy_noted_at is not None and self.clock() - self.copy_noted_at >= COPY_NOTE_SECONDS:
+            self.copy_noted_at = None
+            if self.pager is not None:
+                self.pager.note = ()
             self.dirty = True
 
     def _shutdown(self) -> None:
@@ -2109,10 +2127,11 @@ class App(ModesMixin, AgentViewMixin):
                 finally:
                     self.herdr.release()  # herdr keeps the pane's agent after the TUI exits until told
 
-    def _set_mouse(self, enabled: bool) -> None:
-        """Turn mouse reports on or off, noting when they went off: reports sent before the off still arrive after it."""
+    def _set_mouse(self, enabled: bool, drag: bool = False) -> None:
+        """Turn mouse reports on or off (with a held button's motion, `drag`), noting when they went off: reports sent
+        before the off still arrive after it."""
         was_on = self.terminal.mouse_reporting
-        self.terminal.set_mouse(enabled)
+        self.terminal.set_mouse(enabled, drag)
         if was_on and not self.terminal.mouse_reporting:
             self.mouse_off_at = self.clock()
 
@@ -2921,10 +2940,13 @@ class App(ModesMixin, AgentViewMixin):
         if isinstance(event, Mouse):
             if self.launch_picker is not None:
                 self._launch_picker_click(event)
+            elif self.pager is not None:
+                self._pager_mouse(event)
             else:
                 self._on_mouse(event)  # never a key: whatever it is, it types nothing
             return
         if self.pager is not None:
+            self.pager.clear_selection()  # it is of the page on the screen, which a key may move
             if self.log_agent and isinstance(event, Key) and event.name in (LEFT, RIGHT):
                 self._step_agent_log(-1 if event.name == LEFT else 1)
             elif not self.pager.handle_key(event, self.size[1]):
@@ -4870,6 +4892,35 @@ class App(ModesMixin, AgentViewMixin):
         self.terminal.write(OSC52_COPY.format(encoded))
         self.transcript.add_notice("Copied the last reply to the clipboard (OSC 52; the terminal must allow it).")
 
+    def _pager_mouse(self, event: Mouse) -> None:
+        """A report while the pager is open: the pager scrolls or selects, and what a drag or a double or triple click
+        picked goes to the clipboard, its footer saying what happened (`_copy_selection`)."""
+        pager = self.pager
+        if pager is None:
+            return
+        text = pager.handle_mouse(event, self.size[1], self.clock())
+        self.dirty = True
+        if text:
+            pager.note = self._copy_selection(text)
+            self.copy_noted_at = self.clock()
+
+    def _copy_selection(self, text: str) -> Line:
+        """Put `text` on the clipboard by `copy_route`, and the row that says so: copied when OSC 52 went to a terminal
+        that honours it or `pbcopy` succeeded, sent otherwise (OSC 52 is never answered, so nothing confirms it)."""
+        route = copy_route(self.environ, self.platform)
+        if route == COPY_PBCOPY and self.pbcopy(text):
+            confirmed = True
+        else:
+            # "replace", as `_copy` encodes: a lone surrogate is copied as the "?" the screen shows.
+            self.terminal.write(OSC52_COPY.format(base64.b64encode(text.encode("utf-8", "replace")).decode("ascii")))
+            confirmed = route == COPY_OSC52
+        if confirmed:
+            note = Notification(COPIED_NOTE.format(count=len(text)), "success", "")
+        else:
+            why = OSC52_IN_TMUX if self.environ.get("TMUX") else OSC52_UNCONFIRMED
+            note = Notification(COPY_SENT_NOTE.format(why=why), "warn", "")
+        return note.line(self.size[0], self.theme)
+
     def _theme(self, arg: str) -> None:
         """`/theme <name>` picks a palette, `/theme auto|light|dark` the background it is measured against; alone, both.
 
@@ -5311,7 +5362,7 @@ class App(ModesMixin, AgentViewMixin):
         self._write_title()
         if self.pager is not None:
             self.clickable = {}
-            self._set_mouse(False)
+            self._set_mouse(True, drag=True)  # the alternate screen has no scrollback to take: the pager scrolls itself
             self._refresh_agent_log()
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return

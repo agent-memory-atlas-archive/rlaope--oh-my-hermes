@@ -712,9 +712,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   most terminals and the wheel does not scroll. To select anyway, hold Fn
   while dragging in Terminal.app (or turn off View → Allow Mouse Reporting),
   Option in iTerm2, Shift in most other terminals. Selection and the wheel
-  come back as soon as the list closes, and while a question is open, while a
-  view such as an agent's log has the screen, and while the window is being
-  resized. While click reports are on, and for 0.5 s after they go off, an Esc pressed on
+  come back as soon as the list closes, while a question is open, and while
+  the window is being resized. While click reports are on, and for 0.5 s after they go off, an Esc pressed on
   its own acts after 0.3 s, the time a click report split by a slow
   connection has to arrive whole. Another key typed within that time ends
   the wait, and both keys act, except `[`, which is read as the rest of a
@@ -733,6 +732,24 @@ run and approval decision stays Hermes'; the screen is OMH's.
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal, and the keys still
   open the list and the logs.
+- A view on the alternate screen (Ctrl+O, `/history`, `/logs`, an agent's
+  log, the bot board, `/keys`) takes the mouse for itself, since that screen
+  has no scrollback for the terminal to scroll: the wheel scrolls it three
+  lines a notch, a drag selects text (shown reversed) and copies it when you
+  let go, without the rail a block hangs on or a reply's margin, a double
+  click copies a word and a triple click a row, and a key or the wheel drops
+  the selection. The footer then says `✓ copied 694 chars to clipboard` for
+  2 s. The copy goes out as OSC 52 to kitty, Ghostty, WezTerm and Alacritty,
+  which honour it as they ship; on a Mac the OMH TUI runs on locally (no SSH),
+  any other terminal, tmux included, gets it through `pbcopy`. Elsewhere it
+  goes out as OSC 52 with nothing to confirm it, and the footer says `⚠ copy
+  sent (terminal may not support OSC 52)` (under tmux, that tmux passes it on
+  only with `set-clipboard on`). On the main screen the terminal's own
+  selection is the only one: the transcript is in its scrollback, and taking
+  the mouse there would take the wheel and that scrollback away. Each rail is
+  a painted cell holding a space, so what it copies there has no bar in it,
+  only two leading spaces on each row (four on a reply's rows, with its
+  margin), and the terminal shows no copy notice of its own.
 - The composer takes a paste whole when the terminal brackets it, as most
   terminals do. A paste of more than 3 lines or 800 characters shows as one
   chip, `[Pasted text #1 +60 lines]` (or `· 1,204 chars` for one long line):
@@ -826,11 +843,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
   window); `OMH_TUI_BELL=0` keeps all of it quiet.
-- Each tool call is a block of its own on a `┃` rail in its state's
+- Each tool call is a block of its own on a rail in its state's
   colour, with a blank row between two calls and no header over a turn's
   calls: its state's mark (below), its name, and what it ran on (a path, a
   command, a query) in parentheses, cut with `…` where the row is too narrow
-  (`┃ ● terminal(rm -rf ./tmp-cache)  1.9s`). Under it (`  ⎿  `) it shows the first three lines of what the tool
+  (`● terminal(rm -rf ./tmp-cache)  1.9s`). Under it (`  ⎿  `) it shows the first three lines of what the tool
   printed and counts the rest (`… +5 lines · ctrl+o shows all`). A read says
   in one line what it read instead: `Read 715 lines` for
   `read_file`, `12 matches` for
@@ -904,7 +921,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   on you; on exit the title you had comes back where the terminal keeps a
   title stack.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
-  - Each block hangs on a continuous `┃` rail with no fill behind it: grey
+  - Each block hangs on a continuous rail with no fill behind it, one cell
+    painted in the rail's colour that holds a space, so selecting the text
+    in the terminal copies no bar with it (only the two leading spaces): grey
     for your prompt, the theme's accent for what Hermes said (which opens
     with a header row, `⚚ Hermes · <model>`, bold in the rail's colour and
     the model the reply was written under muted), and a tool call's state colour for
@@ -937,7 +956,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
     across its verb, beside the elapsed time and the tokens written.
   - Your prompt reads as in Claude Code, the composer's dim `❯` and dim text with no
     band behind it, on a grey rail; a prompt the queue sent says `⧗ from queue`. A command
-    you run is echoed the same way, on the same rail (`┃ ❯ /model`), so a
+    you run is echoed the same way, on the same rail (`❯ /model`), so a
     bare `❯` on the left edge is only ever the composer.
   - A steer shows as `↪ steer · <text>` under what is running until Hermes
     answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
@@ -1001,7 +1020,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   one, its `❯` mark turns the shell family's amber and the info line says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
-  and its redaction of what the command printed) and shows `┃ ❯ !command`
+  and its redaction of what the command printed) and shows `❯ !command` on the rail
   with what it printed (its stdout, then its stderr, in the same colour) and
   its exit code when that is not 0 (`exit 0` when it printed nothing; a
   failure's lines are red on the red band with that exit line), or
@@ -1105,6 +1124,7 @@ Esc closes it):
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
 | ↑ / ↓, Enter or →, ← or Esc or q, r | On the bot board, move, open a profile's sessions or a session's last messages, go back (on the profiles, close the board), or read it again now; it reads again every 5 s by itself |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
+| Drag, double click, triple click, wheel | In a pager, select text and copy it when you let go (without the rails), copy a word, copy a row, or scroll three lines; the footer says what the copy did |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
@@ -1183,7 +1203,7 @@ says so; for an agent's steer it names the agent and the session you left. The O
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 
-A slash command you run is echoed in the transcript as `┃ ❯ /name arg` (but
+A slash command you run is echoed in the transcript as `❯ /name arg` on the prompt's rail (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
 `/model`, `/keys`, `/history`, `/logs`, `/dag`, `/bots` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback

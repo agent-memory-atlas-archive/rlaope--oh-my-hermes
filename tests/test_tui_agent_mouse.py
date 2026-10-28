@@ -1,4 +1,5 @@
-"""Clicks on the agent list, and when the OMH TUI asks the terminal for mouse reports at all: only while the list is open.
+"""Clicks on the agent list, and when the OMH TUI asks the terminal for mouse reports at all: only while the list is
+open, or a pager, which takes a drag too (`tests/test_tui_clean_copy.py`).
 
 Neither the agent view under the info line nor the count on it is clickable
 while the list is closed (the owner's decision of 2026-10-14): during a turn
@@ -137,7 +138,7 @@ SECOND_ROW = "read the diff for risks"  # the second agent's row in the list
 
 
 class MouseStateTests(unittest.TestCase):
-    def test_reports_are_on_only_while_the_agent_list_is_open(self) -> None:
+    def test_reports_are_on_only_while_the_agent_list_or_a_pager_is_open(self) -> None:
         now = [100.0]
         app, client = make_app(clock=lambda: now[0])
         settled(app)
@@ -183,7 +184,7 @@ class MouseStateTests(unittest.TestCase):
                 ("an approval open", False),
                 ("the approval denied, the turn still running", False),
                 ("the list focused", True),
-                ("an agent's log open", False),
+                ("an agent's log open", True),  # a pager: the alternate screen has no scrollback to take
                 ("back in the list", True),
                 ("back on the view, the turn still running", False),
                 ("the turn over, the finished agents still shown", False),
@@ -192,7 +193,7 @@ class MouseStateTests(unittest.TestCase):
                 ("the next turn, the roster empty", False),
             ],
         )
-        self.assertEqual(mouse_calls(app), [True, False, True, False, True, False])
+        self.assertEqual(mouse_calls(app), [True, False, True, False])
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
 
     def test_the_switch_is_written_only_when_the_state_changes(self) -> None:
@@ -221,13 +222,16 @@ class MouseStateTests(unittest.TestCase):
         app._on_input(Key(DOWN))
         self.assertTrue(reporting(app))
 
-    def test_a_pager_that_is_no_agents_log_turns_them_off_too(self) -> None:
+    def test_a_pager_that_is_no_agents_log_keeps_them_on_with_a_drag(self) -> None:
         app, _client = listing()
         self.assertTrue(reporting(app))
+        self.assertFalse(app.terminal.mouse_drag)  # type: ignore[attr-defined]  # the list takes clicks only
         app._open_pager("history", [])
-        self.assertFalse(reporting(app))
+        self.assertTrue(reporting(app))
+        self.assertTrue(app.terminal.mouse_drag)  # type: ignore[attr-defined]
         app._leave_pager()
         self.assertTrue(reporting(app))  # the list is still open under it
+        self.assertFalse(app.terminal.mouse_drag)  # type: ignore[attr-defined]
 
     def test_a_question_answered_with_text_turns_them_off(self) -> None:
         app, _client = listing()
@@ -323,7 +327,7 @@ class MouseStateTests(unittest.TestCase):
     def test_shutdown_from_an_open_log_leaves_them_off(self) -> None:
         app, _client = listing()
         app._on_input(Key(ENTER))
-        self.assertFalse(reporting(app))
+        self.assertTrue(reporting(app))  # the log is a pager, which takes a drag
         app._shutdown()
         self.assertEqual(mouse_calls(app), [True, False])
         self.assertIn(ALT_SCREEN_OFF, "".join(app.terminal.writes))  # type: ignore[attr-defined]
@@ -596,8 +600,10 @@ class IgnoredReportTests(unittest.TestCase):
                 before = state(app, client)
                 click(app, x, y)
                 self.assertEqual(state(app, client), before)
-                if into is not resizing:
+                if into in (view, approval):
                     self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+                elif into is not resizing:  # a pager's reports: a click there selects, and opens nothing
+                    self.assertTrue(app.terminal.mouse_drag)  # type: ignore[attr-defined]
 
     def test_while_a_question_is_open_a_click_opens_nothing_before_any_frame_redraws_the_cells(self) -> None:
         # The question opens and the click comes in the same read: `clickable` still holds the last frame's cells.
@@ -777,7 +783,7 @@ class LateReportLoopTests(unittest.TestCase):
                     y, x = row_of(app, SECOND_ROW), 10
                     step_through(app, now, [(0.0, f"\x1b[<0;{x};{y}M".encode("ascii"))])  # the press opens the log
                     self.assertEqual(app.log_agent, SECOND)
-                    self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]  # the log's frame
+                    self.assertTrue(app.terminal.mouse_drag)  # type: ignore[attr-defined]  # the log's frame: a pager
                     late = f"\x1b[<{code};{x};{y}{'m' if code == 0 else 'M'}".encode("ascii")
                     step_through(app, now, paused(late[:1], pause, late[1:]))
                     self.assertEqual(app.composer.text, "")
@@ -1198,7 +1204,10 @@ class DocumentedMouseTests(unittest.TestCase):
     def test_the_boundary_says_what_each_click_does_and_when_a_report_can_still_type(self) -> None:
         text = self.prose("docs/OMH-TUI-BOUNDARY.md")
         self.assertIn("A plain left click on an agent opens its log, one on the list's `main` row leaves the list, and "
-                      "every other report does nothing.", text)
+                      "every other report there does nothing.", text)
+        self.assertIn("Mouse reporting is on in two states only, the agent list open and a pager on the alternate "
+                      "screen", text)
+        self.assertIn("mode 1002, never 1003", text)
         self.assertIn("One that starts later and is split right after its first or second byte is read as keys.", text)
         for name in ("docs/OMH-TUI-BOUNDARY.md", "AGENTS.md"):
             with self.subTest(name=name):
@@ -1256,9 +1265,9 @@ class MouseReplayTests(AppTestCase):
         self.assertIn("❯ ", ignored[y - 2])
         self.assertEqual(captures["log"][0], "read the diff for risks")
         self.assertEqual(run.calls("subagent.tail")[0]["params"], {"session_id": LIVE_ID, "subagent_id": SECOND})
-        # Off during the turn with the view shown, on with the list, off for the log, on back in the list, off once
-        # the list is left.
-        self.assertEqual(terminal.mouse_calls, [True, False, True, False])
+        # Off during the turn with the view shown, on with the list, still on for the log (a pager, with a drag) and
+        # back in the list, off once the list is left.
+        self.assertEqual(terminal.mouse_calls, [True, False])
         self.assertFalse(terminal.mouse_reporting)
         self.assertEqual(len(run.calls("session.interrupt")), 1)
 

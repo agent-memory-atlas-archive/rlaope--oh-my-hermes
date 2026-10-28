@@ -22,12 +22,14 @@ one before it, so a block is flushed only after every block above it.
 Assistant text opens with a bold `● ` in the text colour on its first row, and
 every later row of that reply, however many flushes it arrives in, is indented
 to match, so a reply reads as one block beside the dim `❯ ` of the prompt above
-it. Three kinds of block hang on a rail in the left gutter (`RAIL`, `┃` and a
-space, which a terminal draws to the full cell height, so a block's rail is one
-line): your prompt's in dim grey, each tool call's in its state's colour, and a
-reply's in the skin's accent, the banner's colour (`Theme.brand`). Nothing has a band behind it.
+it. Three kinds of block hang on a rail in the left gutter (`RAIL`: one cell
+painted in the block's colour and a space; a painted cell meets the ones above
+and below it, so a block's rail is one line, and each cell holds a space, so a
+terminal's selection copies no bar with the text): your prompt's in dim grey,
+each tool call's in its state's colour, and a reply's in the skin's accent, the
+banner's colour (`Theme.brand`). Nothing has a band behind it.
 
-A slash command the person runs is a block of its own: `┃ ❯ /name arg` on the prompt's dim
+A slash command the person runs is a block of its own: `❯ /name arg` on the prompt's dim
 rail, in the hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
 command may still print (`close_command` ends that); what it says meanwhile
@@ -172,7 +174,8 @@ TOOL_MARKS = {
     TOOL_RUNNING: "○", TOOL_OK: "●", TOOL_ERROR: "✗", TOOL_DENIED: "✗", TOOL_INTERRUPTED: "▪", TOOL_RECORDED: "●",
     TOOL_GENERATING: "◌",
 }
-RAIL = "┃ "  # the left rail of a prompt, a tool call or a reply, in the block's colour, and a space
+RAIL = "  "  # the left rail of a prompt, a tool call or a reply: a cell painted in the block's colour, and a space
+GUTTER = Style(gutter=True)  # a rail's or a reply margin's cells, which the pager's copy leaves out
 # A running tool's mark alternates the running blue and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
@@ -914,7 +917,7 @@ def _output_leads(theme: Theme) -> tuple[Line, Line]:
 
 
 def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
-    """`┃ ❯ /name arg` on the prompt's dim rail (a bare `❯` on the left edge is only ever the composer), then each part
+    """`❯ /name arg` on the prompt's dim rail (a bare `❯` on the left edge is only ever the composer), then each part
     of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
     full, width = width, max(width - len(RAIL), 1)
     rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
@@ -939,7 +942,7 @@ def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model
     a blank row, so a reply's rail is one line; none wider than `width`. A block opens with who wrote it: the header
     `⚚ Hermes · <model>` (bold in the rail's hue, the model muted, its last path segment), or with
     ASSISTANT_HEADER False a `⚚ ` on its first row."""
-    rest: Line = (Span(ASSISTANT_INDENT),)
+    rest: Line = (Span(ASSISTANT_INDENT, GUTTER),)
     rail = _rail(theme.brand)
     name = replace(theme.brand, bold=True)
     first, head = rest, []
@@ -1022,8 +1025,15 @@ def _glinted(text: str, style: Style, band: int, theme: Theme) -> list[Span]:
     return spans
 
 
+def rail_cell(style: Style) -> Span:
+    """A rail's painted cell: a space in `style`'s colour, reversed so it shows without colour too. It holds no bar
+    glyph, so a terminal's selection copies none."""
+    return Span(RAIL[0], Style(fg=style.fg, reverse=True, depth=style.depth, gutter=True))
+
+
 def _rail(style: Style) -> Line:
-    return (Span(RAIL[0], style), Span(RAIL[1:]))
+    """The rail's cells: the painted one (`rail_cell`) and the space before the text."""
+    return (rail_cell(style), Span(RAIL[1:], GUTTER))
 
 
 def _within(row: Line, width: int) -> Line:

@@ -6,6 +6,20 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Selecting the transcript no longer copies its left bar, and the pager
+  copies on drag.** Each block's rail was a `┃` glyph, so a terminal's own
+  selection pasted `┃` in front of every row. The rail is now one cell
+  painted in the block's colour (reverse video, so it shows under `NO_COLOR`
+  too) that holds a space: a copy on the main screen carries two leading
+  spaces and no bar. In a pager (Ctrl+O, `/history`, `/logs`, an agent's log,
+  the bot board) the TUI now takes the mouse: the wheel scrolls three lines,
+  a drag selects and copies on release without the rails or a reply's
+  margin, a double click copies a word and a triple click a row, and the
+  footer says `✓ copied N chars to clipboard`. The copy is OSC 52 for kitty,
+  Ghostty, WezTerm and Alacritty, `pbcopy` on a local Mac otherwise, and
+  else OSC 52 the footer says was only sent. The main screen keeps the
+  terminal's own selection, since taking the mouse there would take the
+  wheel and the scrollback.
 - **Fourteen more models cost out at their vendors' list prices.** OMH
   already recognized Grok 4.7, 4.6, 4.5 and 4.3, DeepSeek V4 Pro, Gemini
   3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, GLM-5.3-FlashX, Qwen3.8-Max and
