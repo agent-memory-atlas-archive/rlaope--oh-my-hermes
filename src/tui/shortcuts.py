@@ -67,7 +67,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+Z", "Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); "
                "fg brings it back"),
     ("Ctrl+C", "Clears the composer, else interrupts a running turn; a second press within 2 s exits, "
-               "mid-turn too"),
+               "mid-turn too; a prompt held for its pasted image comes back to the composer"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
     ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once, allow this session or (when Hermes "
                                   "offers it) always allow, and allow it, or the last row to deny and tell Hermes "

@@ -737,6 +737,9 @@ DETACH_FAILED_NOTICE = "Hermes did not let go of an image ({reason}); it may go 
 UNSENT_BACK_NOTICE = "{why}, so the prompt you sent did not go: it is back in the composer with its images."
 UNSENT_BACK_RESPAWN = "Hermes' gateway restarted"
 UNSENT_BACK_SWITCH = "The session changed"
+# Under the queued prompts while a submit is held for the paste it was typed with, with the seconds from this on.
+IMAGE_WAIT_LINE = "waiting for the image…"
+IMAGE_WAIT_ELAPSED_SECONDS = 3.0
 # Where the prompt that stages images stands (`App.claim`).
 CLAIM_OPEN = "open"
 CLAIM_STAGING = "staging"
@@ -1060,6 +1063,30 @@ class UnsentPrompt:
     cancelled: bool = False
 
 
+@dataclass
+class HeldSubmit:
+    """A composer submit made while a paste, drop or `/image` it was typed with was still out: held, its text and
+    images as sent (`text`, `shown`, `chips`, `images`; `steer` for Ctrl+Enter), until each such intake is answered,
+    whose image then joins it (`App._join_held`), since `since`; `cancelled` once given back."""
+
+    text: str
+    shown: str
+    chips: tuple[tuple[str, str], ...]
+    images: tuple[Attachment, ...]
+    steer: bool
+    since: float
+    cancelled: bool = False
+
+
+@dataclass
+class Intake:
+    """A call that has Hermes stage an image (`App._intake`): `running` once it went, and `held` the submit the
+    person made while it was out, which its image joins."""
+
+    running: bool = False
+    held: HeldSubmit | None = None
+
+
 @dataclass(frozen=True)
 class PathItem:
     """One `complete.path` row: `text` replaces the `@` token, `display` and `meta` are what the menu shows."""
@@ -1317,6 +1344,11 @@ def read_image(path: str) -> bytes | None:
         if fd >= 0:
             os.close(fd)
     return data if 0 < len(data) <= IMAGE_KEEP_BYTES else None
+
+
+def with_label(text: str, label: str) -> str:
+    """`text` with an image's `label` after it, a space between them unless it ends in one."""
+    return f"{text}{'' if not text or text[-1].isspace() else ' '}{label}"
 
 
 def _tokens(images: Iterable[Attachment]) -> list[tuple[str, Attachment]]:
@@ -1696,7 +1728,9 @@ class App(ModesMixin, AgentViewMixin):
         self.staged: list[str] = []
         self.claim = CLAIM_OPEN
         self.after_claim: deque[tuple[bool, Callable[[], None]]] = deque()
-        self.intakes = 0
+        self.intakes: list[Intake] = []
+        self.intake_answering: Intake | None = None  # the intake whose answer is being handled (`_take_attachment`)
+        self.held_submits: list[HeldSubmit] = []  # submits waiting on the pastes they were typed with
         self.unsent: list[UnsentPrompt] = []
         self.image_epoch = 0  # moves on with each new gateway or session: a staging answered after it sends nothing
         self.picker: SessionPicker | None = None
@@ -2182,7 +2216,7 @@ class App(ModesMixin, AgentViewMixin):
             due.append(now + READ_TIMEOUT_SECONDS)
         if self.redraw_at is not None:
             due.append(self.redraw_at)
-        elif self._busy() or self._panel_live() or self._aura_live() or self._background_live():
+        elif self._busy() or self._panel_live() or self._aura_live() or self._background_live() or self.held_submits:
             due.append(self.last_render + self._tick_seconds())
         if self.path_due is not None and self.sid:
             due.append(self.path_due)
@@ -3241,6 +3275,8 @@ class App(ModesMixin, AgentViewMixin):
         with it, to the prompt it sends."""
         if action.kind == SUBMIT:
             images = tuple(image for _label, image in action.images if isinstance(image, Attachment))
+            if self.slot is None and self.tell_draft is None and self._hold_submit(action, images, steer):
+                return  # it goes once the pastes it was typed with are answered, with their images
             if self.slot is not None:
                 question = self.slot.question_index
                 answer = self.slot.submit_text(action.text)
@@ -3359,6 +3395,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.tell_draft is not None:
             self._leave_tell()  # the deny went as the row was picked; nothing more is sent
             return True
+        if not self.composer.text and self._give_back_held():
+            return True  # what was held for its paste comes back, unsent
         if not self.composer.text and self._busy():
             self._interrupt()
             return True
@@ -3896,10 +3934,17 @@ class App(ModesMixin, AgentViewMixin):
     def _interrupt_or_exit(self) -> None:
         """Ctrl+C on empty input: interrupt a running turn, and exit on a second press within 2 s.
 
+        With no turn running and a submit held for its paste, it gives that
+        submit back instead, as Esc does, and arms nothing (`_give_back_held`);
+        while a turn runs, the interrupt gives it back (`_give_back_unsent`).
+
         The press that interrupts arms the exit too, so the second one leaves
         whether or not the turn has stopped yet (`interrupting…` can last).
         """
         now = self.clock()
+        if not self._busy() and self._give_back_held():
+            self.dirty = True  # a submit held for its paste comes back, as Esc gives it; this press arms no exit
+            return
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
@@ -4175,10 +4220,10 @@ class App(ModesMixin, AgentViewMixin):
         self._pump_claims()
 
     def _pump_claims(self) -> None:
-        """What waits goes, in order, while no prompt's images are out; a prompt also waits for the `intakes`."""
+        """What waits goes, in order, while no prompt's images are out; a prompt also waits for the `intakes` out."""
         while self.after_claim and self.claim == CLAIM_OPEN:
             sends, run = self.after_claim[0]
-            if sends and self.intakes:
+            if sends and any(intake.running for intake in self.intakes):
                 return
             self.after_claim.popleft()
             run()
@@ -4191,21 +4236,32 @@ class App(ModesMixin, AgentViewMixin):
         no prompt's images are out, and no prompt goes until it is answered, its answer having sent the detach
         (`_take_attachment`), or until it has none in its time."""
 
+        intake = Intake()
+        self.intakes.append(intake)
+
         def run() -> None:
-            epoch = self.image_epoch
-            self.intakes += 1
+            intake.running = True
 
             def done() -> None:
-                if epoch == self.image_epoch:
-                    self.intakes = max(self.intakes - 1, 0)
+                if intake in self.intakes:
+                    self.intakes.remove(intake)
+                    self._release_held()
                     self._pump_claims()
 
             def result(answer: dict[str, Any]) -> None:
-                on_result(answer)
+                self.intake_answering = intake
+                try:
+                    on_result(answer)
+                finally:
+                    self.intake_answering = None
                 done()
 
             def error(refusal: dict[str, Any]) -> bool:
-                handled = on_error(refusal)
+                self.intake_answering = intake
+                try:
+                    handled = on_error(refusal)
+                finally:
+                    self.intake_answering = None
                 done()
                 return handled
 
@@ -4299,7 +4355,61 @@ class App(ModesMixin, AgentViewMixin):
         for prompt in unsent:
             prompt.cancelled = True
             self._give_back(prompt.text, prompt.images)
-        return bool(unsent)
+        return self._give_back_held() or bool(unsent)
+
+    def _give_back_held(self) -> bool:
+        """Every submit held for its pastes goes back to the draft, its images tokens again; True when one did."""
+        held, self.held_submits = [submit for submit in self.held_submits if not submit.cancelled], []
+        for submit in held:
+            submit.cancelled = True
+            self._give_back(submit.text, submit.images)
+        return bool(held)
+
+    def _hold_submit(self, action: ComposerAction, images: tuple[Attachment, ...], steer: bool) -> bool:
+        """A submit made while a paste, drop or `/image` typed before it is still out, or behind one held so, waits
+        (`held_submits`): the image each such intake answers joins it, and it goes once they are all answered
+        (`_release_held`), as if sent then. True when it was held."""
+        out = [intake for intake in self.intakes if intake.held is None]
+        if not out and not self.held_submits:
+            return False
+        held = HeldSubmit(action.text, action.shown, action.chips, images, steer, self.clock())
+        for intake in out:
+            intake.held = held
+        self.held_submits.append(held)
+        return True
+
+    def _join_held(self, intake: Intake | None, attachment: Attachment) -> bool:
+        """Put `attachment` into the submit held for `intake`, its label after the submit's text; True when one is."""
+        held = intake.held if intake is not None else None
+        if held is None or held.cancelled or held not in self.held_submits:
+            return False
+        held.text = with_label(held.text, attachment.label)
+        held.shown = with_label(held.shown, attachment.label) if held.shown else ""
+        held.images = (*held.images, attachment)
+        return True
+
+    def _release_held(self) -> None:
+        """Once no intake a held submit waits on is out, the held submits go, in order, as Enter or Ctrl+Enter sends."""
+        if any(intake.held is not None and not intake.held.cancelled for intake in self.intakes):
+            return
+        held, self.held_submits = self.held_submits, []
+        for submit in held:
+            if submit.cancelled:
+                continue
+            if submit.steer:
+                self._steer_or_submit(submit.text, submit.shown, submit.chips, submit.images)
+            else:
+                self._submit(submit.text, submit.shown, submit.chips, images=submit.images)
+
+    def _image_wait_line(self, cols: int) -> Line | None:
+        """`waiting for the image…`, muted, while a submit is held for a paste, drop or `/image` still out, with how
+        long once it is `IMAGE_WAIT_ELAPSED_SECONDS` or more; None otherwise."""
+        since = [submit.since for submit in self.held_submits if not submit.cancelled]
+        if not since:
+            return None
+        seconds = self.clock() - min(since)
+        text = IMAGE_WAIT_LINE if seconds < IMAGE_WAIT_ELAPSED_SECONDS else f"{IMAGE_WAIT_LINE} {seconds:.0f}s"
+        return truncate_line((Span(" " * cell_width(QUEUE_GLYPH)), Span(text, self.theme.muted)), cols)
 
     def _reset_staging(self, why: str) -> None:
         """A new gateway or session holds no image: a staging answered after this sends nothing (`image_epoch`), what
@@ -4308,7 +4418,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(UNSENT_BACK_NOTICE.format(why=why), NOTICE_WARN)
         self.image_epoch += 1
         self.after_claim.clear()
-        self.intakes = 0
+        self.intakes = []
         self.staged, self.claim = [], CLAIM_OPEN
 
     def _detach_failed(self, error: dict[str, Any]) -> bool:
@@ -5238,7 +5348,8 @@ class App(ModesMixin, AgentViewMixin):
     def _take_attachment(self, sid: str, attachment: Attachment) -> None:
         """An image Hermes staged for `sid` becomes the TUI's: its bytes are read from the path Hermes named, Hermes
         is told to let go of it (`image.detach`, by that path), and an `[Image #N]` token for it goes at the draft's
-        caret; for a session since left, or bytes the TUI cannot read, a notice instead."""
+        caret, or, when the person sent while it was out, into that held submit (`_join_held`); for a session since
+        left, or bytes the TUI cannot read, a notice instead."""
         data = read_image(attachment.path)
         self._request("image.detach", {"session_id": sid, "path": attachment.path}, lambda result: None,
                       self._detach_failed)
@@ -5250,7 +5361,8 @@ class App(ModesMixin, AgentViewMixin):
             return
         self.image_count += 1
         attachment = replace(attachment, label=IMAGE_LABEL.format(number=self.image_count), data=data)
-        self._draft().insert_image(attachment.label, attachment)
+        if not self._join_held(self.intake_answering, attachment):
+            self._draft().insert_image(attachment.label, attachment)
 
     def _on_image_attached(self, sid: str, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
@@ -5278,7 +5390,8 @@ class App(ModesMixin, AgentViewMixin):
         """An image drop is a token (`_take_attachment`), nothing typed; a file drop types its reference; else the paste.
 
         Text goes to the draft (`_draft`) whichever session is live: it is the
-        person's paste, sent nowhere yet. An image Hermes queued for a session
+        person's paste, sent nowhere yet; or into the submit the person made
+        while it was out (`_paste_back`). An image Hermes queued for a session
         since left is a notice (`_take_attachment`).
         """
         if result.get("matched") is True and result.get("is_image") is True:
@@ -5288,11 +5401,21 @@ class App(ModesMixin, AgentViewMixin):
             return
         if result.get("matched") is True and as_text(result.get("text")):
             text = as_text(result.get("text"))
-        self._draft().handle(Paste(text))
+        self._paste_back(text)
 
     def _on_drop_refused(self, text: str) -> bool:
-        self._draft().handle(Paste(text))
+        self._paste_back(text)
         return True
+
+    def _paste_back(self, text: str) -> None:
+        """A one-line paste that was no image goes where it was typed: into the submit held for it when the person
+        sent before it was answered (`_join_held`), else into the draft."""
+        held = self.intake_answering.held if self.intake_answering is not None else None
+        if held is not None and not held.cancelled and held in self.held_submits:
+            held.text += text
+            held.shown = held.shown + text if held.shown else ""
+            return
+        self._draft().handle(Paste(text))
 
     def _redraw(self, arg: str) -> None:
         self._full_redraw()
@@ -5926,7 +6049,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.redraw_at is not None:
             return  # the screen is mid-reflow; the settled redraw paints it
         now = self.clock()
-        due = (self._busy() or self._panel_live() or self._aura_live() or self._background_live()) \
+        due = (self._busy() or self._panel_live() or self._aura_live() or self._background_live()
+               or bool(self.held_submits)) \
             and now - self.last_render >= self._tick_seconds()
         if not (self.dirty or due):
             return
@@ -6383,7 +6507,8 @@ class App(ModesMixin, AgentViewMixin):
             return self.model_picker.lines(cols, self.theme, cap)
         # Nothing has the keys, or the agent list under the info line has them (the slot keeps its rows then, so
         # nothing moves): the background-process row takes the slot's last row, right above the composer's top
-        # rule, the queued prompts the rows above it, Hermes' notification the row above them, Hermes' standing goal
+        # rule, the `waiting for the image…` row above it while a submit is held for a paste, the queued prompts the
+        # rows above that, Hermes' notification the row above them, Hermes' standing goal
         # the row above that, and the menu or the plan gets the rows left. A question or the picker hides them,
         # since Up then does not edit the queue. With one row, the queue keeps it: its `↑ edit` says what Up does.
         found = self._background_line(cols)
@@ -6391,9 +6516,11 @@ class App(ModesMixin, AgentViewMixin):
         hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
         send_now = self._steer_keys_live() and self._queue_head_steers()
         below = SEND_NOW_HINT.format(key=SEND_NOW_KEYS[self.keyboard_protocol]) if send_now else ""
-        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap - len(background), self.theme,
-                            hint, below)
-        taken = len(background) + len(queue)
+        found = self._image_wait_line(cols)
+        waiting = [found] if found is not None and cap > len(background) else []
+        queue = queue_lines([line.shown or line.text for line in self.queued], cols,
+                            cap - len(background) - len(waiting), self.theme, hint, below)
+        taken = len(background) + len(waiting) + len(queue)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > taken else []
         shown = goal_line(self.goal, cols, self.theme)
         goal = [shown] if shown is not None and cap > taken + len(notice) else []
@@ -6401,7 +6528,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.menu_below:  # the menu goes under the composer, and the panel stays away as it does for the menu
             self.menu_under, menu = menu, []
             self.panel_shown = False
-        return menu + goal + notice + queue + background
+        return menu + goal + notice + queue + waiting + background
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:
