@@ -93,6 +93,8 @@ class FakeHermes:
         if method == "image.attach":
             return self.stage(PNG + params["path"].encode(), Path(params["path"]).name)
         if method == "input.detect_drop":
+            if not params["text"].startswith("/"):
+                return {"matched": False}  # no path: the paste is text
             return {"matched": True, "is_image": True, **self.stage(PNG + params["text"].encode())}
         if method == "image.attach_bytes":
             path = self.write(base64.b64decode(params["content_base64"]))
@@ -449,6 +451,61 @@ class GateTests(ImageTestCase):
         self.assertEqual(self.methods("prompt."), [])
         self.assertNotIn(IMAGE_WAIT_LINE, self.screen())
 
+    def test_a_one_line_text_paste_right_before_enter_joins_that_prompt(self) -> None:
+        for warm in (True, False):
+            with self.subTest(warm=warm):
+                self.setUp(warm)
+                type_text(self.app, "describe ")
+                self.app._on_input(Paste("the second paragraph"))  # offered to detect_drop first: an intake
+                self.app._on_input(Key(ENTER))
+                self.hermes.pump()
+                if not warm:
+                    self.hermes.admit()
+                self.assertEqual(self.hermes.turns, [("describe the second paragraph", [])])
+                self.assertEqual(self.shown(), "")
+
+    def test_a_text_paste_hermes_refuses_to_look_at_still_joins_the_held_prompt(self) -> None:
+        type_text(self.app, "describe ")
+        self.app._on_input(Paste("the second paragraph"))
+        self.app._on_input(Key(ENTER))
+        (drop,) = [index for index, (method, _params) in enumerate(self.client.calls) if method == "input.detect_drop"]
+        self.hermes.answered = len(self.client.calls)
+        self.app._on_response(Response(drop + 1, None, {"code": 5000, "message": "detect failed"}))
+        self.hermes.pump()
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("describe the second paragraph", [])])
+
+    def test_ctrl_c_with_no_turn_running_gives_a_held_submit_back_and_arms_no_exit(self) -> None:
+        type_text(self.app, "describe this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.app._on_input(ctrl("c"))
+        self.assertEqual(self.shown(), "describe this")
+        self.assertIsNone(self.app.exit_armed_at)
+        self.hermes.pump()
+        self.assertEqual(self.methods("prompt."), [])
+        self.assertEqual(self.shown(), "describe this [Image #1] ")
+
+    def test_an_interrupt_gives_a_held_submit_back(self) -> None:
+        self.app.transcript.running = True  # a turn runs
+        type_text(self.app, "describe this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.app._on_input(ctrl("c"))  # interrupts the turn, and the held submit comes back
+        self.assertEqual(self.shown(), "describe this")
+        self.assertEqual(len(self.methods("session.interrupt")), 1)
+        self.hermes.pump()
+        self.assertEqual(self.methods("prompt."), [])
+
+    def test_a_session_switch_gives_a_held_submit_back_with_a_notice(self) -> None:
+        type_text(self.app, "describe this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.app._enter_session({"session_id": SID, "stored_session_id": "stored-2", "info": {}})
+        self.assertEqual(self.shown(), "describe this")
+        self.assertIn(UNSENT_BACK_NOTICE.format(why=UNSENT_BACK_SWITCH), notices(self.app, NOTICE_WARN))
+        self.assertNotIn(IMAGE_WAIT_LINE, self.screen())
+
     def test_a_second_submit_waits_behind_a_held_one_and_they_go_in_order(self) -> None:
         self.app.turn_pending = True  # a turn runs: both queue, in the order they were sent
         type_text(self.app, "first")
@@ -651,6 +708,18 @@ class RespawnTests(unittest.TestCase):
         (stage,) = new.named("image.attach_bytes")
         self.assertEqual(base64.b64decode(stage["content_base64"]), PNG)
 
+
+    def test_a_respawn_gives_back_a_submit_held_for_its_paste(self) -> None:
+        from test_tui_respawn import crash, crashing
+
+        app, old, spawner, _now = crashing()
+        type_text(app, "describe this")
+        app._on_input(CTRL_V)
+        app._on_input(Key(ENTER))  # held: the paste is out on the old gateway
+        crash(app, old)
+        self.assertEqual(app.composer.expanded(), "describe this")
+        self.assertIn(UNSENT_BACK_NOTICE.format(why=UNSENT_BACK_RESPAWN), notices(app, NOTICE_WARN))
+        self.assertEqual(spawner.made[0].named("prompt.submit"), [])
 
     def test_a_paste_the_old_gateway_never_answered_does_not_hold_a_prompt_on_the_new_one(self) -> None:
         from test_tui_respawn import crash, crashing

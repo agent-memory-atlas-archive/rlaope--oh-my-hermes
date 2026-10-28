@@ -1044,7 +1044,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (`⎿  [Image #1]`). A `!` line or a command that sends no prompt gives its
   tokens back to the composer. Enter right after a paste or a drop waits for
   Hermes to answer it, under `waiting for the image…`, and the prompt goes
-  with that image; Esc meanwhile gives the prompt back. Typing `[Image #1]`
+  with that image (a one-line text paste joins it the same way); Esc or
+  Ctrl+C meanwhile gives the prompt back. Typing `[Image #1]`
   yourself attaches nothing, and a prompt recalled from history is plain
   text. Dropping a file
   that is not an image types Hermes' reference to it instead.
@@ -1141,7 +1142,7 @@ Esc closes it):
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, while Hermes asks something, the whole question (it answers nothing); q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+Z | Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); fg brings it back |
-| Ctrl+C | Clears the composer, else interrupts a running turn; a second press within 2 s exits, mid-turn too |
+| Ctrl+C | Clears the composer, else interrupts a running turn; a second press within 2 s exits, mid-turn too; a prompt held for its pasted image comes back to the composer |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
 | ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it, or the last row to deny and tell Hermes what to do instead; Enter alone denies and stops the running turn |
 | `d`, `n` | On an approval, deny and stop the running turn |

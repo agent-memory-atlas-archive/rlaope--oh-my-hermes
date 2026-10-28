@@ -3934,10 +3934,17 @@ class App(ModesMixin, AgentViewMixin):
     def _interrupt_or_exit(self) -> None:
         """Ctrl+C on empty input: interrupt a running turn, and exit on a second press within 2 s.
 
+        With no turn running and a submit held for its paste, it gives that
+        submit back instead, as Esc does, and arms nothing (`_give_back_held`);
+        while a turn runs, the interrupt gives it back (`_give_back_unsent`).
+
         The press that interrupts arms the exit too, so the second one leaves
         whether or not the turn has stopped yet (`interrupting…` can last).
         """
         now = self.clock()
+        if not self._busy() and self._give_back_held():
+            self.dirty = True  # a submit held for its paste comes back, as Esc gives it; this press arms no exit
+            return
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
             self.exit_code = 0
             return
@@ -4250,7 +4257,11 @@ class App(ModesMixin, AgentViewMixin):
                 done()
 
             def error(refusal: dict[str, Any]) -> bool:
-                handled = on_error(refusal)
+                self.intake_answering = intake
+                try:
+                    handled = on_error(refusal)
+                finally:
+                    self.intake_answering = None
                 done()
                 return handled
 
@@ -5379,7 +5390,8 @@ class App(ModesMixin, AgentViewMixin):
         """An image drop is a token (`_take_attachment`), nothing typed; a file drop types its reference; else the paste.
 
         Text goes to the draft (`_draft`) whichever session is live: it is the
-        person's paste, sent nowhere yet. An image Hermes queued for a session
+        person's paste, sent nowhere yet; or into the submit the person made
+        while it was out (`_paste_back`). An image Hermes queued for a session
         since left is a notice (`_take_attachment`).
         """
         if result.get("matched") is True and result.get("is_image") is True:
@@ -5389,11 +5401,21 @@ class App(ModesMixin, AgentViewMixin):
             return
         if result.get("matched") is True and as_text(result.get("text")):
             text = as_text(result.get("text"))
-        self._draft().handle(Paste(text))
+        self._paste_back(text)
 
     def _on_drop_refused(self, text: str) -> bool:
-        self._draft().handle(Paste(text))
+        self._paste_back(text)
         return True
+
+    def _paste_back(self, text: str) -> None:
+        """A one-line paste that was no image goes where it was typed: into the submit held for it when the person
+        sent before it was answered (`_join_held`), else into the draft."""
+        held = self.intake_answering.held if self.intake_answering is not None else None
+        if held is not None and not held.cancelled and held in self.held_submits:
+            held.text += text
+            held.shown = held.shown + text if held.shown else ""
+            return
+        self._draft().handle(Paste(text))
 
     def _redraw(self, arg: str) -> None:
         self._full_redraw()

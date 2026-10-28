@@ -425,8 +425,9 @@ All notable changes will be documented here.
   when Enter beat Hermes' answer to the paste. Now the prompt waits for the
   answer and goes with the image, as in Claude Code, and the composer shows
   a muted `waiting for the image…` row meanwhile, with the seconds after
-  three. Esc gives the held prompt back. A paste Hermes never answers holds
-  the prompt only until it expires.
+  three. A one-line text paste sent at once joins its prompt the same way.
+  Esc, or Ctrl+C, gives the held prompt back. A paste Hermes never answers
+  holds the prompt only until it expires.
 
 ## 4.0.3 - 2026-10-27
 
