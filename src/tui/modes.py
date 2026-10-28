@@ -42,18 +42,15 @@ from .width import cell_width, line_width, truncate_line
 # says it too, and `app` imports this module.
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 
-# The info line under the composer. Its left side is the mode's label, the agent count and the keys that matter now;
-# its right side is what `App._info_right` gives (model, context, effort), cut down first when the line is narrow.
-IDLE_HINT = "? for shortcuts"
+# The info line under the composer. Its left side is the badge, the mode's label, the agent count and the keys that
+# matter now (none in the normal mode between turns: the launch card names `?`); its right side is the branch and what
+# `App._info_right` gives (model, context, effort), cut down first when the line is narrow.
 # After accept's or plan's label: what Shift+Tab does next. `{cycle}` is CYCLE_WORDS while the key walks normal, accept
 # all and plan; while Hermes has approvals off on its own it turns plan on and off and nothing else (`HERMES_OWN_CYCLE`).
 MODE_HINTS = (" (⇧⇥ {cycle})", "")
 CYCLE_WORDS = "to cycle"
 HERMES_OWN_CYCLE = {MODE_ACCEPT: "plan", MODE_ACCEPT_PLAN: "plan off"}
 EFFORT_KEY = "ctrl+t effort"  # the right side's effort while Hermes has reported none
-STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
-STEER_COMMAND_HINT = "/steer <text> steers"
-QUEUED_KEY_HINT = "↑ edit queued"
 ACCEPT_LABEL = "⏵⏵ accept all on"
 PLAN_LABEL = "⏸ plan mode on"
 SHELL_LABEL = "! shell (not sent to the model)"
@@ -63,6 +60,7 @@ PLAN_LABELS = (PLAN_LABEL, "⏸ plan", "⏸")
 SHELL_LABELS = (SHELL_LABEL, "! shell", "!")
 SHELL_HINT = " · enter runs it in Hermes' shell, 30 s at most"
 INFO_GAP = 3  # the fewest blank cells between the left side and the right side
+BADGE_GAP = 2  # the blank cells between the badge, at the left end, and what follows it
 LABEL_SEPARATOR = " · "  # between the mode's label, the agent count and the hint on the info line
 INFO_SEPARATOR = " · "  # between the right side's fields
 
@@ -165,23 +163,20 @@ def model_forms(model: str) -> tuple[str, ...]:
     return tuple(forms)
 
 
-def default_hints(mode: str, busy: bool, cycle: str, drafting: bool = False) -> tuple[str, ...]:
-    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan, or the idle hint,
-    which is said only while `?` would open the list, between turns with nothing typed (`drafting` False).
+def default_hints(mode: str, cycle: str) -> tuple[str, ...]:
+    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan; none in the
+    normal mode (the launch card names `?`, which still opens the list).
 
     Longest first; the last of accept's and plan's is empty, so a narrow line drops it whole.
     """
     if mode in (MODE_ACCEPT, MODE_PLAN, MODE_ACCEPT_PLAN):
         return tuple(form.format(cycle=cycle or CYCLE_WORDS) for form in MODE_HINTS)
-    return (IDLE_HINT,) if mode == MODE_NORMAL and not busy and not drafting else ()
+    return ()
 
 
 def info_line(
     *,
     mode: str,
-    busy: bool,
-    queued: int,
-    keyboard_protocol: bool,
     width: int,
     theme: Theme,
     right: Sequence[Line] = (),
@@ -189,40 +184,44 @@ def info_line(
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     cycle: str = "",
-    drafting: bool = False,
+    badge: Sequence[Line] = (),
+    branch: Sequence[Line] = (),
 ) -> Line:
-    """The line under the composer: the mode's label (accept, plan, a shell line), the agent count, the keys that
-    matter now, and on the right the first of `right` (forms, longest first) that leaves room for the left side whole.
+    """The one line under the composer. Its left side is `badge` (`[ ⚚ OMH Native ]`), `branch` (the git branch), the
+    mode's label (accept, plan, a shell line), the agent count and the keys that matter now, `BADGE_GAP` cells between
+    the first three; its right side is the first of `right` (the title, the model, the context, the effort) that leaves
+    room for the left side whole. `badge`, `branch` and `right` are forms, longest first.
+
+    What gives way, in order: the right side (through its forms, then
+    whole), then the branch's name (`branch`'s shorter forms), then the
+    badge (to `[ ⚚ OMH ]`, then `⚚`, then none), then the branch; the
+    label, the agent count and what the next key does (a question's or a
+    picker's way out) keep their words until all of those are gone, and
+    only then shorten.
 
     `chip` is the count of the agents in the view under the line while there
-    are any, drawn from cell `chip_column(mode, theme)` on. `say`, when given, is what the next key
+    are any, after the label. `say`, when given, is what the next key
     will do (a rewind waiting to be sent, Esc's second press, a question's
     keys) and stands in for the hint, in `say_style`; given as forms, longest
-    first. The right side shrinks first: it is the longest of `right` beside
-    which the label, the count and the hint's longest form fit. When none
-    leaves room the left side shortens alone: the first `say` form that fits
-    whole is said, so a narrow line keeps the point rather than the start of
-    the long one, and when none fits beside the label's words the label takes
-    its short words, then its glyph alone, before the last form is cut; any
-    other hint takes its longest form that fits, else its last, cut at the
-    edge, after a label that takes its short words, then its glyph alone,
-    when its own words do not fit. The right side then takes the longest of `right` that fits in what
-    the shortened left side leaves. During a turn the hint names the steer
-    keys, not Esc: the working row offers the interrupt. The label always survives,
-    in some form, and the count after it. Accept and plan say where Shift+Tab
-    goes next (`cycle`; CYCLE_WORDS when not given). `drafting` (the composer
-    holds text) takes the idle hint away.
+    first. The first `say` form that fits whole is said, so a narrow line
+    keeps the point rather than the start of the long one, and when none fits
+    beside the label's words the label takes its short words, then its glyph
+    alone, before the last form is cut; any other hint takes its longest form
+    that fits, else its last, cut at the edge, after a label that takes its
+    short words, then its glyph alone, when its own words do not fit. During
+    a turn the line names no key for the turn: the working row offers the
+    interrupt, and the queue's own row the send-now key. The label always
+    survives, in some form, and the count after it. Accept and plan say where
+    Shift+Tab goes next (`cycle`; CYCLE_WORDS when not given). In the normal
+    mode between turns the left side is the badge and the branch alone.
     """
     forms = (say,) if isinstance(say, str) else say
     if any(forms):
         hints = tuple(forms)
     elif mode == MODE_SHELL:
         hints = (SHELL_HINT,)
-    elif mode == MODE_NORMAL and busy:
-        keys = [STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
-        hints = (" · ".join(keys + ([QUEUED_KEY_HINT] if queued else [])),)
     else:
-        hints = default_hints(mode, busy, cycle, drafting)
+        hints = default_hints(mode, cycle)
 
     def label_of(form: int) -> Line:
         own = mode_label(mode, theme, form)
@@ -236,27 +235,49 @@ def info_line(
             return [LABEL_SEPARATOR + text.removeprefix(LABEL_SEPARATOR).strip() if text else "" for text in texts]
         return list(texts)
 
-    longest = line_width(label_of(0)) + (cell_width(placed(hints, label_of(0))[0]) if hints else 0)
-    shown_right: Line = next((form for form in right if form and longest + INFO_GAP + line_width(form) <= width), ())
-    room = width - (line_width(shown_right) + INFO_GAP if shown_right else 0)
+    whole = line_width(label_of(0)) + (cell_width(placed(hints, label_of(0))[0]) if hints else 0)
+
+    def lead(*parts: Line) -> Line:
+        """The badge and the branch forms shown, `BADGE_GAP` cells after each but a last one nothing follows."""
+        shown = [part for part in parts if part]
+        gap = Span(" " * BADGE_GAP)
+        joined: Line = ()
+        for index, part in enumerate(shown):
+            joined += (*part, *((gap,) if index < len(shown) - 1 or whole else ()))
+        return joined
+
+    def fits(left: int, side: Line) -> bool:
+        return left + (INFO_GAP + line_width(side) if side else 0) <= width
+
+    badges, branches = list(badge) or [()], list(branch) or [()]
+    tries = [(badges[0], branches[0], side) for side in [*(form for form in right if form), ()]]
+    tries += [(badges[0], form, ()) for form in branches[1:]]
+    tries += [(form, branches[-1], ()) for form in [*badges[1:], ()]]
+    tries += [((), (), ())]
+    shown_badge, shown_branch, shown_right = next(
+        (tried for tried in tries if fits(line_width(lead(tried[0], tried[1])) + whole, tried[2])), tries[-1]
+    )
+    front = lead(shown_badge, shown_branch)
+    room = width - (line_width(shown_right) + INFO_GAP if shown_right else 0) - line_width(front)
     label = label_of(0)
     hint = ""
     if any(forms):
         for form in range(len(ACCEPT_LABELS)):
             label = label_of(form)
             said = placed(hints, label)
-            fits = [text for text in said if cell_width(text) <= room - line_width(label)]
-            if fits or not mode_label(mode, theme, form):
+            fitting = [text for text in said if cell_width(text) <= room - line_width(label)]
+            if fitting or not mode_label(mode, theme, form):
                 break  # what the next key does outranks the label's words, which shorten while nothing fits
-        hint = fits[0] if fits else said[-1]
+        hint = fitting[0] if fitting else said[-1]
     elif hints:
         label = next((label_of(form) for form in range(len(ACCEPT_LABELS)) if line_width(label_of(form)) <= room),
                      label_of(len(ACCEPT_LABELS) - 1))
         said = placed(hints, label)
         hint = next((text for text in said if cell_width(text) <= max(room - line_width(label), 0)), said[-1])
-    left = truncate_line(label, room) + truncate_line((Span(hint, say_style or theme.hint),), max(room - line_width(label), 0))
+    rest = truncate_line(label, room) + truncate_line((Span(hint, say_style or theme.hint),), max(room - line_width(label), 0))
+    left = truncate_line((*front, *rest), width)
     if not shown_right:
-        shown_right = next((form for form in right if form and line_width(left) + INFO_GAP + line_width(form) <= width), ())
+        shown_right = next((side for side in right if side and fits(line_width(left), side)), ())
     if not shown_right:
         return left
     return (*left, Span(" " * (width - line_width(left) - line_width(shown_right))), *shown_right)

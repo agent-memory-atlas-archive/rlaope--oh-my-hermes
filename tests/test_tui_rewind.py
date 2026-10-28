@@ -16,7 +16,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from _tui_lines import line_text, lines_text
+from _tui_lines import line_text, lines_text, without_badge
 from test_tui_command_output import SKILL_LINE, SKILL_REFUSAL, SKILL_TURN
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import PLAN_PROMPT, SID, answer, make_app, notices, type_text
@@ -56,7 +56,7 @@ def esc(app: App) -> None:
 
 
 def mode_row(app: App, cols: int) -> str:
-    return line_text(app._info_line(cols))
+    return without_badge(line_text(app._info_line(cols)))
 
 
 class PickerTests(unittest.TestCase):

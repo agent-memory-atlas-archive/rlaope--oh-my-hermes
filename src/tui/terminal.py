@@ -16,9 +16,17 @@ kitty keyboard protocol and xterm modifyOtherKeys, so Ctrl+Enter and
 Shift+Enter can arrive as keys of their own; `OMH_TUI_KEYBOARD=legacy` keeps
 the plain bytes everywhere. `keyboard_protocol` says only that it asked: a
 terminal on the list can ignore the request (tmux with `extended-keys off`),
-and then Ctrl+Enter arrives as Enter. Whether the reports really come is
-`KeyDecoder.protocol_reported`, which turns on at the first key that arrives
-as one.
+and then Ctrl+Enter arrives as Enter. Every other terminal, unless it is
+Ghostty or `OMH_TUI_KEYBOARD=legacy` is set, gets the kitty flags pushed only
+when it answers the kitty keyboard query in the startup query
+(`query_background`): an answer says it speaks the protocol (Otty, with its
+`kitty-keyboard` setting on, is one). A terminal the environment does not
+name (over SSH, where TERM_PROGRAM rarely arrives) gets them only when its
+XTVERSION answer names one of `PUSH_BY_XTVERSION`, since an unnamed answer
+may come from Ghostty. Whether the reports really come is
+`KeyDecoder.protocol_reported`, which turns on at the terminal's answer to the
+kitty keyboard query when that answer says the flag is on, or else at the
+first key that arrives as a report.
 
 Mouse reporting is off unless `set_mouse(True)` turns it on, and then only
 clicks and the wheel are reported, in SGR form. `set_mouse(True, drag=True)`
@@ -31,7 +39,8 @@ the first frame, so the theme can be measured against the background the
 person really has (`theme.build_theme`), and in the same write for the row
 its cursor is on, which the launch reads to know whether any row above the
 cursor needs pushing into scrollback before the first frame
-(`App.clear_launch_screen`): OSC 11, then the cursor position request (CSI 6n), with a device-attributes request behind them that
+(`App.clear_launch_screen`): OSC 11, then the cursor position request (CSI 6n), then the kitty keyboard query (CSI ? u),
+whose answer stays in the input for the decoder to read, with a device-attributes request behind them that
 every terminal answers, in order, so that answer ends the wait whether or not
 the others were answered, and `BACKGROUND_QUERY_SECONDS` bounds it when
 nothing comes. Keys typed while it waits are handed back to the caller. A terminal that does not answer OSC 11
@@ -83,6 +92,9 @@ BRACKETED_PASTE_OFF = f"{CSI}?2004l"
 # keyboard protocol (push flag 1, "disambiguate") and xterm modifyOtherKeys level 2.
 KITTY_KEYBOARD_PUSH = f"{CSI}>1u"
 KITTY_KEYBOARD_POP = f"{CSI}<u"
+# Asks which kitty keyboard flags are on; a terminal that speaks the protocol answers `CSI ? <flags> u`, before its
+# answer to a device-attributes request sent after it, and one that does not answers nothing.
+KITTY_KEYBOARD_QUERY = f"{CSI}?u"
 MODIFY_OTHER_KEYS_ON = f"{CSI}>4;2m"
 MODIFY_OTHER_KEYS_OFF = f"{CSI}>4m"
 # Mouse reports: button presses and releases, the wheel included (xterm mode
@@ -126,6 +138,14 @@ BACKGROUND_QUERY_SECONDS = 0.1
 # `ESC ] 11 ; rgb:R/G/B` ended by BEL or ST, each channel one to four hex digits (xterm's `XParseColor` forms).
 _BACKGROUND_REPLY = re.compile(rb"\x1b\]11;rgb:([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})(?:\x07|\x1b\\)")
 _DEVICE_ATTRIBUTES_REPLY = re.compile(rb"\x1b\[\?[0-9;]*c")
+# The kitty keyboard query's answer, `ESC [ ? flags u`: the terminal speaks the protocol.
+_KITTY_FLAGS_REPLY = re.compile(rb"\x1b\[\?[0-9]*u")
+# XTVERSION: asks the terminal its name and version; the answer is `ESC P > | name ST` (ST is `ESC \`, or BEL).
+XTVERSION_QUERY = f"{CSI}>0q"
+_XTVERSION_REPLY = re.compile(rb"\x1bP>\|([^\x1b\x07]*)(?:\x1b\\|\x07)")
+# The terminals an XTVERSION name may get the kitty flags pushed on an answer, by its first word, any case: the
+# ones known to read flag 1 as the TUI does. Ghostty is not one (its kitty mode drops Alt from Backspace).
+PUSH_BY_XTVERSION = frozenset({"kitty", "wezterm", "foot", "alacritty", "rio", "otty"})
 # `ESC [ row ; col R`, both 1-based: the cursor position report.
 _CURSOR_POSITION_REPLY = re.compile(rb"\x1b\[([0-9]{1,5});([0-9]{1,5})R")
 # `COLORFGBG`'s background field names a colour of the basic sixteen: 7 and 15 are the light ones (xterm's values),
@@ -202,6 +222,12 @@ def keyboard_protocol_request(environ: Mapping[str, str]) -> str:
     if name in MODIFY_OTHER_KEYS_ONLY_TERMINALS:
         return MODIFY_OTHER_KEYS_ON
     return KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON
+
+
+def xtversion_pushable(name: bytes) -> bool:
+    """Whether an XTVERSION answer's name (`kitty(0.35.2)`, `WezTerm 20240203`) is one of `PUSH_BY_XTVERSION`."""
+    first = re.split(rb"[\s(]", name.strip(), maxsplit=1)[0]
+    return first.decode("ascii", "replace").lower() in PUSH_BY_XTVERSION
 
 
 def _channel_byte(digits: bytes) -> int:
@@ -290,7 +316,20 @@ class Terminal:
         self._winch_installed = False
         self._winch_pipe: tuple[int, int] | None = None  # the resize signal writes here to end a `read`'s wait
         self._resized = False
-        self._keyboard_request = keyboard_protocol_request(environ or {})
+        environ = environ or {}
+        self._keyboard_request = keyboard_protocol_request(environ)
+        legacy = environ.get("OMH_TUI_KEYBOARD", "") == KEYBOARD_OPT_OUT
+        # Asked with the startup query on every terminal but a legacy one: the answer says whether the flags took.
+        self._keyboard_query = "" if legacy else KITTY_KEYBOARD_QUERY
+        # Where entering did not push the kitty flags, a terminal that answers the query gets them then (never
+        # Ghostty, whose kitty mode drops Alt from Backspace). One the environment does not name (over SSH,
+        # TERM_PROGRAM rarely arrives) is asked its name too (XTVERSION), and gets them only when that names a
+        # terminal in `PUSH_BY_XTVERSION`: an unnamed answer may be Ghostty.
+        name = terminal_name(environ)
+        self._push_on_answer = not legacy and KITTY_KEYBOARD_PUSH not in self._keyboard_request and (
+            name not in MODIFY_OTHER_KEYS_ONLY_TERMINALS
+        )
+        self._name_query = XTVERSION_QUERY if self._push_on_answer and name == environ.get("TERM", "") else ""
         # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
         self.keyboard_protocol = False
         # True while mouse reports are on (`set_mouse`), and while they include a held button's motion.
@@ -379,16 +418,47 @@ class Terminal:
     def query_background(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[str | None, bytes, int | None]:
         """The background colour (`#RRGGBB`, or None), the input that arrived meanwhile, and the cursor's 1-based row.
 
-        Writes the background query, the cursor position request and the
+        Writes the background query, the cursor position request, the kitty
+        keyboard query (not with `OMH_TUI_KEYBOARD=legacy`), and the
         attributes request behind them, then reads until the attributes answer
-        arrives or `timeout` passes. Only inside the `with` block, where input
+        arrives or `timeout` passes. A terminal entering did not push the kitty
+        flags to that answers the kitty query before the attributes gets them
+        pushed now, and is asked again, with the attributes behind, so its
+        second answer says whether the push took; the wait for it is bounded
+        by `timeout` too, and the push is popped on exit and pushed again after
+        a stop, as the entry's own. Where the environment names no terminal,
+        XTVERSION goes before the kitty query, its answer is taken out of the
+        input, and only a name in `PUSH_BY_XTVERSION` gets the push; no
+        answer before the attributes, no push. Only inside the `with` block, where input
         is raw. The row is None unless its report came before the attributes
-        answer (`split_cursor_reply`). An answer that comes after the wait is
-        no key either: the decoder drops an OSC string whole, and reads a late
-        position report as an unknown key, which types nothing.
+        answer (`split_cursor_reply`). The kitty answer stays in the input
+        handed back: the decoder reads it, types nothing, and learns from it
+        whether Ctrl+Enter comes as a key of its own. An answer that comes
+        after the wait is no key either: the decoder drops an OSC string whole,
+        reads a late kitty answer as it reads an early one, and a late position
+        report as an unknown key, which types nothing.
         """
-        self.write(BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY)
-        row, data = split_cursor_reply(self._read_answers(timeout))
+        self.write(
+            BACKGROUND_QUERY + CURSOR_POSITION_QUERY + self._name_query + self._keyboard_query + DEVICE_ATTRIBUTES_QUERY
+        )
+        data = self._read_answers(timeout)
+        answered = _DEVICE_ATTRIBUTES_REPLY.search(data)
+        flags = _KITTY_FLAGS_REPLY.search(data, 0, answered.start()) if answered is not None else None
+        named = _XTVERSION_REPLY.search(data, 0, answered.start()) if answered is not None else None
+        if named is not None:  # an answer to a query, never a key: it leaves the input here
+            data = data[: named.start()] + data[named.end() :]
+            answered = _DEVICE_ATTRIBUTES_REPLY.search(data)
+        if self._name_query and not (named is not None and xtversion_pushable(named.group(1))):
+            self._push_on_answer = False  # unnamed, or named as a terminal not known to read the flags as asked
+        if self._push_on_answer and flags is not None and answered is not None:
+            self._push_on_answer = False
+            self._keyboard_request += KITTY_KEYBOARD_PUSH  # pushed again after a stop, popped on every exit
+            self.keyboard_protocol = True
+            self.write(KITTY_KEYBOARD_PUSH + KITTY_KEYBOARD_QUERY + DEVICE_ATTRIBUTES_QUERY)
+            # Bytes after the first attributes answer belong to the second read; its own attributes answer goes.
+            _colour, again, _answered = split_background_replies(self._read_answers(timeout, data[answered.end() :]))
+            data = data[: answered.end()] + again
+        row, data = split_cursor_reply(data)
         colour, typed, _answered = split_background_replies(data)
         return colour, typed, row
 
@@ -405,11 +475,10 @@ class Terminal:
         _colour, typed, _answered = split_background_replies(data)
         return typed, row
 
-    def _read_answers(self, timeout: float) -> bytes:
-        """Input until the attributes answer arrives (the last a query asks for) or `timeout` passes."""
+    def _read_answers(self, timeout: float, data: bytes = b"") -> bytes:
+        """Input after `data` until the attributes answer arrives (the last a query asks for) or `timeout` passes."""
         deadline = time.monotonic() + timeout
-        data = b""
-        while (left := deadline - time.monotonic()) > 0:
+        while not split_background_replies(data)[2] and (left := deadline - time.monotonic()) > 0:
             ready, _, _ = select.select([self._input], [], [], left)
             if not ready:
                 break
@@ -420,8 +489,6 @@ class Terminal:
             if not chunk:
                 break
             data += chunk
-            if split_background_replies(data)[2]:
-                break
         return data
 
     def _on_winch(self, signum: int, frame: FrameType | None) -> None:

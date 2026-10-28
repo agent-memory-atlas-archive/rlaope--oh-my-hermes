@@ -76,10 +76,6 @@ MIN_ROWS = 6
 MIN_COLS = 20
 # The bottom rule under the composer, kept only where the slot still gets its full cap beside it.
 BOTTOM_RULE_MIN_ROWS = 7
-# The badge row under the info line (the branch and OMH Native), drawn from this many rows: a shorter terminal keeps
-# its rows for the composer, the slot, the agent view and the running turn's tool rows (at 24x80 with the agent
-# view the row would cost one of them; #2342 review).
-BADGE_MIN_ROWS = 30
 # The agent view's usual most rows: main and six agents (or main, five and a `+N` row), as the agent list had.
 AGENT_VIEW_ROWS = 7
 
@@ -101,7 +97,6 @@ class Budget:
     agents: int = 0  # the agent view: under the info line, the region's last rows
     gaps: tuple[int, int] = (0, 0)  # blank rows above the slot and under it
     sticky_gap: int = 0  # a blank row above the sticky prompt, so it never reads as the reply's last line
-    badge: int = 0  # the region's last row: the git branch on its left, the OMH Native badge on its right
 
     @property
     def total(self) -> int:
@@ -118,7 +113,6 @@ class Budget:
             + self.agents
             + sum(self.gaps)
             + self.sticky_gap
-            + self.badge
         )
 
     @property
@@ -207,7 +201,6 @@ def allocate(
     gaps: tuple[bool, bool] = (False, False),
     sticky_gap: bool = False,
     gap_reserve: int = 0,
-    badge_rows: int = 0,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
@@ -216,10 +209,7 @@ def allocate(
     bottom_rule = under_composer(rows, cols)
     if composer_hidden:
         composer = bottom_rule = 0  # their rows, and the top rule's, go to the slot (`choice_cap`)
-    # The badge row, the region's last, by the terminal's height alone (as the bottom rule): it never comes and goes
-    # as a menu or the agent view takes rows, so it never moves the composer.
-    badge = int(badge_rows > 0 and rows >= BADGE_MIN_ROWS and cols >= MIN_COLS and room - composer - info > 0)
-    left = room - composer - info - bottom_rule - badge
+    left = room - composer - info - bottom_rule
     rule = slot = sticky_rows = tail = below = agents = 0
     spaced = (0, 0)
     over_sticky = 0
@@ -254,8 +244,7 @@ def allocate(
         over_sticky = int(sticky_gap and sticky_rows > 0 and spare > sum(spaced))  # the same rule, last
         left -= sum(spaced) + over_sticky
         tail = min(max(tail_rows, 0), left)
-    content = (sticky_rows + tail + slot + rule + composer + bottom_rule + below + info + badge + agents + sum(spaced)
-               + over_sticky)
+    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + info + agents + sum(spaced) + over_sticky
     return Budget(
         pad=min(max(min_height - content, 0), room - content),
         floor=min(max(tail_floor, 0), tail),
@@ -270,7 +259,6 @@ def allocate(
         agents=agents,
         gaps=spaced,
         sticky_gap=over_sticky,
-        badge=badge,
     )
 
 
@@ -298,7 +286,6 @@ def compose(
     info: Line,
     below: Sequence[Line] = (),
     agents: Sequence[Line] = (),
-    badge: Line = BLANK,
 ) -> list[Line]:
     """The region's rows, exactly `budget.total` of them, top to bottom.
 
@@ -326,7 +313,6 @@ def compose(
     if budget.info:
         region.append(info)
     region.extend(list(agents)[: budget.agents])
-    region.extend([badge] * budget.badge)
     return region
 
 

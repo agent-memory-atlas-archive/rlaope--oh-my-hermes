@@ -12,14 +12,15 @@ from __future__ import annotations
 import re
 import unittest
 
+from _tui_lines import without_badge
 from test_tui_modes import make_app, type_text
 from omh.tui.app import NEWLINE_KEYS
-from omh.tui.keys import CHAR, Key, Paste
+from omh.tui.keys import CHAR, ENTER, Key, Paste
 
 
 def mode_row(app) -> str:
     """The info line's left side: its right one stands 3 cells or more away."""
-    return re.split(r" {3,}", "".join(span.text for span in app._info_line(100)).strip())[0]
+    return re.split(r" {3,}", without_badge("".join(span.text for span in app._info_line(100))).strip())[0]
 
 
 def two_lines(app) -> None:
@@ -56,7 +57,9 @@ class NewlineHintTests(unittest.TestCase):
 
     def test_a_turn_running_or_another_mode_keeps_its_own_hint(self) -> None:
         app, _client = make_app(busy=True)
-        two_lines(app)
+        type_text(app, "first")
+        app._on_input(Key(ENTER, alt=True))  # Ctrl+J steers while a turn runs
+        type_text(app, "second")
         self.assertNotIn(NEWLINE_KEYS[0], mode_row(app))
         app, _client = make_app()
         app.plan_mode = True

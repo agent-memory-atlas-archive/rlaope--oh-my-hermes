@@ -61,7 +61,6 @@ from omh.tui.keys import (
     KeyDecoder,
     Mouse,
 )
-from omh.tui.modes import IDLE_HINT
 from omh.tui.pager import ALT_SCREEN_OFF
 from omh.tui.screen import ERASE_BELOW
 from omh.tui.session_picker import SessionPicker, SessionRow
@@ -1248,7 +1247,7 @@ class MouseReplayTests(AppTestCase):
             Step(b"\x1b", when=lambda: on() and listed(), capture="back", label="the list again"),
             Step(b"\x1b", when=lambda: not listed() and not on(), label="the view again"),
             # The agent view stays under the info line after the turn: `idle` reads the screen's last row.
-            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.shows(IDLE_HINT)(),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(),
                  capture="over", label="the end"),
         )
         self.run_main(run)

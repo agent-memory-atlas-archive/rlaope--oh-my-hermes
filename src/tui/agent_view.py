@@ -402,7 +402,7 @@ class AgentViewMixin:
             return wanted
         # What allocate left the view and the tail under the parts placed before them (`layout.allocate`).
         left = max_height(rows) - (
-            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot + budget.badge
+            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot
         )
         return max(last_given, left - working)
 
@@ -471,8 +471,8 @@ class AgentViewMixin:
         """
         cols, rows = self.size
         shown = listed[: budget.agents]
-        # Counted up from the region's last row: the badge row under the view comes first.
-        self.clickable = {budget.badge + budget.agents - 1 - index: (Hit(0, cols, row_id),)
+        # Counted up from the region's last row, the view's last.
+        self.clickable = {budget.agents - 1 - index: (Hit(0, cols, row_id),)
                           for index, row_id in enumerate(shown)}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
@@ -587,7 +587,7 @@ class AgentViewMixin:
             {"session_id": sid, "subagent_id": agent.subagent_id, "text": text},
             lambda result: self._on_agent_steered(sid, session, block, result),
             lambda error: self._on_agent_steered(sid, session, block, {}, as_text(error.get("message")).strip().rstrip(".")),
-            lambda: self._on_agent_steer_unanswered(sid, session, block),  # its text comes back, never sent again
+            lambda seconds: self._on_agent_steer_unanswered(sid, session, block, seconds),  # given back, never resent
             steer=block,
         )
 
