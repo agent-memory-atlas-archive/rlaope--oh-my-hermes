@@ -187,14 +187,14 @@ def info_line(
     badge: Sequence[Line] = (),
     branch: Sequence[Line] = (),
 ) -> Line:
-    """The one line under the composer. Its left side is `badge` (`[ ⚚ OMH Native ]`), `branch` (the git branch), the
+    """The one line under the composer. Its left side is `badge` (`[⚚ OMH Native]`), `branch` (the git branch), the
     mode's label (accept, plan, a shell line), the agent count and the keys that matter now, `BADGE_GAP` cells between
     the first three; its right side is the first of `right` (the title, the model, the context, the effort) that leaves
     room for the left side whole. `badge`, `branch` and `right` are forms, longest first.
 
     What gives way, in order: the right side (through its forms, then
     whole), then the branch's name (`branch`'s shorter forms), then the
-    badge (to `[ ⚚ OMH ]`, then `⚚`, then none), then the branch; the
+    badge (to `[⚚ OMH]`, then `⚚`, then none), then the branch; the
     label, the agent count and what the next key does (a question's or a
     picker's way out) keep their words until all of those are gone, and
     only then shorten.

@@ -6,6 +6,10 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **The TUI's badge sits tight in its brackets.** The bottom line now reads
+  `[⚚ OMH Native]` (and `[⚚ OMH]` when it shortens) instead of
+  `[ ⚚ OMH Native ]`, which frees 2 cells for the branch and the fields on
+  the right.
 - **Six more model categories you can route a subagent to.** `google-search`
   (Gemini 3.1 Pro first, for research grounded in Google Search), `x-search`
   (Grok 4.7 first, for live search on X), `review` (GPT-6.1 Sol at xhigh, so
