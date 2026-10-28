@@ -46,7 +46,7 @@ from omh.tui.diff_view import DIFF_ADDED, DIFF_FILE, DIFF_HUNK, DIFF_INDENT, Dif
 from omh.tui.gateway import Event
 from omh.tui.composer import PROMPT
 from omh.tui.history import HistorySearch
-from omh.tui.keys import BACKSPACE, CHAR, Key
+from omh.tui.keys import CHAR, Key
 from omh.tui.session_picker import FILTER_PROMPT
 from omh.tui.style import Span, is_fill
 from omh.tui.theme import DEFAULT_THEME as THEME
@@ -498,36 +498,33 @@ class InfoLineInsetTests(unittest.TestCase):
         composer, info = screen[-3], screen[-1]
         self.assertTrue(composer.startswith(PROMPT), screen)
         self.assertEqual(info.index("["), len(PROMPT))  # the badge under the composer's text, two cells in
-        self.assertTrue(info.startswith("  [ ⚚ OMH Native ]  ? for shortcuts"), info)
+        self.assertTrue(info.startswith("  [ ⚚ OMH Native ]   "), info)  # the badge alone on the left
         self.assertEqual(line_width(app._info_line(80)), 80)  # the right side still ends on the last cell
 
     def test_a_tiny_terminal_draws_no_rules_and_the_line_starts_on_the_edge(self) -> None:
         app, _client = make_app(rows=5, cols=80)
+        show_mode(app, MODE_ACCEPT)  # no badge on a tiny terminal: the mode's label is the line's first cell
         screen = [row for row in drawn(app) if row]
-        self.assertTrue(screen[-1].startswith("? for shortcuts"), screen)
+        self.assertTrue(screen[-1].startswith("⏵⏵ accept all on"), screen)
         self.assertFalse([row for row in screen if row.startswith(RULE_ROW)], screen)
 
 
 class ShortcutsHintTests(unittest.TestCase):
-    """`? for shortcuts` is said only while `?` would open the list: on an empty composer (review B, NIT-2)."""
+    """The line names no `?` key (owner, 2026-10-28): the launch card lists `? every shortcut`, and `?` on an empty
+    composer still opens the list."""
 
-    def test_the_hint_leaves_while_the_composer_holds_text_and_comes_back_when_it_is_empty(self) -> None:
+    def test_the_line_never_says_the_shortcuts_hint_and_the_key_still_opens_the_list(self) -> None:
         app, _client = make_app(cols=100)
-        self.assertTrue(without_badge(line_text(app._info_line(100))).startswith("  ? for shortcuts"))
-        for typed in ("/", "model"):  # the slash menu opens over the `/`
+        for typed in ("", "/", "model"):  # the slash menu opens over the `/`
             type_text(app, typed)
-            self.assertTrue(app._menu_rows())
             row = line_text(app._info_line(100))
             with self.subTest(composer=app.composer.text):
                 self.assertNotIn("shortcuts", row)
                 self.assertTrue(row.endswith("ctrl+t effort"), row)  # the right side stays
-        for _ in "/model":
-            app._on_input(Key(BACKSPACE))
-        type_text(app, "hello")
-        self.assertNotIn("shortcuts", line_text(app._info_line(100)))
-        for _ in "hello":
-            app._on_input(Key(BACKSPACE))
-        self.assertTrue(without_badge(line_text(app._info_line(100))).startswith("  ? for shortcuts"))
+        app._set_composer("")
+        app._on_input(Key(CHAR, "?"))
+        self.assertEqual(app.composer.text, "")  # `?` opened the list instead of typing itself
+        self.assertIsNotNone(app.pager)
 
     def test_a_mode_keeps_its_label_and_where_shift_tab_goes_while_text_is_typed(self) -> None:
         for mode, said in ((MODE_ACCEPT, "⏵⏵ accept all on (⇧⇥ to cycle)"), (MODE_PLAN, "⏸ plan mode on (⇧⇥ to cycle)")):

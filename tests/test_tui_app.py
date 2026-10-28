@@ -63,7 +63,7 @@ from omh.tui.app import (
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import CLOSED_EXIT, FALLBACK_EXIT, FALLBACK_SENTINEL_ENV, SESSION_FILE_ENV
-from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, info_line
+from omh.tui.modes import ACCEPT_LABEL, PLAN_LABEL, info_line
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME, theme_named
@@ -79,6 +79,9 @@ RULE_MARK = "────"  # in both of the composer's rules
 BOX_MARK = RULE_ROW  # one of the composer's rules: two per frame, above and under it
 # The working row's clock, `(12s · …` or `(1m 4s)`: on screen while a turn runs or waits on the person.
 WORKING_CLOCK = re.compile(r"\(\d+(?:m \d+)?s(?: · |\))")
+# Between turns in the normal mode: the info line's left side is the badge alone, or with the agent count after it.
+IDLE_LEFT = re.compile(r"\d+ agents?(?: · ↓ agents)?")
+EMPTY_COMPOSER = "❯ Ask Hermes anything"  # the composer's placeholder: nothing typed
 # Between the composer and the info line on these 24-row terminals: the bottom rule.
 UNDER_COMPOSER = 1
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
@@ -236,26 +239,32 @@ class ScriptedTerminal:
     # -- reading the screen --
 
     def info_row(self) -> str:
-        """The info line, its badge taken out: the screen's last row that is not blank ("" on a blank screen)."""
+        """The info line, its badge taken out: the last row that starts with the badge, else the screen's last row that
+        is not blank (an agent view's rows stand under the line; "" on a blank screen)."""
         rows = [line for line in self.screen.lines() if line]
-        return without_badge(rows[-1]) if rows else ""
+        badged = [line for line in rows if without_badge(line) != line]
+        return without_badge((badged or rows)[-1]) if rows else ""
 
     def history(self) -> str:
         return "\n".join(self.screen.history())
 
     def idle(self) -> bool:
-        """No turn runs and nothing asks (agents may still run): the info line offers `? for shortcuts`, or, in accept
-        or plan, whose line is the same either way, it names the mode and no working row is on the screen."""
-        row = self.info_row()
-        if IDLE_HINT in row:
+        """No turn runs and nothing asks (agents may still run): no working row is on the screen, and the info line
+        names the mode in accept or plan, or, in the normal mode, says nothing after the badge but the agent count
+        while the composer is empty (a draft, Esc's or Ctrl+C's second press, a picker or a question each say or
+        hide something)."""
+        lines = self.screen.lines()
+        if any(WORKING_CLOCK.search(line) for line in lines):
+            return False
+        body = self.info_row().removeprefix(INFO_INSET)
+        if body.startswith((ACCEPT_LABEL, PLAN_LABEL)):
             return True
-        return row.removeprefix(INFO_INSET).startswith((ACCEPT_LABEL, PLAN_LABEL)) and not any(
-            WORKING_CLOCK.search(line) for line in self.screen.lines()
-        )
+        left = re.split(r" {3,}", body)[0].strip()
+        return (not left or IDLE_LEFT.fullmatch(left) is not None) and any(line.startswith(EMPTY_COMPOSER) for line in lines)
 
     def running(self) -> bool:
-        """A turn runs and nothing asks: the working row counts its seconds and the info line is not idle's."""
-        return IDLE_HINT not in self.info_row() and any(WORKING_CLOCK.search(line) for line in self.screen.lines())
+        """A turn runs and nothing asks: the working row counts its seconds."""
+        return any(WORKING_CLOCK.search(line) for line in self.screen.lines()) and not self.idle()
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
@@ -577,7 +586,7 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run, CLOSED_EXIT)  # `omh` launched it: Hermes prints no epilogue, `omh` its card
         screen = run.terminal.captures["ready"]
         info = info_index(screen)
-        self.assertTrue(without_badge(screen[info]).startswith(INFO_INSET + IDLE_HINT), screen)
+        self.assertTrue(screen[info].startswith(INFO_INSET + "[ ⚚ OMH Native ]   "), screen)  # the badge alone on the left
         self.assertIn("v4.1-flash-ultrafast · ", screen[info])  # its short name beside the badge at 80 columns
         composer = info - 1 - UNDER_COMPOSER
         self.assertEqual(composer_text(screen[composer]), "❯ Ask Hermes anything", screen)
@@ -1315,9 +1324,8 @@ class InfoLineRightTests(unittest.TestCase):
 
     def right(self, app: App, width: int) -> str:
         row = without_badge(line_text(app._info_line(width)))
-        self.assertTrue(row.startswith(INFO_INSET + IDLE_HINT), row)
         self.assertLessEqual(line_width(app._info_line(width)), width)
-        return row[len(INFO_INSET + IDLE_HINT) :].strip()
+        return row.strip()
 
     def test_the_right_side_is_model_context_and_effort_with_no_brand_and_no_state(self) -> None:
         app = self.app()
@@ -1328,20 +1336,20 @@ class InfoLineRightTests(unittest.TestCase):
             self.assertNotIn(gone, row)
 
     def test_the_model_shortens_first_then_goes_then_the_effort_then_the_context(self) -> None:
-        # The inset, the badge and its gap, `? for shortcuts` and the 3-cell gap take 38 cells; the right side takes
-        # the longest form that fits beside, and goes whole before the badge shortens.
+        # The inset, the badge and the 3-cell gap take 21 cells; the right side takes the longest form that fits
+        # beside, and goes whole before the badge shortens.
         app = self.app()
         expected = {
-            99: f"{self.MODEL} · ctx 5% · effort high",
-            98: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            90: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            89: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            81: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            80: "ctx 5% · effort high",
-            58: "ctx 5% · effort high",
-            57: "ctx 5%",
-            44: "ctx 5%",
-            43: "",
+            82: f"{self.MODEL} · ctx 5% · effort high",
+            81: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            73: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            72: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            64: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            63: "ctx 5% · effort high",
+            41: "ctx 5% · effort high",
+            40: "ctx 5%",
+            27: "ctx 5%",
+            26: "",
         }
         self.assertEqual({width: self.right(app, width) for width in expected}, expected)
 
@@ -1415,30 +1423,30 @@ class InfoLineRightTests(unittest.TestCase):
         self.assertTrue(running.endswith(f"repeat x4 cycle-of-2 approval · 2 tools · 12s · {self.MODEL} · ctx 5% · effort high"),
                         running)
         app.turn_pending = False
-        self.assertEqual(self.right(app, 70), "repeat x4 cycle-of-2 approval")
+        self.assertEqual(self.right(app, 55), "repeat x4 cycle-of-2 approval")
 
 
 class InfoLineLeftTests(unittest.TestCase):
     def row(self, width: int = 80, **facts: object) -> str:
-        defaults: dict[str, object] = {"mode": "normal", "busy": False}
+        defaults: dict[str, object] = {"mode": "normal"}
         return line_text(info_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
 
-    def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
-        self.assertEqual(self.row(), "? for shortcuts")
-        # The working row offers the interrupt and the queue's own row the send-now key: the line names neither.
-        self.assertEqual(self.row(busy=True), "")
+    def test_normal_mode_says_nothing_of_its_own(self) -> None:
+        # Between turns the launch card names `?`, which still opens the list; during a turn the working row offers
+        # the interrupt and the queue's own row the send-now key.
+        self.assertEqual(self.row(), "")
 
     def test_accept_and_plan_say_so_in_their_own_colour(self) -> None:
-        accept = info_line(mode="accept", busy=False, width=80, theme=DEFAULT_THEME)
+        accept = info_line(mode="accept", width=80, theme=DEFAULT_THEME)
         self.assertEqual(line_text(accept), "⏵⏵ accept all on (⇧⇥ to cycle)")
         self.assertEqual(accept[0].style, replace(DEFAULT_THEME.mode_accept, bold=True))
-        plan = info_line(mode="plan", busy=True, width=80, theme=DEFAULT_THEME)
+        plan = info_line(mode="plan", width=80, theme=DEFAULT_THEME)
         self.assertEqual(line_text(plan), "⏸ plan mode on (⇧⇥ to cycle)")
         self.assertEqual(plan[0].style, replace(DEFAULT_THEME.mode_plan, bold=True))
-        hermes_own = info_line(mode="accept", busy=False, width=80,
+        hermes_own = info_line(mode="accept", width=80,
                                theme=DEFAULT_THEME, cycle="plan")
         self.assertEqual(line_text(hermes_own), "⏵⏵ accept all on (⇧⇥ plan)")
-        both = info_line(mode="accept+plan", busy=False, width=80,
+        both = info_line(mode="accept+plan", width=80,
                          theme=DEFAULT_THEME, cycle="plan off")
         self.assertEqual(line_text(both), "⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)")
 

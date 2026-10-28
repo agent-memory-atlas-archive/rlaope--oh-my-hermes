@@ -187,7 +187,6 @@ class Session:
     def info_row(self) -> Line:
         return info_line(
             mode=self.mode,
-            busy=self.sticky is not None,
             width=self.cols,
             theme=DEFAULT_THEME,
             right=INFO_RIGHT,

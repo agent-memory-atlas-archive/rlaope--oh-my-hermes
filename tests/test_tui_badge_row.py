@@ -192,30 +192,31 @@ class BottomLineTests(unittest.TestCase):
 
     def line(self, width: int, state: GitState | None = STATE, **facts: object) -> str:
         word, accent = native("spectrum", "#0D1117")
-        return line_text(info_line(mode=facts.pop("mode", "normal"), busy=False, width=width, theme=self.THEME,
+        return line_text(info_line(mode=facts.pop("mode", "normal"), width=width, theme=self.THEME,
                                    right=self.RIGHT, badge=badge_forms(self.THEME, accent, word),
                                    branch=branch_forms(state, self.THEME), **facts))  # type: ignore[arg-type]
 
     def test_the_badge_on_the_left_and_the_branch_then_the_fields_on_the_right(self) -> None:
         text = self.line(130)
         self.assertEqual(len(text), 130)
-        self.assertTrue(text.startswith("[ ⚚ OMH Native ]  ? for shortcuts"), text)
+        self.assertTrue(text.startswith("[ ⚚ OMH Native ]   "), text)  # the badge alone: the line names no `?` key
         self.assertTrue(text.endswith("branch:omh/terminology-unification | !3 ?128 · deepseek-v4.1-flash · ctx 12% · "
                                       "effort high"), text)
 
     def test_the_fields_go_first_then_the_badge_shrinks_and_the_label_and_the_branch_stay(self) -> None:
         branch = "branch:omh/terminology-unification | !3 ?128"  # 44 cells
-        widths = {  # the left side is 33 cells with the whole badge, 26 with `[ ⚚ OMH ]`, 18 with `⚚`; the gap 3
-            125: ("[ ⚚ OMH Native ]  ? for shortcuts", branch + " · ctx 12% · effort high"),
-            104: ("[ ⚚ OMH Native ]  ? for shortcuts", branch + " · ctx 12% · effort high"),
-            103: ("[ ⚚ OMH Native ]  ? for shortcuts", branch),
-            80: ("[ ⚚ OMH Native ]  ? for shortcuts", branch),
-            79: ("[ ⚚ OMH ]  ? for shortcuts", branch),
-            73: ("[ ⚚ OMH ]  ? for shortcuts", branch),
-            72: ("⚚  ? for shortcuts", branch),
-            65: ("⚚  ? for shortcuts", branch),
-            64: ("? for shortcuts", branch),  # the badge goes before the left side's words shorten
-            61: ("? for shortcu…", branch),  # then the hint shortens, beside the branch
+        widths = {  # between turns the left side is the badge alone: 16 cells, 9 as `[ ⚚ OMH ]`, 1 as `⚚`; the gap 3
+            109: ("[ ⚚ OMH Native ]", branch + " · deepseek-v4.1-flash · ctx 12% · effort high"),
+            108: ("[ ⚚ OMH Native ]", branch + " · ctx 12% · effort high"),
+            87: ("[ ⚚ OMH Native ]", branch + " · ctx 12% · effort high"),
+            86: ("[ ⚚ OMH Native ]", branch),
+            63: ("[ ⚚ OMH Native ]", branch),
+            62: ("[ ⚚ OMH ]", branch),
+            56: ("[ ⚚ OMH ]", branch),
+            55: ("⚚", branch),
+            48: ("⚚", branch),
+            47: ("", branch),  # the badge goes whole before the branch shortens
+            46: ("", "branch:omh/terminology-unifica… | !3 ?128"),  # then the branch's name is cut
         }
         for width, (left, right) in widths.items():
             with self.subTest(width=width):
@@ -235,7 +236,7 @@ class BottomLineTests(unittest.TestCase):
 
     def test_the_badge_and_the_branch_keep_their_colours(self) -> None:
         word, accent = native("spectrum", "#0D1117")
-        row = info_line(mode="normal", busy=False, width=120, theme=self.THEME, badge=badge_forms(self.THEME, accent, word),
+        row = info_line(mode="normal", width=120, theme=self.THEME, badge=badge_forms(self.THEME, accent, word),
                         branch=branch_forms(self.STATE, self.THEME))
         styles = {span.text: span.style for span in row}
         self.assertEqual((styles["!3"], styles["?128"], styles["⚚"]), (self.THEME.warn, self.THEME.faint, accent))

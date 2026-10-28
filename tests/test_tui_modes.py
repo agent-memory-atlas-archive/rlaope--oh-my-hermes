@@ -2193,7 +2193,7 @@ class InfoLineModeTests(unittest.TestCase):
                 inset = INFO_INSET if rows >= MIN_ROWS else ""
                 self.assertTrue(self.info(MODE_ACCEPT, rows).startswith(inset + "⏵⏵ accept all on (⇧⇥ to cycle)"))
                 self.assertTrue(self.info(MODE_PLAN, rows).startswith(inset + "⏸ plan mode on (⇧⇥ to cycle)"))
-                self.assertTrue(self.info(MODE_NORMAL, rows).startswith(inset + "? for shortcuts"))
+                self.assertFalse(self.info(MODE_NORMAL, rows).strip().startswith(("⏵", "⏸")))  # normal says no mode
 
     def test_a_narrow_terminal_keeps_the_label_whole(self) -> None:
         for cols in (19, 20, 30):
@@ -2366,7 +2366,7 @@ class ModeReplayTests(AppTestCase):
             Step(SHIFT_TAB_BYTES, when=terminal.idle, capture="normal", label="idle"),
             Step(SHIFT_TAB_BYTES, when=terminal.shows("⏵⏵ accept all on"), capture="accept", label="accept"),
             Step(SHIFT_TAB_BYTES, when=terminal.shows("⏸ plan mode on"), capture="plan", label="plan"),
-            Step(b"\x04", when=terminal.shows("? for shortcuts"), label="normal again"),
+            Step(b"\x04", when=lambda: not terminal.shows("plan mode on")() and terminal.idle(), label="normal again"),
         )
         self.run_main(run)
         self.assert_clean_run(run)

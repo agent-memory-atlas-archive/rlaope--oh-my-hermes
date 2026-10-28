@@ -5477,7 +5477,6 @@ class App(ModesMixin, AgentViewMixin):
         chip = self._agent_chip(room) if not listing or self.slot is not None else ()
         line = info_line(
             mode=self._display_mode(),
-            busy=self._busy(),
             width=cols - inset,
             theme=self.theme,
             right=self._info_right(),
@@ -5486,7 +5485,6 @@ class App(ModesMixin, AgentViewMixin):
             say_style=say_style,
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
             cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off_by_hermes else "",
-            drafting=bool(self.composer.text),  # `?` types itself then, so `? for shortcuts` would be untrue
             badge=badge,
             branch=branch_forms(self.git.state, self.theme) if self.git is not None and badge else (),
         )

@@ -45,7 +45,6 @@ VIEW = [
     f"  {SPIN} find usages of old_api in src/ and list…  deepseek-v4.1-flash · 0s · 0 tools",
     f"  {SPIN} read the diff for risks                   deepseek-v4.1-flash · 0s · 0 tools",
 ]
-IDLE_HINT = "? for shortcuts"
 
 
 def relay(app: App, frames: list[tuple[str, dict[str, object]]] = FRAMES, session_id: str = SID) -> None:
@@ -275,7 +274,7 @@ class ViewTests(unittest.TestCase):
 
     def test_a_finished_turn_keeps_its_view_with_each_agents_verdict(self) -> None:
         app, _client = agent_app(busy=False, frames=FRAMES, cols=80)
-        self.assertEqual(info_left(app), f"{CHIP} · {IDLE_HINT}")
+        self.assertEqual(info_left(app), CHIP)
         rows = view_text(app)
         self.assertEqual([row[:4] for row in rows], ["  ● ", "  ○ ", "  ✗ "])
 
@@ -321,7 +320,7 @@ class ViewTests(unittest.TestCase):
             said = next((form for form in (CHIP, "2 agents") if len(form) <= room), "")
             chip = (Span(said, DEFAULT_THEME.hint),) if said else ()
             return line_text(
-                info_line(mode=MODE_ACCEPT, busy=True, width=width,
+                info_line(mode=MODE_ACCEPT, width=width,
                           theme=DEFAULT_THEME, chip=chip, right=right)
             )
 
@@ -502,7 +501,7 @@ class OneAgentSurfaceTests(unittest.TestCase):
     def test_idle_with_agents_still_running_the_view_says_which_and_no_state_word_does(self) -> None:
         # The status line's `idle · 2 agents running` is gone with the status line: the view marks each agent.
         app, _client = agent_app(busy=False, cols=80)
-        self.assertEqual(info_left(app), f"{CHIP} · {IDLE_HINT}")
+        self.assertEqual(info_left(app), CHIP)
         self.assertEqual(view_text(app), VIEW)
         relay(app, FRAMES)
         self.assertEqual([row[:4] for row in view_text(app)], ["  ● ", "  ○ ", "  ✗ "])

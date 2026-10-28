@@ -33,7 +33,6 @@ from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.frame import BROWSING_HINT, INFO_INSET as INFO_INSET_CELLS, MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
-from omh.tui.modes import IDLE_HINT
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
@@ -1244,7 +1243,7 @@ class AgentReplayTests(AppTestCase):
             Step(b"\x1b", when=listed, capture="back", label="the list again"),
             Step(b"\x1b", when=lambda: not listed() and terminal.shows("  ● main")(), label="the view again"),
             # The agent view stays under the info line after the turn: `idle` reads the screen's last row.
-            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.shows(IDLE_HINT)(),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(),
                  label="the end"),
         )
         self.run_main(run)

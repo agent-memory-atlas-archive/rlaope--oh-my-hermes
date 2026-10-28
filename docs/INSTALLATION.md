@@ -493,9 +493,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   known). As the line narrows, the fields after the branch shorten and then
   go first; then the badge shortens to `[ ⚚ OMH ]`, then `⚚`, then goes;
   then the left side's words shorten, and the branch, its name cut to `…`
-  where it must be, and the mode's label stay to the end. Between turns the left reads `? for shortcuts` (the `?` list names
-  every key) while the composer is empty; once you type, or open the `/`
-  menu, `?` is a character and the hint leaves, as in Claude Code. In accept all it reads `⏵⏵ accept all on (⇧⇥ to cycle)` in
+  where it must be, and the mode's label stay to the end. Between turns in
+  the normal mode the left side is the badge alone: the launch card names
+  `? every shortcut`, and `?` on an empty composer still opens the list that
+  names every key. In accept all it reads `⏵⏵ accept all on (⇧⇥ to cycle)` in
   accept's colour and in plan `⏸ plan mode on (⇧⇥ to cycle)` in plan's;
   while Hermes has approvals off on its own it reads `⏵⏵ accept all on (⇧⇥
   plan)`, since Shift+Tab then turns only plan on and off. The composer's rules

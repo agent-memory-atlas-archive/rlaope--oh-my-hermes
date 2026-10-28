@@ -42,9 +42,9 @@ from .width import cell_width, line_width, truncate_line
 # says it too, and `app` imports this module.
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 
-# The info line under the composer. Its left side is the mode's label, the agent count and the keys that matter now;
-# its right side is what `App._info_right` gives (model, context, effort), cut down first when the line is narrow.
-IDLE_HINT = "? for shortcuts"
+# The info line under the composer. Its left side is the badge, the mode's label, the agent count and the keys that
+# matter now (none in the normal mode between turns: the launch card names `?`); its right side is the branch and what
+# `App._info_right` gives (model, context, effort), cut down first when the line is narrow.
 # After accept's or plan's label: what Shift+Tab does next. `{cycle}` is CYCLE_WORDS while the key walks normal, accept
 # all and plan; while Hermes has approvals off on its own it turns plan on and off and nothing else (`HERMES_OWN_CYCLE`).
 MODE_HINTS = (" (⇧⇥ {cycle})", "")
@@ -163,21 +163,20 @@ def model_forms(model: str) -> tuple[str, ...]:
     return tuple(forms)
 
 
-def default_hints(mode: str, busy: bool, cycle: str, drafting: bool = False) -> tuple[str, ...]:
-    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan, or the idle hint,
-    which is said only while `?` would open the list, between turns with nothing typed (`drafting` False).
+def default_hints(mode: str, cycle: str) -> tuple[str, ...]:
+    """The info line's own words when nothing else is said: where Shift+Tab goes from accept or plan; none in the
+    normal mode (the launch card names `?`, which still opens the list).
 
     Longest first; the last of accept's and plan's is empty, so a narrow line drops it whole.
     """
     if mode in (MODE_ACCEPT, MODE_PLAN, MODE_ACCEPT_PLAN):
         return tuple(form.format(cycle=cycle or CYCLE_WORDS) for form in MODE_HINTS)
-    return (IDLE_HINT,) if mode == MODE_NORMAL and not busy and not drafting else ()
+    return ()
 
 
 def info_line(
     *,
     mode: str,
-    busy: bool,
     width: int,
     theme: Theme,
     right: Sequence[Line] = (),
@@ -185,7 +184,6 @@ def info_line(
     say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     cycle: str = "",
-    drafting: bool = False,
     badge: Sequence[Line] = (),
     branch: Sequence[Line] = (),
 ) -> Line:
@@ -214,8 +212,8 @@ def info_line(
     a turn the line names no key for the turn: the working row offers the
     interrupt, and the queue's own row the send-now key. The label always
     survives, in some form, and the count after it. Accept and plan say where
-    Shift+Tab goes next (`cycle`; CYCLE_WORDS when not given). `drafting` (the
-    composer holds text) takes the idle hint away.
+    Shift+Tab goes next (`cycle`; CYCLE_WORDS when not given). In the normal
+    mode between turns the left side is the badge alone.
     """
     forms = (say,) if isinstance(say, str) else say
     if any(forms):
@@ -223,7 +221,7 @@ def info_line(
     elif mode == MODE_SHELL:
         hints = (SHELL_HINT,)
     else:
-        hints = default_hints(mode, busy, cycle, drafting)
+        hints = default_hints(mode, cycle)
 
     def label_of(form: int) -> Line:
         own = mode_label(mode, theme, form)

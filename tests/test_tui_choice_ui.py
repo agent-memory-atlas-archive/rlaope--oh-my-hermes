@@ -428,7 +428,7 @@ class PickerTests(unittest.TestCase):
                 self.assertEqual(held(app), draft)
 
     def test_the_info_line_says_the_pickers_keys_not_the_composers(self) -> None:
-        # The composer's hint (`? for shortcuts`) does nothing while a picker has the keys.
+        # The picker's keys stand in for the composer's line while it has them, and leave with it.
         keys = {"sessions": "↑↓ move · enter switches · esc closes", "rewind": "↑↓ move · enter edits it · esc closes",
                 "model": "↑↓ move · enter switches this session · esc closes"}
         for name, opener in self.openers():
@@ -443,7 +443,7 @@ class PickerTests(unittest.TestCase):
                 narrow = line_text(app._info_line(40))
                 self.assertTrue(narrow.rstrip().endswith("esc closes"), narrow)
                 press(app, Key(ESCAPE))
-                self.assertIn("shortcuts", drawn(app)[info_row(drawn(app))])
+                self.assertNotIn("esc closes", drawn(app)[info_row(drawn(app))])
 
     def test_the_caret_shows_at_the_end_of_the_filter_row_where_typing_goes(self) -> None:
         # An IME pre-edit (Hangul, kana) is drawn at the cursor: it must be where the filter's text is typed.

@@ -163,7 +163,9 @@ All notable changes will be documented here.
   line no longer says `/steer <text> steers`; `/steer <text>` still works and
   stays in `/help` and the `?` list. The branch row is gone: the info line
   starts with `[ ⚚ OMH Native ]` and carries the branch first on its right,
-  and the row goes back to the transcript. As the line narrows the model,
+  and the row goes back to the transcript. Between turns the line no longer
+  says `? for shortcuts`: the launch card names `? every shortcut`, and `?`
+  still opens the list. As the line narrows the model,
   context and effort go first, then the badge shortens to `[ ⚚ OMH ]`, then
   `⚚`, then goes; the mode's label and the branch stay to the end. The
   start-up query now asks every terminal for its kitty keyboard flags
