@@ -135,6 +135,16 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **An image you attach in the OMH TUI is an `[Image #N]` token in the text,
+  as in Claude Code.** Ctrl+V, a dropped file and `/image` put the token at
+  the caret, numbered through the session, in place of the
+  `📎 shot.png  Backspace removes` row above the composer. The image belongs
+  to its token: Backspace into it, Cmd+Backspace, Ctrl+W, Ctrl+U, Ctrl+K,
+  Ctrl+C and Esc Esc each remove the image with it. Before, Cmd+Backspace
+  cleared the text and left the image attached. An undo puts both back. The
+  sent prompt keeps the labels and lists each image under its echo
+  (`⎿  [Image #1]`). A queued prompt goes with its own images, never with
+  the ones in the draft. Typing the label yourself attaches nothing.
 
 ## 4.0.3 - 2026-10-27
 
