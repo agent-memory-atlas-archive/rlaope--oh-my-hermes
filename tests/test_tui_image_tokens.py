@@ -789,13 +789,14 @@ class ReadImageTests(unittest.TestCase):
             with patch("omh.tui.app.os.O_NOFOLLOW", 0, create=True):
                 self.assertEqual(read_image(str(regular)), PNG)
                 self.assertIsNone(read_image(str(link)))
-            if hasattr(os, "mkfifo"):
-                fifo = Path(home, "fifo.png")
-                os.mkfifo(fifo)
-                self.assertIsNone(read_image(str(fifo)))  # returns at once: no writer is waited for
 
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "no FIFOs here")
+    def test_a_fifo_is_refused_without_waiting_for_a_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            fifo = Path(home, "fifo.png")
+            os.mkfifo(fifo)
+            self.assertIsNone(read_image(str(fifo)))  # returns at once: no writer is waited for
 
-class ReadImageRegularFileTests(unittest.TestCase):
     def test_a_directory_or_a_fifo_is_never_read(self) -> None:
         opened: list[int] = []
         real = os.fdopen
