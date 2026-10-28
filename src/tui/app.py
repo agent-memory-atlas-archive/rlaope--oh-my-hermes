@@ -3459,7 +3459,7 @@ class App(ModesMixin, AgentViewMixin):
         else:
             send()
 
-    def _start_turn(self, text: str, start: Callable[[], None]) -> None:
+    def _start_turn(self, text: str, start: Callable[[], None], line: QueuedLine | None = None) -> None:
         """Start a turn with `start` once Hermes' default model is checked, so the turn runs on the default it has.
 
         A config edited while no turn ran (another terminal, an editor, a bot)
@@ -3470,7 +3470,17 @@ class App(ModesMixin, AgentViewMixin):
         the model they chose. Prompts sent meanwhile queue behind it
         (`_send_prompt`). Until the launch's read has answered there is nothing
         to measure a move from, so the first prompt never waits on it.
+
+        A prompt already held there is never replaced: one asked to start
+        meanwhile goes back to the head of the queue (`line`, the queue's
+        line it came from) or, with none, to the draft.
         """
+        if self.starting is not None:
+            if line is not None:
+                self.queued.appendleft(line)
+            else:
+                self._give_back(text)
+            return
         if self.default_route is None:
             start()
             return
@@ -4018,15 +4028,17 @@ class App(ModesMixin, AgentViewMixin):
     def _drain_queue(self) -> None:
         """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it.
 
-        Which it is comes from the entry's `shell`, never from its text. A held queue waits (`_hold_queue`).
+        Which it is comes from the entry's `shell`, never from its text. A held queue waits (`_hold_queue`), and so
+        does one behind a prompt held for the default-model check (`starting`): that prompt starts the next turn.
         """
-        if self.queued and self.sid and not self.queue_held:
+        if self.queued and self.sid and not self.queue_held and self.starting is None:
             line = self.queued.popleft()
             if line.shell:
                 self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
             else:
                 self._start_turn(line.typed or line.text,
-                                 lambda: self._submit_prompt(line.text, line.shown, queued=True, notice=line.notice))
+                                 lambda: self._submit_prompt(line.text, line.shown, queued=True, notice=line.notice),
+                                 line)
 
     # ── `!` shell lines ──
 
@@ -4287,11 +4299,14 @@ class App(ModesMixin, AgentViewMixin):
         (`queued`) goes back to the head of the queue as the line it was, its
         wrapper and chips kept, never wrapped again by the mode now on;
         unless the turn it was meant for (`turn`, the turns ended before it was
-        sent) has ended and the next has started, a prompt sent after it:
+        sent) has ended and the next has started, or is held for the
+        default-model check (`starting`), a prompt sent after it:
         queued again it would run after that one, so it goes back to the
         composer, with a notice.
         """
-        if queued is not None and turn != self.turns_ended and self._busy():
+        # A prompt held for the default-model check (`starting`) is the next turn already: as good as running.
+        later = self._busy() or self.starting is not None
+        if queued is not None and turn != self.turns_ended and later:
             self.transcript.steer_answered(
                 block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=STEER_FALLBACK_COMPOSER, reason=reason)
             )
@@ -4300,9 +4315,9 @@ class App(ModesMixin, AgentViewMixin):
             return
         if queued is not None:
             self.queued.appendleft(queued)
-            fallback = STEER_FALLBACK_HEAD if self._busy() or self.queue_held else STEER_FALLBACK_SENT
+            fallback = STEER_FALLBACK_HEAD if later or self.queue_held else STEER_FALLBACK_SENT
             self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
-            if not self._busy():
+            if not later:
                 self._drain_queue()
             return
         fallback = STEER_FALLBACK_QUEUED if self._busy() else STEER_FALLBACK_SENT

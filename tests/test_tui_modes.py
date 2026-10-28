@@ -550,6 +550,42 @@ class SteerTests(unittest.TestCase):
         self.assertIn(app_module.SENT_NOW_LATE_NOTICE, notices(app, NOTICE_WARN))
         self.assertIn("back in the composer", steers(app)[0])
 
+    def test_a_late_refusal_while_the_next_prompt_waits_on_the_default_check_drops_nothing(self) -> None:
+        # review-2372 HIGH: with a default route read, the drained prompt waits in `starting` for `config.get mtime`,
+        # `_busy()` is False then, and a refusal answered in that window must not take its place.
+        app, client = make_app(busy=True)
+        app.default_route = ("some/model", "provider")
+        queue(app, "A first", "B second")
+        app._on_input(CTRL_ENTER)
+        steer = len(client.calls)
+        app._on_event(Event("message.complete", SID, {"text": "done"}))  # the turn ends; B waits on the check
+        self.assertEqual(client.calls[-1], ("config.get", {"key": "mtime"}))
+        self.assertIsNotNone(app.starting)
+        app._on_response(Response(steer, {"status": "rejected", "text": "A first"}, None))
+        self.assertEqual(app.composer.text, "A first")  # back to the person, never ahead of B
+        self.assertEqual(list(app.queued), [])
+        self.assertIn(app_module.SENT_NOW_LATE_NOTICE, notices(app, NOTICE_WARN))
+        app._on_response(Response(len(client.calls), {"mtime": app.config_mtime}, None))
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "B second", "queued": True}))
+
+    def test_a_prompt_held_for_the_default_check_is_never_replaced(self) -> None:
+        app, client = make_app()
+        app.default_route = ("some/model", "provider")
+        sent: list[str] = []
+        app._start_turn("B second", lambda: sent.append("B"))
+        held = app.starting
+        later = QueuedLine("C third")
+        app._start_turn("C third", lambda: sent.append("C"), later)
+        app._start_turn("D typed", lambda: sent.append("D"))
+        self.assertIs(app.starting, held)
+        self.assertIs(app.queued[0], later)  # a queue's line goes back to its head
+        self.assertEqual(app.composer.text, "D typed")  # one with no line goes back to the draft
+        queue(app, "E fifth")
+        app._drain_queue()  # the queue waits behind the held prompt
+        self.assertIs(app.starting, held)
+        self.assertEqual([line.text for line in app.queued], ["C third", "E fifth"])
+        self.assertEqual(sent, [])
+
     def test_no_send_now_row_between_turns_or_while_the_queue_is_held(self) -> None:
         app, _client = make_app()
         queue(app, "later")

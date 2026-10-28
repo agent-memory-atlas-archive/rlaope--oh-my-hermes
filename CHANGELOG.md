@@ -270,7 +270,10 @@ All notable changes will be documented here.
   it, since Hermes finalizes even an interrupted batch. A sent-now steer
   Hermes refuses after its turn ended and the next queued prompt started
   goes back to the composer with a notice, instead of running after that
-  later prompt.
+  later prompt; this includes a refusal that arrives while that prompt
+  waits on the default-model check, which before took its place and lost
+  it. A prompt held for that check is never replaced: the queue waits
+  behind it.
 
 ## 4.0.3 - 2026-10-27
 
