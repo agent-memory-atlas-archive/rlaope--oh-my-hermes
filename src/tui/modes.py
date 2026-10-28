@@ -152,7 +152,7 @@ def model_forms(model: str) -> tuple[str, ...]:
 
     A form equal to the one before it is left out, and so is an empty one;
     the third is left out too when what is left starts with a digit, a bare
-    version (`glm-5.3`, `gemini-3.1-pro`).
+    version (`glm-5.3`, `gemini-4-argon`).
     """
     segment = model.rsplit("/", 1)[-1]
     head, dash, rest = segment.partition("-")
