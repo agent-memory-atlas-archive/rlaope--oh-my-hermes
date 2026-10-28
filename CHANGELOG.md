@@ -108,12 +108,13 @@ All notable changes will be documented here.
   sets the list off from its header and its filter row, in the `/rewind`
   and `/model` pickers too. The arrows and Page keys move past the
   headings, and a filter keeps only the headings of days with a match. The
-  `/` menu now offers an alias under its own name, so `/resu` completes to
-  `/resume` instead of `/res` highlighting Hermes' `/compress` and `/resu`
-  going to Hermes' own classic-only `/resume`. On Hermes' shared gateway,
+  `/` menu now offers `/resume` under its own name, first for `/res` and
+  `/resu`, where `/res` used to highlight Hermes' `/compress` and `/resu`
+  went to Hermes' own classic-only `/resume`. On Hermes' shared gateway,
   which resumes ids only, `/sessions <title>` and `/resume <title>` were
   refused `not_found`; a title it refuses is now looked up among the listed
-  sessions and resumed by that session's id.
+  sessions (case first, then ignoring it) and the one session with it is
+  opened, while several or none open the picker filtered by the title.
 
 ## 4.0.3 - 2026-10-27
 

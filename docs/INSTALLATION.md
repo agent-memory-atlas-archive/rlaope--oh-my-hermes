@@ -1047,11 +1047,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   where the composer was, with the caret, and only the headings of days
   with a match stay), Up/Down or PageUp/PageDown to move from session to
   session, Enter to switch, Esc to close. Each alias runs exactly as
-  `/sessions` does, and the `/` menu offers it under its own name: `/resu`
-  completes to `/resume`.
+  `/sessions` does, and the `/` menu offers `/resume` under its own name
+  once what you type starts it: `/res` and `/resu` complete to `/resume`.
   `/sessions <id or exact title>` (or `/resume <id or exact title>`)
-  switches directly; a title Hermes' shared gateway does not resolve is
-  looked up among your listed sessions. The screen is redrawn as
+  switches directly. A title Hermes' shared gateway does not resolve is
+  looked up among your listed sessions, matching case first and then
+  ignoring it: one session with that title is opened, and when several
+  (titles that differ only in case) or none have it the picker opens filtered by what you typed and says how
+  many matched. The screen is redrawn as
   the session you picked, with its earlier turns; the one you left closes only
   after the new one opened, so a session that cannot be opened (for example
   one another process holds) leaves you where you were.

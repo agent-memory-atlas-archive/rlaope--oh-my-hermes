@@ -70,16 +70,19 @@ class SlashCommand:
     # prints nothing to attribute, so its echo would stand alone in scrollback as if it were a prompt; bare /model's
     # pick is echoed as the command it runs.
     echo_bare: bool = True
+    # The aliases the `/` menu offers under their own name, when what is typed starts one and is not in `name`:
+    # Claude Code's names for these commands. The rest still run, and are drawn as known, but get no row.
+    menu_aliases: tuple[str, ...] = ()
 
 
 COMMANDS: tuple[SlashCommand, ...] = (
     # The terminal's own commands.
     SlashCommand("help", LOCAL, "Show commands"),
     SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)", echo_bare=False),
-    SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
-    SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
+    SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",), menu_aliases=("exit",)),
+    SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset"), menu_aliases=("clear",)),
     SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker; an id or exact title after it switches)",
-                 ("switch", "session", "resume"), echo_bare=False),
+                 ("switch", "session", "resume"), echo_bare=False, menu_aliases=("resume",)),
     SlashCommand("redraw", LOCAL, "Repaint the screen", echo_bare=False),
     SlashCommand("history", LOCAL, "Page through this session's transcript", echo_bare=False),
     SlashCommand("rewind", LOCAL, "Go back to an earlier prompt, edit it, and send it again (also Esc Esc)",
@@ -241,16 +244,12 @@ class Completion:
 
 
 def _offered_name(command: SlashCommand, key: str) -> str:
-    """The name the menu offers `command` under for the lowercased `key`: its own, unless only an alias matches.
-
-    A name or alias that starts with `key` wins over one that only contains
-    it, the command's own name first in each, so `/resu` offers `/resume`
-    (which runs /sessions) and `/q` still offers `/queue`.
-    """
-    names = (command.name, *command.aliases)
-    return next((name for name in names if name.startswith(key)), "") or next(
-        (name for name in names if key in name), command.name
-    )
+    """The name the menu offers `command` under for the lowercased `key`: its own, unless `key` is not in it and
+    starts one of its `menu_aliases`, so `/res` and `/resu` offer `/resume` (which runs /sessions) among the names
+    that start with what is typed."""
+    if key in command.name:
+        return command.name
+    return next((alias for alias in command.menu_aliases if alias.startswith(key)), command.name)
 
 
 def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> list[Completion]:
@@ -258,18 +257,19 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
 
     In each group the TUI's own come first, then the gateway catalog, so
     `/uml` still finds `omh-codebase-uml` after every name that starts with
-    it. A TUI command whose name does not match is offered under an alias
-    that does (`_offered_name`), so an alias completes to itself and runs as
-    typed. Catalog entries the TUI routes to Hermes or drops are left out, so
-    the menu only offers what will run here. Case is ignored, as a typed
-    name's is.
+    it. A TUI command whose name does not match is offered under a menu
+    alias that what is typed starts (`_offered_name`), after the TUI's own
+    names that start with it and before the catalog's: `/res` offers
+    `/resume` first. The alias completes to itself and runs as typed.
+    Catalog entries the TUI routes to Hermes or drops are left out, so the
+    menu only offers what will run here. Case is ignored, as a typed name's
+    is.
     """
     key = prefix.lower()
-    local = [
-        Completion(_offered_name(command, key), command.summary)
-        for command in COMMANDS
-        if command.route in (LOCAL, RENAMED)
-    ]
+    own = [command for command in COMMANDS if command.route in (LOCAL, RENAMED)]
+    named = [Completion(_offered_name(command, key), command.summary) for command in own]
+    aliased = [completion for completion, command in zip(named, own) if completion.name != command.name]
+    local = [completion for completion in named if completion not in aliased] + aliased
     seen = {completion.name for completion in local}
     gateway: list[Completion] = []
     for raw_name, summary in catalog_pairs:
