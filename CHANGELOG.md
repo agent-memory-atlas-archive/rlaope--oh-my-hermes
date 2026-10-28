@@ -79,14 +79,15 @@ All notable changes will be documented here.
   synchronized update as the frame drawn after it, so a terminal that holds
   the update (DEC 2026) swaps the old screen for the new one in one step.
 - **The TUI's menus lose their bands, a sent prompt gains one, and the
-  bottom row names the branch.** The completion menu, the session, model,
+  bottom line names the branch.** The completion menu, the session, model,
   rewind and launch-look pickers, the agent list, the delegation view and the
   bot board's sessions draw no fill: the highlighted row is a `❯` and a bold
   name in the skill hue, other commands keep that hue and their descriptions
   are muted. A prompt you sent runs on a band to the right edge, tinted by
-  the launch look. From 30 rows the region's last row shows the session
-  directory's git branch with its changed and untracked counts, read off the
-  screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
+  the launch look. The one line under the composer starts with
+  `[ ⚚ OMH Native ]` and shows the session directory's git branch with its
+  changed and untracked counts, read off the screen's thread, first on its
+  right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
 - **A long `/compress` is waited for, and side answers are not lost
@@ -135,18 +136,25 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
-- **The OMH TUI names a steer key while a turn runs, on every terminal.**
-  The info line under the composer said `/steer <text> steers` on a terminal
-  that does not tell Ctrl+Enter from Enter, and on the others until a first
-  key arrived as a report. Ctrl+J now steers a running turn on any terminal
-  (it is a line feed, apart from Enter's carriage return; between turns it
-  still adds a line), and the line reads `ctrl+j to steer` there. Where the
-  TUI asks for the kitty keyboard protocol, it also asks which kitty flags
-  are on (`CSI ? u`) with its start-up query, so a terminal whose answer
-  says the request took shows `ctrl+enter to steer` from the first frame.
-  The answer types nothing, and a terminal that never answers costs the
-  start-up query's existing wait and no more. `/steer <text>` still works
-  and stays in `/help` and the `?` list.
+- **A queued prompt can be sent into the running turn now, and one line sits
+  under the composer.** As in Claude Code, a muted row under the queued
+  prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; the
+  key sends the oldest queued prompt into the turn as a steer and takes it off
+  the queue (a queued `!` line or a skill's prompt keeps its place). Where
+  the terminal does not tell Ctrl+Enter from Enter the key is Ctrl+J, a line
+  feed from every terminal, which still adds a line between turns. The info
+  line no longer says `/steer <text> steers`; `/steer <text>` still works and
+  stays in `/help` and the `?` list. The branch row is gone: the info line
+  starts with `[ ⚚ OMH Native ]` and carries the branch first on its right,
+  and the row goes back to the transcript. As the line narrows the model,
+  context and effort go first, then the badge shortens to `[ ⚚ OMH ]`, then
+  `⚚`, then goes; the mode's label and the branch stay to the end. The
+  start-up query now asks every terminal for its kitty keyboard flags
+  (`CSI ? u`): one that answers gets them pushed, Otty with its
+  `kitty-keyboard` setting on among them, and names Ctrl+Enter from the
+  first frame; the push is undone on every exit. A steer or a second
+  `/compress` that waited behind a compression and went unanswered now says
+  how long it really waited, not 120 s or 660 s.
 
 ## 4.0.3 - 2026-10-27
 

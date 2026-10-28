@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import info_row_index, INFO_INSET, line_text, lines_text, RULE_ROW
+from _tui_lines import info_row_index, INFO_INSET, line_text, lines_text, RULE_ROW, without_badge
 from test_tui_modes import make_app, type_text
 from omh.tui.history import SEARCH_HINT, SEARCH_LABEL, HistorySearch
 from omh.tui.keys import CHAR, ENTER, ESCAPE, LEFT, Key, Paste
@@ -75,9 +75,10 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
 
     def test_a_narrow_info_line_keeps_the_way_out(self) -> None:
         app, _client = searching()
-        for width, keys in ((50, SEARCH_HINT), (40, "ctrl+r older · esc cancels"), (20, "esc cancels")):
-            with self.subTest(width=width):
-                self.assertEqual(line_text(app._info_line(width)).rstrip(), INFO_INSET + keys)
+        for width, keys in ((50, SEARCH_HINT), (45, SEARCH_HINT), (40, "ctrl+r older · esc cancels"), (20, "esc cancels")):
+            with self.subTest(width=width):  # the badge gives way before the keys do
+                self.assertEqual(without_badge(line_text(app._info_line(width))).rstrip(), INFO_INSET + keys)
+        self.assertEqual(line_text(app._info_line(45)).rstrip(), INFO_INSET + SEARCH_HINT)  # no badge left at 45
 
     def test_esc_gives_back_the_draft_with_its_caret_and_chips(self) -> None:
         app, _client = make_app()

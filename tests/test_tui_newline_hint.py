@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import unittest
 
+from _tui_lines import without_badge
 from test_tui_modes import make_app, type_text
 from omh.tui.app import NEWLINE_KEYS
 from omh.tui.keys import CHAR, ENTER, Key, Paste
@@ -19,7 +20,7 @@ from omh.tui.keys import CHAR, ENTER, Key, Paste
 
 def mode_row(app) -> str:
     """The info line's left side: its right one stands 3 cells or more away."""
-    return re.split(r" {3,}", "".join(span.text for span in app._info_line(100)).strip())[0]
+    return re.split(r" {3,}", without_badge("".join(span.text for span in app._info_line(100))).strip())[0]
 
 
 def two_lines(app) -> None:

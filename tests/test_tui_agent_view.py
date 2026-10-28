@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 import unittest
 
-from _tui_lines import line_text, RULE_ROW
+from _tui_lines import line_text, RULE_ROW, without_badge
 from test_tui_app import info_index
 from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
@@ -45,7 +45,6 @@ VIEW = [
     f"  {SPIN} find usages of old_api in src/ and list…  deepseek-v4.1-flash · 0s · 0 tools",
     f"  {SPIN} read the diff for risks                   deepseek-v4.1-flash · 0s · 0 tools",
 ]
-BUSY_HINT = "ctrl+j to steer"
 IDLE_HINT = "? for shortcuts"
 
 
@@ -76,11 +75,10 @@ def view_rows(app: App) -> int:
 
 def screen_info_index(app: App, screen: list[str]) -> int:
     """The info line's row on `screen`: the region's last row (where the region knows it, else the screen's last row
-    that is not blank), less the badge row and the agent view's rows under it, blank ones included."""
+    that is not blank), less the agent view's rows under it, blank ones included."""
     rows = view_rows(app)
     last = app.region.last_row(app.size[1])
-    badge = app.frame_budget.badge if app.frame_budget is not None else 0
-    return (info_index(screen) if last is None else last - badge) - rows
+    return (info_index(screen) if last is None else last) - rows
 
 
 def mode_row(app: App) -> str:
@@ -97,8 +95,8 @@ def view_text(app: App) -> list[str]:
 
 
 def info_text(app: App) -> str:
-    """The info line after the inset it starts with under the composer."""
-    row = mode_row(app)
+    """The info line after the inset it starts with under the composer, and after its badge (`without_badge`)."""
+    row = without_badge(mode_row(app))
     if not row.startswith(" " * INFO_INSET_CELLS):
         raise AssertionError(f"the info line does not start {INFO_INSET_CELLS} cells in: {row!r}")
     return row[INFO_INSET_CELLS:]
@@ -246,17 +244,17 @@ class RosterClearTests(unittest.TestCase):
 class ViewTests(unittest.TestCase):
     def test_the_view_joins_under_the_info_line_with_the_first_agent_and_leaves_with_the_next_prompt(self) -> None:
         app, _client = make_app(busy=True, cols=80, clock=lambda: 0.0)
-        self.assertEqual((info_left(app), view_rows(app)), (BUSY_HINT, 0))
+        self.assertEqual((info_left(app), view_rows(app)), ("", 0))  # the line names no key while a turn runs
         relay(app, STARTS[:1])
-        self.assertEqual(info_left(app), f"1 agent · ↓ agents · {BUSY_HINT}")
+        self.assertEqual(info_left(app), "1 agent · ↓ agents")
         self.assertEqual(view_text(app), VIEW[:2])
         relay(app, STARTS[1:])
-        self.assertEqual(info_left(app), f"{CHIP} · {BUSY_HINT}")
+        self.assertEqual(info_left(app), CHIP)
         self.assertEqual(view_text(app), VIEW)
         app.turn_pending = False
         type_text(app, "next")
         app._on_input(Key(ENTER))
-        self.assertEqual((info_left(app), view_rows(app)), (BUSY_HINT, 0))
+        self.assertEqual((info_left(app), view_rows(app)), ("", 0))
 
     def test_composer_then_info_line_then_the_view_with_the_plan_above_the_composer(self) -> None:
         from test_tui_panels import hud_payload
@@ -281,11 +279,11 @@ class ViewTests(unittest.TestCase):
         rows = view_text(app)
         self.assertEqual([row[:4] for row in rows], ["  ● ", "  ○ ", "  ✗ "])
 
-    def test_a_narrow_row_cuts_the_hint_and_keeps_the_count_whole(self) -> None:
+    def test_a_narrow_row_drops_the_right_side_and_keeps_the_count_whole(self) -> None:
         app, _client = agent_app()
-        self.assertEqual(info_text(app).rstrip(), f"{CHIP} · {BUSY_HINT}" + " " * 28 + "ctrl+t effort")
-        narrow, _client = agent_app(cols=36)
-        self.assertEqual(info_text(narrow), f"{CHIP} · ctrl+j to s…")
+        self.assertEqual(info_text(app).rstrip(), CHIP + " " * 28 + "ctrl+t effort")
+        narrow, _client = agent_app(cols=30)
+        self.assertEqual(info_text(narrow), CHIP)
 
     def test_the_spinner_turns_with_the_clock(self) -> None:
         now = [0.0]
@@ -295,7 +293,7 @@ class ViewTests(unittest.TestCase):
 
     def test_the_mode_label_comes_first_then_the_count_then_the_hints(self) -> None:
         expected = {
-            MODE_NORMAL: f"{CHIP} · {BUSY_HINT}",
+            MODE_NORMAL: CHIP,
             MODE_ACCEPT: f"⏵⏵ accept all on · {CHIP} · (⇧⇥ plan)",  # approvals Hermes turned off itself
             MODE_PLAN: f"⏸ plan mode on · {CHIP} · (⇧⇥ to cycle)",
         }
@@ -309,7 +307,7 @@ class ViewTests(unittest.TestCase):
         app, _client = agent_app(cols=120)
         app.effort = "high"
         row = info_text(app)
-        self.assertTrue(row.startswith(f"{CHIP} · {BUSY_HINT}"), row)
+        self.assertTrue(row.startswith(CHIP), row)
         self.assertTrue(row.endswith("effort high"), row)
         self.assertEqual(len(mode_row(app)), 120)  # after its inset, to the last cell
 
@@ -323,7 +321,7 @@ class ViewTests(unittest.TestCase):
             said = next((form for form in (CHIP, "2 agents") if len(form) <= room), "")
             chip = (Span(said, DEFAULT_THEME.hint),) if said else ()
             return line_text(
-                info_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, width=width,
+                info_line(mode=MODE_ACCEPT, busy=True, width=width,
                           theme=DEFAULT_THEME, chip=chip, right=right)
             )
 
@@ -355,7 +353,7 @@ class ViewTests(unittest.TestCase):
                 app, _client = agent_app(cols=120)
                 show_mode(app, mode)
                 start = INFO_INSET_CELLS + chip_column(mode, DEFAULT_THEME)
-                self.assertEqual(cells(mode_row(app), start, start + len(CHIP)), CHIP)
+                self.assertEqual(cells(without_badge(mode_row(app)), start, start + len(CHIP)), CHIP)
         self.assertEqual(mode_label(MODE_NORMAL, DEFAULT_THEME), ())
 
     def test_a_count_with_no_room_for_what_down_opens_says_the_count_alone(self) -> None:
@@ -407,7 +405,7 @@ class ViewTests(unittest.TestCase):
         self.assertTrue(info_text(app).startswith(CHIP), info_text(app))
         for char in "what are they doing":
             app._on_input(Key(CHAR, char))
-        self.assertTrue(info_text(app).startswith("2 agents · "), info_text(app))
+        self.assertTrue(info_text(app).startswith("2 agents"), info_text(app))
         self.assertNotIn("↓ agents", info_text(app))
         self.assertEqual(view_text(app), view)
         app._set_composer("")
@@ -499,7 +497,7 @@ class OneAgentSurfaceTests(unittest.TestCase):
         rows = view_text(app)
         self.assertTrue(rows[0].startswith("  ● main │ [global] 2 agents · 2 running"), rows)
         self.assertEqual([row[4:18] for row in rows[1:]], ["[sub] worker0 ", "[sub] worker1 "], rows)
-        self.assertTrue(info_text(app).startswith("2 agents · ctrl+j"), "no list to open from the HUD's rows")
+        self.assertEqual(info_left(app), "2 agents", "no list to open from the HUD's rows")
 
     def test_idle_with_agents_still_running_the_view_says_which_and_no_state_word_does(self) -> None:
         # The status line's `idle · 2 agents running` is gone with the status line: the view marks each agent.
@@ -953,7 +951,7 @@ class RoomTests(unittest.TestCase):
         emptied = drawn(app)
         self.assertEqual(app.frame_budget.agents, 0)
         self.assertEqual(app.region.last_row(12), 11)
-        self.assertIn("to steer", emptied[11], "the info line is the screen's last row")
+        self.assertIn("[ ⚚ OMH Native ]", emptied[11], "the info line is the screen's last row")
         # An agent of the new turn wants rows again, and gets them: no hold of an emptied view is kept.
         agent_event(app, "start", "sb-0", goal="task b0")
         self.assertEqual([row[:12] for row in view_text(app)], ["  ● main", "  ⠋ task b0 "])

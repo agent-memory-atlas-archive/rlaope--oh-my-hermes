@@ -20,7 +20,7 @@ import time
 import unittest
 from unittest import mock
 
-from _tui_lines import info_row_index, composer_text, INFO_INSET, line_text, RULE_ROW
+from _tui_lines import info_row_index, composer_text, INFO_INSET, line_text, RULE_ROW, without_badge
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
@@ -315,7 +315,7 @@ class ModeShownTests(unittest.TestCase):
                         opener(app)
                         screen = drawn(app)
                         self.assertEqual(rule_rows(screen), [])
-                        self.assertTrue(screen[info_row(screen)].startswith(INFO_INSET + label), screen)
+                        self.assertTrue(without_badge(screen[info_row(screen)]).startswith(INFO_INSET + label), screen)
 
 
 class ClarifyFieldTests(unittest.TestCase):
@@ -701,7 +701,8 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
         app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
         info = info_row(screen)
-        self.assertTrue(screen[info].startswith(INFO_INSET + "↑↓ pick · enter confirms · d or esc denies and stops"), screen)
+        self.assertTrue(without_badge(screen[info]).startswith(INFO_INSET + "↑↓ pick · enter confirms · d or esc denies and stops"),
+                        screen)
         self.assertEqual(screen[info - 3 : info],
                          ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
         self.assertFalse([row for row in screen if row.startswith("▌") and "esc" in row], screen)  # no slot row for keys

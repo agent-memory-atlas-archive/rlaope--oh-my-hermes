@@ -15,13 +15,12 @@ from __future__ import annotations
 import ast
 import base64
 from pathlib import Path
-import re
 import time
 import unittest
 from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
-from _tui_lines import composer_text, INFO_INSET, line_text, lines_text, rule_edges, RULE_ROW
+from _tui_lines import composer_text, INFO_INSET, line_text, lines_text, rule_edges, RULE_ROW, without_badge
 from test_tui_app import (
     INTERRUPTED,
     LIVE_ID,
@@ -407,28 +406,72 @@ class SteerTests(unittest.TestCase):
         app._on_response(Response(steer, None, {"code": 4010, "message": "agent does not support steer"}))
         self.assertEqual(app.composer.text, "a draft\nkeep this")
 
-    def test_the_info_line_names_ctrl_enter_only_once_the_terminal_has_sent_a_report(self) -> None:
+    def test_the_send_now_key_is_ctrl_enter_only_once_the_terminal_has_sent_a_report(self) -> None:
         app, _client = make_app(busy=True)
         app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
-
-        self.assertEqual(steer_hint(app), "ctrl+j to steer")
+        self.assertIsNone(send_now_row(app))  # nothing queued: no row, and the info line names no steer key
+        self.assertNotIn("steer", info_row_of(drawn(app)))
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
             app._on_input(event)
-        self.assertEqual(steer_hint(app), "ctrl+j to steer · ↑ edit queued")
+        self.assertEqual(send_now_row(app), "  ctrl+j to send now · ↑ to edit")
         for event in app.decoder.feed(b"\x1b[108;5u"):  # Ctrl+L, as kitty reports it (Esc would interrupt the turn)
             app._on_input(event)
-        self.assertEqual(steer_hint(app), "ctrl+enter to steer · ↑ edit queued")
+        self.assertEqual(send_now_row(app), "  ctrl+enter to send now · ↑ to edit")
 
     def test_a_kitty_flags_answer_names_ctrl_enter_before_any_key_and_types_nothing(self) -> None:
-        for answer, hint in ((b"\x1b[?1u", "ctrl+enter to steer"), (b"\x1b[?0u", "ctrl+j to steer")):
+        for answer, key in ((b"\x1b[?1u", "ctrl+enter"), (b"\x1b[?0u", "ctrl+j")):
             with self.subTest(answer=answer):
                 app, _client = make_app(busy=True)
                 type_text(app, "ab")
                 app._take_input(answer)  # the start-up query's answer, or one that came after its wait
                 type_text(app, "c")
                 self.assertEqual(app.composer.text, "abc")
-                app._set_composer("")
-                self.assertEqual(steer_hint(app), hint)
+                app._on_input(Key(ENTER))  # queued behind the turn
+                self.assertEqual(send_now_row(app), f"  {key} to send now · ↑ to edit")
+
+    def test_the_send_now_key_steers_with_the_oldest_queued_prompt_and_takes_it_off_the_queue(self) -> None:
+        for data in (CTRL_ENTER_BYTES, b"\n", b"\x1b[27;5;13~"):  # Ctrl+Enter reported, Ctrl+J, modifyOtherKeys
+            with self.subTest(data=data):
+                app, client = make_app(busy=True)
+                queue(app, "first queued", "second queued")
+                app._take_input(data)
+                self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "first queued"})])
+                self.assertEqual([line.text for line in app.queued], ["second queued"])
+                self.assertIn("↪ steer · first queued", lines_text(app.transcript.live_lines(80, DEFAULT_THEME)))
+                answer(app, client, {"status": "queued", "text": "first queued"})
+                self.assertEqual(steers(app), ["↪ steer queued by Hermes · first queued"])
+
+    def test_a_refused_send_now_comes_back_behind_what_is_still_queued(self) -> None:
+        app, client = make_app(busy=True)
+        queue(app, "first queued", "second queued")
+        app._on_input(CTRL_ENTER)
+        answer(app, client, None, {"code": 4010, "message": "agent does not support steer"})
+        self.assertEqual([line.text for line in app.queued], ["second queued", "first queued"])
+
+    def test_the_send_now_key_leaves_a_shell_line_or_a_command_s_prompt_queued_and_shows_no_row(self) -> None:
+        for head in (QueuedLine("ls", "!ls", shell=True), QueuedLine("skill prompt", typed="/myskill go")):
+            with self.subTest(head=head):
+                app, client = make_app(busy=True)
+                app.queued.extend([head, QueuedLine("later")])
+                self.assertIsNone(send_now_row(app))
+                app._on_input(CTRL_ENTER)
+                self.assertEqual((client.calls, len(app.queued)), ([], 2))
+
+    def test_a_plan_mode_prompt_is_sent_now_as_typed(self) -> None:
+        app, client = make_app(busy=True)
+        app.queued.append(QueuedLine(PLAN_PROMPT, typed="fix the flaky test"))
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "fix the flaky test"})])
+
+    def test_no_send_now_row_between_turns_or_while_the_queue_is_held(self) -> None:
+        app, _client = make_app()
+        queue(app, "later")
+        self.assertIsNone(send_now_row(app))
+        app.turn_pending, app.queue_held = True, True
+        self.assertIsNotNone(send_now_row(app))  # held or not, a running turn takes it now
+        app.turn_pending = False
+        self.assertIsNone(send_now_row(app))
+        self.assertIn("held · ↑ edit", "\n".join(drawn(app)))
 
     def test_ctrl_j_steers_a_running_turn_and_adds_a_line_between_turns(self) -> None:
         for data in (b"\n", b"\x1b[106;5u", b"\x1b[27;5;106~"):  # a line feed, or Ctrl+J as either report sends it
@@ -472,7 +515,7 @@ class SteerTests(unittest.TestCase):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "_steer":
                     callers.add(function.name)
         self.assertEqual(senders, {"_steer"})
-        self.assertEqual(callers, {"_steer_or_submit", "_steer_command"})
+        self.assertEqual(callers, {"_steer_or_submit", "_steer_command", "_send_queued_now"})
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -628,7 +671,7 @@ class ModeCycleTests(unittest.TestCase):
                     answer(app, client, YOLO_IS_ON)
                 screen = drawn(app)
                 self.assertFalse([row for row in screen if "yolo" in row], screen)
-                self.assertEqual([row for row in screen if "accept all on" in row], [info_row_of(screen)])
+                self.assertEqual([without_badge(row) for row in screen if "accept all on" in row], [info_row_of(screen)])
 
     def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
         refusals = {
@@ -1889,10 +1932,9 @@ class EffortTests(unittest.TestCase):
         self.assertIn("Hermes sets no reasoning effort for this session, so the provider's default applies.", notice)
 
 
-def steer_hint(app: App) -> str:
-    """The info line's left side while it names a steer key: the right one stands 3 cells away."""
-    row = next(line for line in drawn(app) if line.startswith((INFO_INSET + "ctrl+j", INFO_INSET + "ctrl+enter")))
-    return re.split(r" {3,}", row[len(INFO_INSET) :])[0]
+def send_now_row(app: App) -> str | None:
+    """The row under the queued prompts that names the send-now key, as drawn; None when there is none."""
+    return next((line.rstrip() for line in drawn(app) if "to send now" in line), None)
 
 
 def drawn(app: App) -> list[str]:
@@ -1980,8 +2022,8 @@ class QueueTests(unittest.TestCase):
                         between = screen[working : top - 1]  # the slot: the menu, the queued prompts under it
                         self.assertTrue(all(between), screen)
                         if not menu and rows >= 10:
-                            # three named and "+N more", within the slot's cap of a third of the rows
-                            self.assertEqual(len(between), min(count, 4, rows // 3), screen)
+                            # three named and "+N more", then the send-now row, within the slot's cap of a third of the rows
+                            self.assertEqual(len(between), min(count, 4, rows // 3 - 1) + 1, screen)
 
     def test_the_rows_sit_right_above_the_composers_top_edge(self) -> None:
         app, _client = make_app(busy=True)
@@ -1989,11 +2031,11 @@ class QueueTests(unittest.TestCase):
         screen = drawn(app)
         top = composer_index(screen)
         self.assertEqual(screen[top - 1], rule_edges(80)[0])
-        self.assertEqual(screen[top - 3].rstrip(), "⧗ fix the failing test")
-        self.assertTrue(screen[top - 2].startswith("⧗ then update the changelog"))
-        self.assertTrue(screen[top - 2].rstrip().endswith("↑ edit"))
-        self.assertTrue(screen[top - 4].startswith("  ⎿  Tip: "), screen)
-        self.assertIn("esc to interrupt", screen[top - 5])  # the turn's activity row and its tip stay above them
+        self.assertEqual(screen[top - 4].rstrip(), "⧗ fix the failing test")
+        self.assertEqual(screen[top - 3].rstrip(), "⧗ then update the changelog")
+        self.assertEqual(screen[top - 2].rstrip(), "  ctrl+j to send now · ↑ to edit")  # under them, muted
+        self.assertTrue(screen[top - 5].startswith("  ⎿  Tip: "), screen)
+        self.assertIn("esc to interrupt", screen[top - 6])  # the turn's activity row and its tip stay above them
 
     def test_a_completion_menu_keeps_the_rows_left_and_stays_above_the_queue(self) -> None:
         app, _client = make_app(busy=True, rows=24)
@@ -2001,8 +2043,8 @@ class QueueTests(unittest.TestCase):
         type_text(app, "/")
         lines = [line_text(line) for line in app._slot_lines(80, 24)]
         self.assertEqual(len(lines), slot_cap(24, 80))
-        self.assertTrue(all(line.lstrip("❯ ").startswith("/") for line in lines[:4]), lines)
-        self.assertEqual([line.split("  ")[0] for line in lines[4:]], ["⧗ one", "⧗ two", "⧗ three", "+1 more"])
+        self.assertTrue(all(line.lstrip("❯ ").startswith("/") for line in lines[:3]), lines)
+        self.assertEqual(lines[3:], ["⧗ one", "⧗ two", "⧗ three", "+1 more", "  ctrl+j to send now · ↑ to edit"])
 
     def test_a_question_or_the_session_picker_hides_the_rows(self) -> None:
         app, _client = make_app(busy=True)
@@ -2293,10 +2335,10 @@ class ModeReplayTests(AppTestCase):
         self.assertEqual(len(run.calls("prompt.submit")), 1)
         queued, recalled = (terminal.captures[name] for name in ("queued", "recalled"))
         top = composer_index(queued)
-        self.assertEqual(queued[top - 3].rstrip(), "⧗ second prompt")
-        self.assertTrue(queued[top - 2].startswith("⧗ third prompt"))
-        self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))
-        self.assertIn("↑ edit queued", info_row_of(queued))  # the rows above say how many; the line, the key
+        self.assertEqual(queued[top - 4].rstrip(), "⧗ second prompt")
+        self.assertEqual(queued[top - 3].rstrip(), "⧗ third prompt")
+        self.assertEqual(queued[top - 2].rstrip(), "  ctrl+j to send now · ↑ to edit")  # the keys, under the rows
+        self.assertNotIn("queued", info_row_of(queued))
         self.assertNotIn("⧗", "\n".join(recalled))
         self.assertEqual(composer_text(recalled[composer_index(recalled) + 1]).strip(), "third prompt")
         self.assertNotIn("queued", info_row_of(recalled))

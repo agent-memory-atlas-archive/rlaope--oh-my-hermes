@@ -27,7 +27,7 @@ import re
 import unittest
 from unittest import mock
 
-from _tui_lines import RULE_ROW, line_text, lines_text
+from _tui_lines import RULE_ROW, line_text, lines_text, without_badge
 from test_tui_modes import drawn, make_app, show_mode, type_text
 from omh.skin_pack import SKIN_THEMES
 from omh.tui.app import (
@@ -497,8 +497,8 @@ class InfoLineInsetTests(unittest.TestCase):
         screen = [row for row in drawn(app) if row]
         composer, info = screen[-3], screen[-1]
         self.assertTrue(composer.startswith(PROMPT), screen)
-        self.assertEqual(info.index("?"), len(PROMPT))  # under the composer's text, two cells in
-        self.assertTrue(info.startswith("  ? for shortcuts"), info)
+        self.assertEqual(info.index("["), len(PROMPT))  # the badge under the composer's text, two cells in
+        self.assertTrue(info.startswith("  [ ⚚ OMH Native ]  ? for shortcuts"), info)
         self.assertEqual(line_width(app._info_line(80)), 80)  # the right side still ends on the last cell
 
     def test_a_tiny_terminal_draws_no_rules_and_the_line_starts_on_the_edge(self) -> None:
@@ -513,7 +513,7 @@ class ShortcutsHintTests(unittest.TestCase):
 
     def test_the_hint_leaves_while_the_composer_holds_text_and_comes_back_when_it_is_empty(self) -> None:
         app, _client = make_app(cols=100)
-        self.assertTrue(line_text(app._info_line(100)).startswith("  ? for shortcuts"))
+        self.assertTrue(without_badge(line_text(app._info_line(100))).startswith("  ? for shortcuts"))
         for typed in ("/", "model"):  # the slash menu opens over the `/`
             type_text(app, typed)
             self.assertTrue(app._menu_rows())
@@ -527,7 +527,7 @@ class ShortcutsHintTests(unittest.TestCase):
         self.assertNotIn("shortcuts", line_text(app._info_line(100)))
         for _ in "hello":
             app._on_input(Key(BACKSPACE))
-        self.assertTrue(line_text(app._info_line(100)).startswith("  ? for shortcuts"))
+        self.assertTrue(without_badge(line_text(app._info_line(100))).startswith("  ? for shortcuts"))
 
     def test_a_mode_keeps_its_label_and_where_shift_tab_goes_while_text_is_typed(self) -> None:
         for mode, said in ((MODE_ACCEPT, "⏵⏵ accept all on (⇧⇥ to cycle)"), (MODE_PLAN, "⏸ plan mode on (⇧⇥ to cycle)")):
@@ -536,7 +536,7 @@ class ShortcutsHintTests(unittest.TestCase):
                 show_mode(app, mode)
                 app.yolo_by_tui = app.approvals_off  # accept as the TUI turns it on: Shift+Tab walks every mode
                 type_text(app, "hello")
-                self.assertTrue(line_text(app._info_line(100)).startswith(f"  {said}"))
+                self.assertTrue(without_badge(line_text(app._info_line(100))).startswith(f"  {said}"))
 
 
 class PromptMarkTests(unittest.TestCase):

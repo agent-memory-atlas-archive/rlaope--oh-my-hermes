@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import unittest
 
-from _tui_lines import info_row_index, INFO_INSET, composer_text, line_text
+from _tui_lines import info_row_index, INFO_INSET, composer_text, line_text, without_badge
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -303,9 +303,9 @@ SID = "live-1"  # make_app's session
 
 
 class WaitingTimeTests(unittest.TestCase):
-    def clocked(self):
+    def clocked(self, cols: int = 80):
         now = [100.0]
-        app, client = make_app(busy=True, clock=lambda: now[0])
+        app, client = make_app(busy=True, clock=lambda: now[0], cols=cols)
         app.busy_since = 90.0
         return app, client, now
 
@@ -334,9 +334,9 @@ class WaitingTimeTests(unittest.TestCase):
 
         def status() -> str:
             screen = drawn(app)
-            return screen[info_row_index(screen)]  # the info line, the region's last row but the badge row
+            return screen[info_row_index(screen)]  # the info line, the region's last row
 
-        app, _client, now = self.clocked()
+        app, _client, now = self.clocked(cols=100)  # room for the badge, a question's keys and the chip
         app.stored_id = "stored"
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=1, oldest_open_elapsed_seconds=9)
@@ -353,7 +353,7 @@ class WaitingTimeTests(unittest.TestCase):
         self.assertIn("1 tool · 9s", status())
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertNotIn("tool", status())  # the snapshot still says live; the turn is over
-        self.assertTrue(status().startswith(INFO_INSET + "? for shortcuts"), status())
+        self.assertTrue(without_badge(status()).startswith(INFO_INSET + "? for shortcuts"), status())
 
     def test_back_to_back_questions_are_one_wait(self) -> None:
         app, _client, now = self.clocked()
@@ -529,7 +529,7 @@ TELL_APPROVAL = ServerRequest("srq-1", "approval", {
 
 
 def mode_row(app) -> str:
-    return line_text(app._info_line(100))
+    return without_badge(line_text(app._info_line(100)))
 
 
 class TellRowTests(unittest.TestCase):
@@ -848,7 +848,8 @@ class DocumentedBoundaryTests(unittest.TestCase):
         self.assertIn("A steer (Ctrl+Enter, Ctrl+J while a turn runs, `/steer`, or what the person sends from the composer "
                       "the tell row opened) "
                       "sends into the running turn only text the person typed and sent that way", agents)
-        self.assertIn("the TUI never steers on its own, and a queued prompt is never turned into a steer", agents)
+        self.assertIn("the TUI never steers on its own, and a queued prompt becomes a steer only when the person presses "
+                      "the send-now key", agents)
 
     def test_the_glossary_says_what_the_two_rows_send(self) -> None:
         context = self.prose("CONTEXT.md")

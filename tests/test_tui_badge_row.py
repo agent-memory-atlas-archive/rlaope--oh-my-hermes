@@ -1,4 +1,5 @@
-"""The row under the info line: the session's git branch and the OMH Native badge (owner's requests of 2026-10-27)."""
+"""The info line's badge and branch: `[ ⚚ OMH Native ]` at its left end, the session's git branch on its right
+(owner's requests of 2026-10-27, made one line on 2026-10-28)."""
 
 from __future__ import annotations
 
@@ -14,9 +15,10 @@ from unittest import mock
 from _platform_support import requires_posix
 from _tui_lines import line_text
 from omh.skin_pack import default_theme
-from omh.tui.frame import badge_line
+from omh.tui.frame import badge_forms, branch_forms
 from omh.tui.git_status import MIN_GAP_SECONDS, GitState, GitWatcher, parse_status, read_status
-from omh.tui.layout import BADGE_MIN_ROWS, allocate
+from omh.tui.layout import allocate
+from omh.tui.modes import info_line
 from omh.tui.style import Span
 from omh.tui.theme import (
     LAUNCH_PRESETS, TEXT_CONTRAST, build_theme, contrast_ratio, launch_palette, launch_styles, launch_wordmark,
@@ -181,40 +183,64 @@ class StatusTests(unittest.TestCase):
             self.assertIsNotNone(seen[0].wait(timeout=2.0), "git is gone with the watcher")
 
 
-class BadgeRowTests(unittest.TestCase):
-    def test_the_branch_on_the_left_and_the_badge_on_the_right_edge(self) -> None:
-        theme = build_theme(default_theme(), "#0D1117")
+class BottomLineTests(unittest.TestCase):
+    """One line under the composer (owner, 2026-10-28): the badge at its left end, the branch first on its right."""
+
+    THEME = build_theme(default_theme(), "#0D1117")
+    RIGHT = ((Span("deepseek-v4.1-flash · ctx 12% · effort high", THEME.muted),), (Span("ctx 12% · effort high", THEME.muted),))
+    STATE = GitState("omh/terminology-unification", 3, 128)
+
+    def line(self, width: int, state: GitState | None = STATE, **facts: object) -> str:
         word, accent = native("spectrum", "#0D1117")
-        row = badge_line(100, theme, accent, word, GitState("omh/terminology-unification", 3, 128))
-        text = line_text(row)
-        self.assertEqual(len(text), 100)
-        self.assertTrue(text.startswith("  branch:omh/terminology-unification | !3 ?128"), text)
-        self.assertTrue(text.endswith("[ ⚚ OMH Native ]"), text)
+        return line_text(info_line(mode=facts.pop("mode", "normal"), busy=False, width=width, theme=self.THEME,
+                                   right=self.RIGHT, badge=badge_forms(self.THEME, accent, word),
+                                   branch=branch_forms(state, self.THEME), **facts))  # type: ignore[arg-type]
+
+    def test_the_badge_on_the_left_and_the_branch_then_the_fields_on_the_right(self) -> None:
+        text = self.line(130)
+        self.assertEqual(len(text), 130)
+        self.assertTrue(text.startswith("[ ⚚ OMH Native ]  ? for shortcuts"), text)
+        self.assertTrue(text.endswith("branch:omh/terminology-unification | !3 ?128 · deepseek-v4.1-flash · ctx 12% · "
+                                      "effort high"), text)
+
+    def test_the_fields_go_first_then_the_badge_shrinks_and_the_label_and_the_branch_stay(self) -> None:
+        branch = "branch:omh/terminology-unification | !3 ?128"  # 44 cells
+        widths = {  # the left side is 33 cells with the whole badge, 26 with `[ ⚚ OMH ]`, 18 with `⚚`; the gap 3
+            125: ("[ ⚚ OMH Native ]  ? for shortcuts", branch + " · ctx 12% · effort high"),
+            104: ("[ ⚚ OMH Native ]  ? for shortcuts", branch + " · ctx 12% · effort high"),
+            103: ("[ ⚚ OMH Native ]  ? for shortcuts", branch),
+            80: ("[ ⚚ OMH Native ]  ? for shortcuts", branch),
+            79: ("[ ⚚ OMH ]  ? for shortcuts", branch),
+            73: ("[ ⚚ OMH ]  ? for shortcuts", branch),
+            72: ("⚚  ? for shortcuts", branch),
+            65: ("⚚  ? for shortcuts", branch),
+            64: ("? for shortcuts", branch),  # the badge goes before the left side's words shorten
+            61: ("? for shortcu…", branch),  # then the hint shortens, beside the branch
+        }
+        for width, (left, right) in widths.items():
+            with self.subTest(width=width):
+                text = self.line(width)
+                self.assertLessEqual(len(text), width)
+                self.assertTrue(text.startswith(left + "   "), text)
+                self.assertTrue(text.endswith(right), text)
+        # The label's glyph beside the whole branch; narrower, the branch's name is cut to 24 cells.
+        self.assertEqual(self.line(50, mode="accept"), "⏵⏵    branch:omh/terminology-unification | !3 ?128")
+        self.assertEqual(self.line(46, mode="accept"), "⏵⏵   branch:omh/terminology-unifica… | !3 ?128")
+
+    def test_counts_that_are_zero_are_left_out_and_no_repository_shows_no_branch(self) -> None:
+        self.assertTrue(self.line(120, GitState("main", 0, 0)).endswith("branch:main · deepseek-v4.1-flash · ctx 12% · "
+                                                                       "effort high"))
+        self.assertIn("branch:main | ?4 ·", self.line(120, GitState("main", 0, 4)))
+        self.assertNotIn("branch:", self.line(120, None))
+
+    def test_the_badge_and_the_branch_keep_their_colours(self) -> None:
+        word, accent = native("spectrum", "#0D1117")
+        row = info_line(mode="normal", busy=False, width=120, theme=self.THEME, badge=badge_forms(self.THEME, accent, word),
+                        branch=branch_forms(self.STATE, self.THEME))
         styles = {span.text: span.style for span in row}
-        self.assertEqual((styles["!3"], styles["?128"], styles["⚚"]), (theme.warn, theme.faint, accent))
-        self.assertEqual(styles["omh/terminology-unification"], theme.label)
-
-    def test_counts_that_are_zero_are_left_out_and_no_repository_draws_the_badge_alone(self) -> None:
-        theme = build_theme(default_theme(), "#0D1117")
-        word, accent = native("spectrum", "#0D1117")
-        self.assertTrue(line_text(badge_line(80, theme, accent, word, GitState("main", 0, 0))).startswith("  branch:main  "))
-        self.assertTrue(line_text(badge_line(80, theme, accent, word, GitState("main", 0, 4))).startswith(
-            "  branch:main | ?4  "))
-        alone = line_text(badge_line(80, theme, accent, word, None))
-        self.assertEqual((alone.strip(), len(alone)), ("[ ⚚ OMH Native ]", 80))
-
-    def test_a_narrow_row_cuts_the_branch_name_then_its_counts_then_the_badge_and_never_wraps(self) -> None:
-        theme = build_theme(default_theme(), "#0D1117")
-        word, accent = native("spectrum", "#0D1117")
-        state = GitState("feature/a-very-long-branch-name-for-a-narrow-terminal", 2, 1)
-        cut = line_text(badge_line(60, theme, accent, word, state))
-        self.assertEqual(len(cut), 60)
-        self.assertIn("…", cut)
-        self.assertTrue(cut.endswith("[ ⚚ OMH Native ]") and "| !2 ?1" in cut, cut)
-        narrow = line_text(badge_line(19, theme, accent, word, state))
-        self.assertNotIn("Native", narrow)  # the badge goes first
-        self.assertLessEqual(len(narrow), 19)
-        self.assertEqual(badge_line(5, theme, accent, word, None), ())
+        self.assertEqual((styles["!3"], styles["?128"], styles["⚚"]), (self.THEME.warn, self.THEME.faint, accent))
+        self.assertEqual(styles["omh/terminology-unification"], self.THEME.label)
+        self.assertEqual([span.style for span in row if span.text in "Native"][:6], [span.style for span in word])
 
     def test_native_reads_in_every_launch_look_on_light_and_dark(self) -> None:
         for background in ("#0D1117", "#FFFFFF"):
@@ -226,14 +252,13 @@ class BadgeRowTests(unittest.TestCase):
         sweep, _accent = native("spectrum", "#0D1117")
         self.assertGreater(len({span.style.fg for span in sweep}), 3, "the spectrum sweeps its hues across the word")
 
-    def test_the_row_is_drawn_from_the_terminal_height_alone(self) -> None:
-        for rows in (BADGE_MIN_ROWS - 1, BADGE_MIN_ROWS, 40):
-            budget = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=4, composer_rows=1, badge_rows=1)
+    def test_no_row_of_its_own_at_any_height(self) -> None:
+        for rows in (24, 29, 30, 40):
+            busy = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=12, composer_rows=1, agents_rows=9)
+            idle = allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1)
             with self.subTest(rows=rows):
-                self.assertEqual(budget.badge, int(rows >= BADGE_MIN_ROWS))
-        busy = allocate(36, 80, sticky=False, tail_rows=3, slot_rows=12, composer_rows=1, badge_rows=1, agents_rows=9)
-        idle = allocate(36, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, badge_rows=1)
-        self.assertEqual((busy.badge, idle.badge), (1, 1))  # a menu or the view never takes it, so nothing moves
+                self.assertEqual(idle.total, idle.composer + idle.rule + idle.bottom_rule + idle.info)
+                self.assertLessEqual(busy.total, rows - 1)
 
 
 if __name__ == "__main__":
