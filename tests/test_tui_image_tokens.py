@@ -623,6 +623,17 @@ class ReadImageTests(unittest.TestCase):
             self.assertIsNone(read_image(str(empty)))
             with patch("omh.tui.app.IMAGE_KEEP_BYTES", len(PNG) - 1):
                 self.assertIsNone(read_image(str(regular)))
+
+    def test_a_link_is_refused_where_open_cannot_refuse_it(self) -> None:
+        # Windows has no O_NOFOLLOW; the link is refused by its own entry before the open.
+        with tempfile.TemporaryDirectory() as home:
+            regular = Path(home, "shot.png")
+            regular.write_bytes(PNG)
+            link = Path(home, "link.png")
+            link.symlink_to(regular)
+            with patch("omh.tui.app.os.O_NOFOLLOW", 0, create=True):
+                self.assertEqual(read_image(str(regular)), PNG)
+                self.assertIsNone(read_image(str(link)))
             if hasattr(os, "mkfifo"):
                 fifo = Path(home, "fifo.png")
                 os.mkfifo(fifo)

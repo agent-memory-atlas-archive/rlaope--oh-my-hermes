@@ -1290,7 +1290,15 @@ def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
 def read_image(path: str) -> bytes | None:
     """The bytes of the image file Hermes staged at `path`, read once so the TUI holds it; None when it cannot be read,
     is no regular file (a link is not followed, a FIFO never blocks the loop), is empty, or is over
-    `IMAGE_KEEP_BYTES`, as `history.load_history` guards its read."""
+    `IMAGE_KEEP_BYTES`, as `history.load_history` guards its read. Windows has no `O_NOFOLLOW`, so a link or other
+    reparse point is refused by its own entry first."""
+    try:
+        entry = os.lstat(path)
+    except OSError:
+        return None
+    if stat.S_ISLNK(entry.st_mode) or getattr(entry, "st_file_attributes", 0) & getattr(
+            stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return None
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
                      | getattr(os, "O_BINARY", 0))
