@@ -1040,7 +1040,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   deletes the token (Backspace into it, Cmd+Backspace, Ctrl+W, Ctrl+U,
   Ctrl+K, Ctrl+C, Esc Esc) removes the image, and an undo puts both back.
   The prompt keeps the `[Image #N]` labels in its text so the model can name
-  them, and the transcript lists each image Hermes took under it
+  them, and the transcript lists under it each image Hermes accepted for it
   (`⎿  [Image #1]`). A `!` line or a command that sends no prompt gives its
   tokens back to the composer. Typing `[Image #1]` yourself attaches
   nothing, and a prompt recalled from history is plain text. Dropping a file

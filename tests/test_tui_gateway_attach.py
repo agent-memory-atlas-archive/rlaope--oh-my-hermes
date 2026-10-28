@@ -688,6 +688,16 @@ class ImageTests(AdapterCase):
         [(_, submit)] = adapter.from_client(_call(44, "prompt.submit", {"session_id": SID, "text": "y"}))
         self.assertNotIn("attachments", submit["params"])
 
+    def test_a_staged_path_with_no_mime_answered_is_typed_by_the_suffix_the_owner_gave_it(self) -> None:
+        adapter = self.adapter()
+        self.opened(adapter)
+        sent = {"session_id": SID, "filename": "photo.jpg", "content_base64": base64.b64encode(PNG).decode("ascii")}
+        call = self.own_call(adapter.from_client(_call(48, "image.attach_bytes", sent)), "image.attach_bytes")
+        adapter.from_owner(_answer(call["id"], {"attached": True, "path": "/hermes/cache/images/upload_3.jpg"}))
+        [(_, submit)] = adapter.from_client(_call(49, "prompt.submit", {"session_id": SID, "text": "x"}))
+        self.assertEqual(submit["params"]["attachments"], [{"path": "/hermes/cache/images/upload_3.jpg",
+                                                            "mime": "image/jpeg"}])
+
     def test_empty_bytes_are_refused_and_bytes_the_owner_refuses_say_why(self) -> None:
         adapter = self.adapter()
         self.opened(adapter)

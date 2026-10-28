@@ -5,23 +5,35 @@ The app is driven as `test_tui_modes` drives it: keys go through
 calls it makes are answered by `FakeHermes`, which keeps a session's staged
 images as Hermes' gateway does: a staging appends one, `image.detach` takes
 one out by path, and a `prompt.submit` takes everything staged only when its
-turn is admitted (`admit`), later, as Hermes' turn thread takes it after the
-agent build (`_admit_prompt_turn`). So a test sees which images each turn
-really went with. The composer's own rules for a token are
+turn is admitted: COLD, when the test says (`admit`), as Hermes' turn thread
+takes it after the agent build (`_admit_prompt_turn`); WARM (`warm`), the
+moment Hermes reads the submit, before any call written after it, as an agent
+already built races the reader. So a test sees which images each turn really
+went with. The composer's own rules for a token are
 `test_tui_composer.ImageTokenTests`.
 """
 
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from _tui_lines import lines_text
 from test_tui_modes import SID, RecordingClient, make_app, notices, type_text
 from omh.tui import gateway_contract as contract
-from omh.tui.app import IMAGE_NOT_SENT_NOTICE, App, Attachment
+from omh.tui.app import (
+    IMAGE_NOT_SENT_NOTICE,
+    UNSENT_BACK_NOTICE,
+    UNSENT_BACK_RESPAWN,
+    UNSENT_BACK_SWITCH,
+    App,
+    Attachment,
+    read_image,
+)
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, KeyDecoder, Paste
 from omh.tui.theme import DEFAULT_THEME
@@ -42,8 +54,8 @@ def ctrl(char: str) -> Key:
 class FakeHermes:
     """Hermes' staging of images for one session, answering the app's image and prompt calls in order (`pump`)."""
 
-    def __init__(self, app: App, client: RecordingClient, home: Path) -> None:
-        self.app, self.client, self.home = app, client, home
+    def __init__(self, app: App, client: RecordingClient, home: Path, warm: bool = False) -> None:
+        self.app, self.client, self.home, self.warm = app, client, home, warm
         self.held: list[str] = []
         self.files: dict[str, bytes] = {}  # every image file Hermes wrote, by path, in order
         self.waiting: list[str] = []  # submitted prompts whose turns are not admitted yet
@@ -71,6 +83,8 @@ class FakeHermes:
             method, params = self.client.calls[index]
             if method in ANSWERED:
                 self.app._on_response(Response(index + 1, self.answer(method, params), None))
+                if method == "prompt.submit" and self.warm:
+                    self.admit()
 
     def answer(self, method: str, params: dict) -> dict:
         if method == "clipboard.paste":
@@ -112,11 +126,11 @@ class FakeHermes:
 
 
 class ImageTestCase(unittest.TestCase):
-    def setUp(self) -> None:
+    def setUp(self, warm: bool = False) -> None:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
         self.app, self.client = make_app()
-        self.hermes = FakeHermes(self.app, self.client, Path(home.name))
+        self.hermes = FakeHermes(self.app, self.client, Path(home.name), warm)
 
     def press(self, *keys: Key | Paste) -> None:
         for key in keys:
@@ -352,6 +366,148 @@ class SendTests(ImageTestCase):
         self.assertEqual(self.hermes.waiting, [])
 
 
+class GateTests(ImageTestCase):
+    """The review's reproductions, with Hermes admitting a turn at once (WARM) and after the agent build (COLD)."""
+
+    def test_a_paste_right_after_enter_never_rides_that_prompt(self) -> None:
+        for warm in (True, False):
+            with self.subTest(warm=warm):
+                self.setUp(warm)
+                first = self.paste_image()
+                self.type(" first")
+                self.app._on_input(Key(ENTER))
+                self.app._on_input(CTRL_V)  # before any answer to the staging
+                self.hermes.pump()
+                if not warm:
+                    self.hermes.admit()
+                self.assertEqual(self.hermes.turns, [("[Image #1]  first", [first])])
+                second = list(self.hermes.files.values())[-1]
+                self.assertEqual(self.shown(), "[Image #2] ")
+                self.assertEqual(self.hermes.held, [])
+                self.hermes.complete()
+                self.press(Key(ENTER))
+                if not warm:
+                    self.hermes.admit()
+                self.assertEqual(self.hermes.turns[1], ("[Image #2] ", [second]))
+
+    def test_enter_before_a_pastes_answer_sends_the_text_alone_and_the_image_stays_in_the_draft(self) -> None:
+        for warm in (True, False):
+            with self.subTest(warm=warm):
+                self.setUp(warm)
+                self.type("describe this")
+                self.app._on_input(CTRL_V)
+                self.app._on_input(Key(ENTER))  # the paste is not answered yet
+                self.assertEqual([method for method, _params in self.client.calls], ["clipboard.paste"])
+                self.hermes.pump()
+                if not warm:
+                    self.hermes.admit()
+                self.assertEqual(self.hermes.turns, [("describe this", [])])
+                self.assertEqual(self.users()[-1].images, ())
+                self.assertEqual(self.shown(), "[Image #1] ")
+                self.assertEqual(self.hermes.held, [])
+
+    def test_a_staging_hermes_never_answers_is_said_and_the_prompt_goes_without_it(self) -> None:
+        now = [100.0]
+        self.app.clock = lambda: now[0]
+        self.paste_image()
+        self.type("x")
+        self.app._on_input(Key(ENTER))
+        now[0] += 10_000.0
+        self.app._expire_calls()  # once crashed the TUI: the expiry handler took the seconds for the image
+        self.hermes.answered = len(self.client.calls)
+        self.assertIn(IMAGE_NOT_SENT_NOTICE.format(label="[Image #1]", reason="no answer"), notices(self.app, NOTICE_WARN))
+        self.assertEqual(self.client.calls[-1][0], "prompt.submit")
+        self.assertEqual(self.client.calls[-1][1]["text"], "[Image #1] x")
+        self.assertEqual(self.users()[-1].images, ())
+
+    def test_esc_while_a_prompt_stages_takes_it_back_and_sends_nothing(self) -> None:
+        self.paste_image()
+        self.type("go")
+        self.app._on_input(Key(ENTER))
+        self.app._on_input(Key(ESCAPE))  # the staging is not answered yet
+        self.assertEqual(self.shown(), "[Image #1] go")
+        self.assertEqual(len(self.app.composer.images), 1)
+        self.assertFalse(self.app._busy())
+        self.assertFalse(self.app.interrupting)
+        self.hermes.pump()  # the staging is answered now: what Hermes took for it is detached
+        self.assertEqual(self.methods("session.interrupt"), [])
+        self.assertEqual(self.methods("prompt.submit"), [])
+        self.assertEqual(self.hermes.held, [])
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] go", [list(self.hermes.files.values())[1]])])
+
+    def test_a_turn_hermes_starts_on_its_own_while_a_prompt_stages_does_not_open_the_gate(self) -> None:
+        # A wake-up or a notification turn: its `message.start` says nothing about this prompt's images.
+        self.paste_image()
+        self.app._on_input(Key(ENTER))  # staging out, not answered
+        self.app._on_event(Event("message.start", SID, {}))
+        self.app._on_input(CTRL_V)
+        self.assertNotEqual(self.client.calls[-1][0], "clipboard.paste")
+
+    def test_a_queued_answer_takes_the_images_so_the_next_paste_goes_at_once(self) -> None:
+        self.app.busy_mode = "steer"
+        self.app.transcript.running = True  # a turn runs: the prompt goes into it, and Hermes queues it
+        self.paste_image()
+        self.type("also this")
+        self.app._on_input(Key(ENTER))
+        self.hermes.pump(len(self.client.calls))  # the staging; the submit stays unanswered here
+        (submit,) = [index for index, (method, _params) in enumerate(self.client.calls) if method == "prompt.submit"]
+        self.hermes.answered = len(self.client.calls)
+        self.app._on_response(Response(submit + 1, {"status": "queued"}, None))
+        self.app._on_input(CTRL_V)
+        self.assertEqual(self.client.calls[-1][0], "clipboard.paste")
+
+    def test_a_turn_never_admitted_and_never_ended_does_not_hold_the_next_prompt(self) -> None:
+        self.paste_image()
+        self.press(Key(ENTER))  # staged and sent; Hermes never starts the turn
+        self.app.turn_pending = False  # the person interrupted it, and nothing Hermes sent ended it
+        self.type("next")
+        self.press(Key(ENTER))
+        self.assertEqual(self.hermes.waiting[-1], "next")
+        self.assertEqual(self.hermes.held, [])  # what the first left staged was detached
+
+    def test_a_session_switch_while_a_prompt_stages_gives_it_back_and_a_paste_goes_in_the_new_one(self) -> None:
+        self.paste_image()
+        self.type("x")
+        self.app._on_input(Key(ENTER))
+        self.app._enter_session({"session_id": SID, "stored_session_id": "stored-2", "info": {}})
+        self.assertEqual(self.shown(), "[Image #1] x")
+        self.assertIn(UNSENT_BACK_NOTICE.format(why=UNSENT_BACK_SWITCH), notices(self.app, NOTICE_WARN))
+        self.hermes.pump()
+        self.assertEqual(self.methods("prompt.submit"), [])
+        self.app._on_input(CTRL_V)
+        self.assertEqual(self.client.calls[-1][0], "clipboard.paste")
+
+    def test_an_unreadable_staged_image_makes_no_token_and_is_let_go_of(self) -> None:
+        with patch("omh.tui.app.read_image", lambda path: None):
+            self.press(CTRL_V)
+        self.assertEqual(self.app.composer.images, {})
+        self.assertEqual(self.hermes.held, [])
+        self.assertTrue(any("could not be read for its token" in said for said in notices(self.app, NOTICE_WARN)))
+
+
+class RespawnTests(unittest.TestCase):
+    """A new gateway holds no image: a prompt that was staging comes back, and the next send stages from the TUI."""
+
+    def test_a_respawn_gives_back_the_prompt_that_was_staging_and_the_next_send_stages_from_the_tuis_bytes(self) -> None:
+        from test_tui_respawn import crash, crashing
+
+        app, old, spawner, _now = crashing()
+        image = Attachment("/h/images/clip.png", "clip.png", "", "[Image #1]", PNG)
+        app.composer.insert_image(image.label, image)
+        type_text(app, "x")
+        app._on_input(Key(ENTER))
+        self.assertEqual(old.calls[-1][0], "image.attach_bytes")
+        crash(app, old)
+        new = spawner.made[0]
+        self.assertEqual(app.composer.expanded(), "[Image #1] x")
+        self.assertIn(UNSENT_BACK_NOTICE.format(why=UNSENT_BACK_RESPAWN), notices(app, NOTICE_WARN))
+        app._on_input(Key(ENTER))
+        (stage,) = new.named("image.attach_bytes")
+        self.assertEqual(base64.b64decode(stage["content_base64"]), PNG)
+
+
 class KeptTokenTests(ImageTestCase):
     """A line that sends no prompt takes no image: its tokens come back to the draft, and a notice says so."""
 
@@ -448,6 +604,29 @@ class NoTokenCharacterLeavesTests(ImageTestCase):
         sinks = [*map(repr, self.client.calls), *remembered, *self.app.composer.history]
         for item in sinks:
             self.assertFalse(any(ord(ch) in TOKEN_RANGE for ch in item), item)
+
+
+class ReadImageTests(unittest.TestCase):
+    """The TUI reads a file Hermes named only as a regular file, without following a link or waiting on a FIFO."""
+
+    def test_only_a_regular_file_within_the_cap_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            regular = Path(home, "shot.png")
+            regular.write_bytes(PNG)
+            link = Path(home, "link.png")
+            link.symlink_to(regular)
+            self.assertEqual(read_image(str(regular)), PNG)
+            self.assertIsNone(read_image(str(link)))
+            self.assertIsNone(read_image(str(Path(home, "gone.png"))))
+            empty = Path(home, "empty.png")
+            empty.write_bytes(b"")
+            self.assertIsNone(read_image(str(empty)))
+            with patch("omh.tui.app.IMAGE_KEEP_BYTES", len(PNG) - 1):
+                self.assertIsNone(read_image(str(regular)))
+            if hasattr(os, "mkfifo"):
+                fifo = Path(home, "fifo.png")
+                os.mkfifo(fifo)
+                self.assertIsNone(read_image(str(fifo)))  # returns at once: no writer is waited for
 
 
 class AttachmentShapeTests(ImageTestCase):

@@ -262,8 +262,8 @@ All notable changes will be documented here.
   (Backspace, Cmd+Backspace, Ctrl+W, Ctrl+U, Ctrl+K, Ctrl+C, Esc Esc) removes
   the image; before, Cmd+Backspace cleared the text and left the image
   attached. An undo puts both back, and so does Up/Down through history over
-  a draft. The sent prompt keeps the labels and lists each image Hermes took
-  under its echo (`⎿  [Image #1]`). A queued prompt, and each command in
+  a draft. The sent prompt keeps the labels and lists under its echo each
+  image whose staging Hermes answered (`⎿  [Image #1]`). A queued prompt, and each command in
   flight, goes with its own images. A `!` line or a command that sends no
   prompt gives its tokens back to the composer, with a notice. Typing the
   label yourself attaches nothing.
