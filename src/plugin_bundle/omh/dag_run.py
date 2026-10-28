@@ -851,9 +851,36 @@ def task_for(
     return {"goal": f"{node['label']} [dag:{run}/{node['id']}]", "context": "\n".join(lines)}
 
 
+def _call_route(
+    category: str, fallback: bool, retries: int, backend: Mapping[str, Any] | None
+) -> tuple[dict[str, Any], str]:
+    """The call's ``route`` and the model_map option its tasks carry (``""`` for none).
+
+    Under `default` (or an unread backend: ``None``) the parent sets the
+    route with `omh_delegate_route` as before. Under `model_map` the option
+    goes on each task and no tool runs: a provider-error retry takes the
+    category's next option. Any other backend gets nothing from OMH -- it
+    never picks a `profile_routes` profile.
+    """
+    name = str((backend or {}).get("backend") or "default")
+    if name == "default":
+        return {"tool": "omh_delegate_route", "action": "fallback" if fallback else "set", "category": category}, ""
+    route: dict[str, Any] = {"backend": name, "category": category}
+    if name != "model_map" or (backend or {}).get("status") != "read":
+        route["status"] = "not_applied"
+        return route, ""
+    names = list(((backend or {}).get("options") or {}).get(category) or [])
+    if retries < len(names):
+        route.update(status="option_selected", option=names[retries])
+        return route, names[retries]
+    route["status"] = "options_exhausted" if names else "no_matching_option"
+    return route, ""
+
+
 def calls_for(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], *, free_slots: int, per_call: int,
     omh_home: Path, now: float, skip: Iterable[str] = (), task_budget: int | None = None,
+    backend: Mapping[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Ready nodes as `delegate_task` calls, one per category (and route fallback), at most ``free_slots`` calls.
 
@@ -862,22 +889,29 @@ def calls_for(
     the calls already carry ``task_budget`` tasks in all (a one-shot session's
     children left: every task costs one, a re-offered node's too). ``skip``
     are nodes that go elsewhere (an external coding owner's export).
+    ``backend`` is Hermes' delegation backend as `omh_dag` read it
+    (``backend``, ``status``, and per-category model_map ``options``); see
+    `_call_route`.
     """
     nodes = {str(node["id"]): node for node in record["nodes"]}
-    groups: dict[tuple[str, bool], list[str]] = {}
+    groups: dict[tuple[str, bool, int], list[str]] = {}
     skipped = set(skip)
+    # Under model_map the option is the retry count's: nodes on different retries go in different calls.
+    by_option = str((backend or {}).get("backend") or "") == "model_map"
     for node_id in offerable(record, derived, now):
         if node_id in skipped:
             continue
         node = nodes[node_id]
         attempts = node.get("attempts") or []
         fallback = bool(attempts) and attempts[-1].get("outcome") == "retry"
-        groups.setdefault((str(node["category"]), fallback), []).append(node_id)
+        retries = sum(1 for item in attempts if item.get("outcome") == "retry") if by_option else 0
+        groups.setdefault((str(node["category"]), fallback, retries), []).append(node_id)
     calls: list[dict[str, Any]] = []
     held: list[str] = []
     size = max(1, per_call)
     left = None if task_budget is None else max(0, task_budget)
-    for (category, fallback), members in groups.items():
+    for (category, fallback, retries), members in groups.items():
+        route, option = _call_route(category, fallback, retries, backend)
         for start in range(0, len(members), size):
             chunk = members[start:start + size]
             if left is not None:
@@ -891,14 +925,14 @@ def calls_for(
             if left is not None:
                 left -= len(chunk)
             for node_id in chunk:
-                hand_out(nodes[node_id], derived[node_id]["state"], now, lost=bool(derived[node_id].get("lost")))
-            calls.append({
-                "category": category,
-                "route": {"tool": "omh_delegate_route", "action": "fallback" if fallback else "set",
-                          "category": category},
-                "nodes": chunk,
-                "tasks": [task_for(record, nodes[node_id], omh_home, derived) for node_id in chunk],
-            })
+                attempt = hand_out(nodes[node_id], derived[node_id]["state"], now,
+                                   lost=bool(derived[node_id].get("lost")))
+                if "backend" in route:
+                    attempt.update(backend=route["backend"], option=option)
+            tasks = [task_for(record, nodes[node_id], omh_home, derived) for node_id in chunk]
+            if option:
+                tasks = [{**task, "option": option} for task in tasks]
+            calls.append({"category": category, "route": dict(route), "nodes": chunk, "tasks": tasks})
     return calls, held
 
 

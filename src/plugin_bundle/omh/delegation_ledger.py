@@ -90,6 +90,8 @@ LEDGER_CLAIM_BOUNDARY: Final = (
     "it is not execution, verification, review, CI or merge evidence."
 )
 ROUTE_FIELDS: Final = ("category", "alias", "wire_model", "reasoning_effort", "origin")
+# What Hermes' own result says a backend-routed child ran on (`delegate_tool_child_run._route_report`).
+OBSERVED_ROUTE_FIELDS: Final = ("backend", "label", "provider", "model", "reasoning_effort", "service_tier")
 # What a chat reply last carried (`delegation_snapshot.py`): the moment, and whether its run is still open.
 POST_MOMENTS: Final = ("start", "count", "end")
 RUN_PHASES: Final = ("open", "closed")
@@ -286,6 +288,30 @@ def _valid_route(value: object) -> dict[str, str]:
     return route if route.get("category") or route.get("wire_model") or route.get("origin") else {}
 
 
+def valid_observed_route(value: object) -> dict[str, Any]:
+    """The ``route`` Hermes (0.22.5+) reported on a child's result, field by field; ``{}`` when it is not one.
+
+    Hermes reports it for a backend-routed child only: the backend, the
+    user's option or profile (``label``), and the provider, model and effort
+    read off the child when its result was assembled. It is the record of
+    where the child ran, which no OMH-prepared route replaces.
+    """
+    if not isinstance(value, dict):
+        return {}
+    route: dict[str, Any] = {
+        field: _text(value.get(field), WORD_LIMIT if field in ("backend", "reasoning_effort", "service_tier")
+                     else ID_LIMIT)
+        for field in OBSERVED_ROUTE_FIELDS
+    }
+    route = {field: text for field, text in route.items() if text}
+    if not route.get("backend"):
+        return {}
+    for flag in ("fallback_activated", "refused"):
+        if value.get(flag) is True:
+            route[flag] = True
+    return route
+
+
 def _valid_child(value: object) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -303,6 +329,9 @@ def _valid_child(value: object) -> dict[str, Any] | None:
         "started_at": started,
         "route": _valid_route(value.get("route")),
     }
+    observed = valid_observed_route(value.get("observed_route"))
+    if observed:
+        entry["observed_route"] = observed
     for key in ("call_id", "delegation_id"):
         if _text(value.get(key)):
             entry[key] = _text(value.get(key))
@@ -641,9 +670,23 @@ def observe_delegate_call(kwargs: dict[str, object], *, now: float | None = None
         if len(started) == count:
             for index, child in enumerate(started):
                 child.update(call_id=call_id, task_index=index)
+                observed = reported.get(index)
+                if observed:
+                    child["observed_route"] = observed
         else:
             ledger_declines["sync_children_unpaired"] += 1
         return True
+
+    # Hermes 0.22.5+ reports, per task, where a backend-routed child ran.
+    reported: dict[int, dict[str, Any]] = {}
+    for position, entry in enumerate(results):
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("task_index")
+        index = index if isinstance(index, int) and not isinstance(index, bool) else position
+        observed = valid_observed_route(entry.get("route"))
+        if observed:
+            reported[index] = observed
 
     return _update(omh_home, root, bind_sync, now=moment)
 
