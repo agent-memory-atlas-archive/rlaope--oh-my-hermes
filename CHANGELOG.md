@@ -6,8 +6,30 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Gemini 4 Argon replaces Gemini 3.1 Pro in the shipped chains.** Google
+  made Argon generally available on 2026-10-13. Every slot 3.1 Pro held now
+  names `gemini-4-argon` at the same effort: `writing` and `google-search`
+  at `medium`; `visual-engineering`, `artistry`, `x-search`, and
+  `synthesize` at `high`; and the X-platform affinity. The id has an exact
+  contract read from ai.google.dev: 1M unified context, 65,536 output per
+  synchronous request (1M with long decode), and a `low`/`medium`/`high`
+  thinking ladder with `medium` as the default and no off switch. `off`
+  and `minimal` are raised to `low` on record; `xhigh` and `max` pass
+  through, because nothing documented sits above `high`. Dated snapshots
+  project onto it. Cost estimates use the 2/10 list price with 0.10
+  cached input, which rises to 4/20 on 2026-12-01. Provider checks know
+  that Google's API and OpenRouter serve it. On Hermes, 3.1 Pro's `medium`
+  slots were sent as `low`, because Hermes allows only `low` and `high` for
+  a Gemini 3 Pro id. Argon's `medium` is sent as `medium`. Gemini 3.1 Pro
+  is retired under the superseded-generation rule. It stays recognized,
+  priced, and provider-mapped, so `omh model-chains set` can still name
+  it. The `gemini` family calibration applies unchanged. Both site pages,
+  the generated install table, and the model-setup skill say so. This is
+  an editorial change (owner decision) and has not been measured: no
+  served Gemini route was available to probe.
+
 - **Six more model categories you can route a subagent to.** `google-search`
-  (Gemini 3.1 Pro first, for research grounded in Google Search), `x-search`
+  (Gemini 4 Argon first, for research grounded in Google Search), `x-search`
   (Grok 4.7 first, for live search on X), `review` (GPT-6.1 Sol at xhigh, so
   a different model tries to break the diff), `swarm` (DeepSeek V4.1 Flash
   at low, for many parallel workers), `forensics` (GPT-6 Astra at xhigh, for
@@ -21,7 +43,7 @@ All notable changes will be documented here.
   `architect`'s), so an unrouted child on those models is still labelled
   with the earlier name; a lane routed through `omh_delegate_route` keeps its
   own. Six HUD labels move with the new chains: DeepSeek V4.1 Flash at low
-  now reads `swarm`, Gemini 3.1 Pro at medium `google-search`, Kimi K3.1 Pro
+  now reads `swarm`, Gemini 4 Argon at medium `google-search`, Kimi K3.1 Pro
   at high `x-search` and at xhigh `review`, and GPT-6.1 Sol at xhigh and
   Grok 4.7 at high, which had no label, read `review` and `x-search`.
 - **Selecting the transcript no longer copies its left bar, and the pager
