@@ -7009,9 +7009,13 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
         adjacent = ", ".join(str(item) for item in hint.get("adjacent_workflows", []))
         next_action = str(hint.get("next_action") or "").strip()
         next_action_label = str(hint.get("next_action_label") or _next_action_label(next_action)).strip()
+        # A label that only respells the action's underscores carries nothing the action does not.
+        label_part = (
+            "" if next_action_label == next_action.replace("_", " ") else f"next_action_label={next_action_label}; "
+        )
         lines.append(
             f"- selected={hint.get('workflow')}; lane={hint.get('lane')}; "
-            f"next_action_label={next_action_label}; next_action={next_action}; reason={hint.get('reason')}"
+            f"{label_part}next_action={next_action}; reason={hint.get('reason')}"
         )
         context_card = hint.get("workflow_context_card")
         if isinstance(context_card, dict):
@@ -7035,8 +7039,12 @@ def awareness_route_hint_context_from_payload(payload: dict[str, object]) -> str
         fallback_action = str(hint.get("fallback_action") or "").strip()
         if fallback_action:
             fallback_action_label = str(hint.get("fallback_action_label") or _next_action_label(fallback_action)).strip()
-            lines.append(f"  fallback_action_label={fallback_action_label}; fallback_action={fallback_action}.")
-        if adjacent:
+            if fallback_action_label == fallback_action.replace("_", " "):
+                lines.append(f"  fallback_action={fallback_action}.")
+            else:
+                lines.append(f"  fallback_action_label={fallback_action_label}; fallback_action={fallback_action}.")
+        # The block's top-level line already says it when this hint's list is the same.
+        if adjacent and adjacent != adjacent_summary:
             lines.append(f"  adjacent_workflows={adjacent}.")
         not_evidence = ", ".join(str(item) for item in hint.get("not_evidence_yet", []))
         if not_evidence:

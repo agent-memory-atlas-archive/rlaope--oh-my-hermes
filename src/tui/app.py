@@ -672,6 +672,17 @@ OSC52_COPY = "\x1b]52;c;{}\x07"
 # `omh-*` and `ulw-*` slugs) up to half the terminal; a name longer than that pushes only its own summary.
 MENU_NAME_CELLS = 16
 SESSION_LIST_LIMIT = 50
+# The owner's own refusal code (`attach/gateway_attach.py` REFUSED). Hermes' shared gateway answers it to a
+# `session.resume` of a title, which it does not resolve, so `/sessions <title>` looks the title up after it.
+RESUME_REFUSED = 4001
+# What `/sessions <title>` says when the listed sessions hold no one session with that title: the picker opens
+# filtered by it.
+TITLE_SHARED_NOTICE = '{count} sessions are titled "{title}": pick one.'
+TITLE_UNKNOWN_NOTICE = 'No session is titled "{title}": pick one, or change the filter.'
+# The shapes of Hermes' session ids: a stored one (`20261028_101538_a1b2c3`) and a canonical local one
+# (`local-` and hex, whole or as the 16-character hint). A typed target of that shape that no lookup finds is an id
+# the owner refused, so its refusal is said rather than a title notice.
+SESSION_ID_SHAPE = re.compile(r"\d{8}_\d{6}_[0-9a-f]+|local-[0-9a-f]{16,}")
 # `complete.path` goes out once the `@` token has held still this long.
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
@@ -4549,7 +4560,7 @@ class App(ModesMixin, AgentViewMixin):
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         elif arg:
-            self._switch_session(arg)
+            self._switch_session(arg, by_title=True)
         else:
             self._request("session.list", {"limit": SESSION_LIST_LIMIT}, self._open_session_picker)
 
@@ -4571,9 +4582,10 @@ class App(ModesMixin, AgentViewMixin):
         if action.kind == PICK:
             self._switch_session(action.session_id)
 
-    def _switch_session(self, target: str, notice: str = "") -> None:
+    def _switch_session(self, target: str, notice: str = "", by_title: bool = False) -> None:
         """Resume `target` (a stored id or an exact title); the current session closes once that worked, and `notice`
-        is said on the redrawn screen."""
+        is said on the redrawn screen. `by_title`: the person typed `target`, so a refusal may be a title the gateway
+        does not resolve (`_on_resume_refused`)."""
         if target == self.stored_id:
             self.transcript.add_notice(f"Already in session {target}.")
             return
@@ -4581,7 +4593,7 @@ class App(ModesMixin, AgentViewMixin):
             "session.resume",
             {"session_id": target, "cols": self.size[0]},
             lambda result: self._on_session_resumed(target, result, notice),
-            lambda error: self._on_resume_refused(target, error),
+            lambda error: self._on_resume_refused(target, error, notice, by_title),
         )
 
     def _on_session_resumed(self, target: str, result: dict[str, Any], notice: str = "") -> None:
@@ -4605,12 +4617,80 @@ class App(ModesMixin, AgentViewMixin):
         self._redeliver(result.get("open_requests"))
         self._refresh_catalog()  # its workspace may hold project-local skills the last one did not
 
-    def _on_resume_refused(self, target: str, error: dict[str, Any]) -> bool:
+    def _on_resume_refused(self, target: str, error: dict[str, Any], notice: str = "", by_title: bool = False) -> bool:
+        """Say the refusal, and stay. A typed target the owner refused (`RESUME_REFUSED`) is looked up as a title
+        first (`_resume_looked_up`): Hermes' shared gateway resumes ids only, where its stdio entry also took an exact
+        title."""
+        if by_title and error.get("code") == RESUME_REFUSED:
+            self._request(
+                "session.list", {"title": target},
+                lambda result: self._resume_looked_up(target, error, result, notice),
+                lambda _lookup: self._scan_titles(target, error, notice),
+            )
+            return True
         message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
             f"Could not switch to {target} ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
         )
         return True
+
+    def _resume_looked_up(self, target: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
+        """The owner's exact-title lookup (`session.list` `title`, over its whole store), after it refused `target`
+        as an id.
+
+        The session that has `target` as its id was refused as itself, so the
+        refusal is said. One session titled exactly `target` (or whose lineage
+        is, `root_title`) is resumed by the id it answers with. Anything else,
+        a gateway that ignored `title` and listed as usual included, goes to
+        the listing's scan (`_scan_titles`).
+        """
+        rows = [row for row in result.get("sessions") or [] if isinstance(row, dict)]
+        if any(target in (row.get("id"), row.get("resolved_id")) for row in rows):
+            self._on_resume_refused(target, error)
+            return
+        titled = [row for row in rows if target in (row.get("title"), row.get("root_title"))]
+        found = as_text(titled[0].get("resolved_id")) or as_text(titled[0].get("id")) if len(titled) == 1 else ""
+        if found:
+            self._switch_session(found, notice)
+        else:
+            self._scan_titles(target, error, notice)
+
+    def _scan_titles(self, target: str, error: dict[str, Any], notice: str) -> None:
+        """Look `target` up among the listed sessions (`_resume_titled`); a listing that fails says the refusal."""
+        self._request(
+            "session.list", {"limit": SESSION_LIST_LIMIT},
+            lambda result: self._resume_titled(target, error, result, notice),
+            lambda _listing: self._on_resume_refused(target, error),
+        )
+
+    def _resume_titled(self, title: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
+        """`title` against the listed sessions, after the owner refused it as an id and found no one session with it.
+
+        A listed session with that id was refused as itself, so the refusal
+        is said. Otherwise the one session titled `title` is resumed by its
+        id, matching case first and then ignoring it. Several with that title
+        (they differ only in case: Hermes refuses an exact duplicate), or none,
+        open the picker filtered by `title` and say how many matched; with no
+        session listed at all, or none matching a target shaped as a session id
+        (`SESSION_ID_SHAPE`), the refusal is said.
+        """
+        rows = session_rows(result)
+        if not rows or any(row.id == title for row in rows):
+            self._on_resume_refused(title, error)
+            return
+        matched = [row for row in rows if row.title == title] or [
+            row for row in rows if row.title.casefold() == title.casefold()
+        ]
+        if len(matched) == 1:
+            self._switch_session(matched[0].id, notice)
+            return
+        if not matched and SESSION_ID_SHAPE.fullmatch(title):
+            self._on_resume_refused(title, error)
+            return
+        said = TITLE_SHARED_NOTICE if matched else TITLE_UNKNOWN_NOTICE
+        self.transcript.add_notice(said.format(count=len(matched), title=title), NOTICE_WARN)
+        self.picker = SessionPicker(rows, current=self.stored_id, query=title)
+        self._settle_list()
 
     # ── attachments ──
 

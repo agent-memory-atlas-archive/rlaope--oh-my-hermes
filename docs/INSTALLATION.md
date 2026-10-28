@@ -458,7 +458,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in
-  their place, right above the info line. While the agent list or the dag
+  their place, right above the info line. A `/sessions`, `/rewind` or
+  `/model` picker sets its list off from its header and its filter row with
+  a muted rule, set in by one cell (the header's first, then the filter
+  row's), while the list keeps at least three rows. While the agent list or the dag
   tree has the keys the composer keeps its rules and its row says
   `↑↓ browsing · esc to type` instead of the prompt, so nothing moves. A question and the agent list show
   no caret; a picker shows it at the end of its filter row and the search at
@@ -1031,11 +1034,24 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Esc twice with text clears it, keeping it in this session's input history
   (not in Hermes' history file, since it was never sent).
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
-  sessions in the slot, newest first, with the current one marked; type to
-  filter (what you type shows on the list's last row, where the composer
-  was, with the caret), Up/Down or PageUp/PageDown to move, Enter to switch,
-  Esc to close.
-  `/sessions <id or exact title>` switches directly. The screen is redrawn as
+  sessions in the slot, most recently active first: the one you are in
+  heads the list under `Current` (`this session` until it has a title),
+  and the rest sit under a heading for the day each started (Today,
+  Yesterday, Previous 7 days, Earlier), each session's age and message
+  count in columns of their own. Type to filter (what you type shows on
+  the list's last row, where the composer was, with the caret, and only the
+  headings with a match stay), Up/Down or PageUp/PageDown to move from
+  session to session, Enter to switch, Esc to close. Each alias runs
+  exactly as `/sessions` does, and the `/` menu offers `/resume` under its
+  own name once what you type starts it: `/res` and `/resu` complete to
+  `/resume`.
+  `/sessions <id or exact title>` (or `/resume <id or exact title>`)
+  switches directly. A title Hermes' shared gateway does not resolve as an
+  id is looked up by its exact title over all your sessions, then among
+  the listed ones ignoring case: one session with that title is opened,
+  and when several (titles that differ only in case) or none have it the
+  picker opens filtered by what you typed and says how many matched. The
+  screen is redrawn as
   the session you picked, with its earlier turns; the one you left closes only
   after the new one opened, so a session that cannot be opened (for example
   one another process holds) leaves you where you were.

@@ -21,7 +21,16 @@ All notable changes will be documented here.
   No shipped chain names any of them. GLM-5.2 was costed at the GLM-4.x rate
   (0.6/2.2) and now uses its own 1.4/4.4. Its Ultrafast serving moves from a
   halved figure to the same base rate, as no separate tier rate is published.
-
+- **The route hint stops saying the same thing twice.** Route hint text is
+  about 18% of the OMH text a model reads per session, and part of it repeated
+  other text in the same block: a hint's `adjacent_workflows=` line that equals
+  the block's top-level one, and a `fallback_action_label=` or
+  `next_action_label=` that only respells its action's underscores. Each one
+  now renders only when it differs from the text it would repeat. Rendered
+  before and after on the same 68 routing-intervention hints, the block went
+  from 106,957 to 98,121 characters (8.3%), and no hint grew. Selection, the payload, `first_response_shape=` and
+  `not_evidence_yet=` do not change, and the per-turn ratchets drop with the
+  render (`pre_llm_call` 5786 -> 5632, fallback 7338 -> 7184).
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character
   `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history
@@ -192,6 +201,24 @@ All notable changes will be documented here.
   line so the shell prompt does not sit right under it. The
   `-c "<title>"` line is gone with the counts, since the id always opens
   this session and a title can be shadowed by a newer `<title> #N`.
+- **The `/sessions` picker reads as a table, and `/resume` is `/sessions`.**
+  The session you are in heads the list under `Current` (named `this
+  session` until it has a title), and the rest sit under a muted heading for
+  the day each started (Today, Yesterday, Previous 7 days, Earlier), in
+  Hermes' order inside a day. Age and message count are right-aligned in
+  columns of their own, and a rule sets the list off from its header and
+  its filter row, in the `/rewind` and `/model` pickers too. The arrows and
+  Page keys move past the headings, a heading never ends the visible list
+  with its sessions below, and a filter keeps only the headings with a
+  match. The `/` menu offers `/resume` under its own name once what you type
+  starts it and is not in `sessions`. `/res`, which highlighted Hermes'
+  `/compress`, now starts with `/resume`; every other short prefix keeps
+  the top row it had. On Hermes' shared gateway, which resumes ids only,
+  `/sessions <title>` and `/resume <title>` were refused `not_found`. A
+  refused title is now looked up through the gateway's exact-title
+  `session.list`, over the whole store, then among the listed sessions
+  ignoring case. The one session with it opens; several (titles that
+  differ only in case) or none open the picker filtered by the title.
 
 ## 4.0.3 - 2026-10-27
 

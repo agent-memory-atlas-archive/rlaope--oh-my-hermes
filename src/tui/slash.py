@@ -70,6 +70,10 @@ class SlashCommand:
     # prints nothing to attribute, so its echo would stand alone in scrollback as if it were a prompt; bare /model's
     # pick is echoed as the command it runs.
     echo_bare: bool = True
+    # The aliases the `/` menu offers under their own name, when what is typed starts one and is not in `name`:
+    # `/resume`, the name the launch card and the last-session line give /sessions. The rest still run, and are
+    # drawn as known, but get no row, so no alias ever displaces a command's own name.
+    menu_aliases: tuple[str, ...] = ()
 
 
 COMMANDS: tuple[SlashCommand, ...] = (
@@ -78,8 +82,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)", echo_bare=False),
     SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
     SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
-    SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker, or /sessions <id or title>)",
-                 ("switch", "session", "resume"), echo_bare=False),
+    SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker; an id or exact title after it switches)",
+                 ("switch", "session", "resume"), echo_bare=False, menu_aliases=("resume",)),
     SlashCommand("redraw", LOCAL, "Repaint the screen", echo_bare=False),
     SlashCommand("history", LOCAL, "Page through this session's transcript", echo_bare=False),
     SlashCommand("rewind", LOCAL, "Go back to an earlier prompt, edit it, and send it again (also Esc Esc)",
@@ -240,15 +244,33 @@ class Completion:
     summary: str
 
 
+def _offered_name(command: SlashCommand, key: str) -> str:
+    """The name the menu offers `command` under for the lowercased `key`: its own, unless `key` is not in it and
+    starts one of its `menu_aliases`, so `/res` and `/resu` offer `/resume` (which runs /sessions) among the names
+    that start with what is typed."""
+    if key in command.name:
+        return command.name
+    return next((alias for alias in command.menu_aliases if alias.startswith(key)), command.name)
+
+
 def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> list[Completion]:
     """Commands starting with `prefix` (no slash), then the ones that only contain it.
 
     In each group the TUI's own come first, then the gateway catalog, so
     `/uml` still finds `omh-codebase-uml` after every name that starts with
-    it. Catalog entries the TUI routes to Hermes or drops are left out, so the
-    menu only offers what will run here. Case is ignored, as a typed name's is.
+    it. A TUI command whose name does not match is offered under a menu
+    alias that what is typed starts (`_offered_name`), after the TUI's own
+    names that start with it and before the catalog's: `/res` offers
+    `/resume` first. The alias completes to itself and runs as typed.
+    Catalog entries the TUI routes to Hermes or drops are left out, so the
+    menu only offers what will run here. Case is ignored, as a typed name's
+    is.
     """
-    local = [Completion(command.name, command.summary) for command in COMMANDS if command.route in (LOCAL, RENAMED)]
+    key = prefix.lower()
+    own = [command for command in COMMANDS if command.route in (LOCAL, RENAMED)]
+    named = [Completion(_offered_name(command, key), command.summary) for command in own]
+    aliased = [completion for completion, command in zip(named, own) if completion.name != command.name]
+    local = [completion for completion in named if completion not in aliased] + aliased
     seen = {completion.name for completion in local}
     gateway: list[Completion] = []
     for raw_name, summary in catalog_pairs:
@@ -258,7 +280,6 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
         seen.add(name.lower())
         gateway.append(Completion(name, summary))
     offered = local + gateway
-    key = prefix.lower()
     leading = [completion for completion in offered if completion.name.lower().startswith(key)]
     inner = [
         completion for completion in offered if key in completion.name.lower() and not completion.name.lower().startswith(key)
@@ -271,12 +292,14 @@ _SLASH_TOKEN = re.compile(r"(?<!\S)/([A-Za-z0-9][\w.:-]*)(?!\S)")
 
 
 def known_names(catalog_pairs: Iterable[tuple[str, str]] = ()) -> frozenset[str]:
-    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands and the catalog's.
+    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands (their aliases too)
+    and the catalog's.
 
     Lowercased: a typed name is matched whatever its case, as Hermes matches
     its commands and skills (`slash.exec` lowercases the name before it routes).
     """
-    return frozenset(completion.name.lower() for completion in completions("", catalog_pairs))
+    aliases = {alias for command in COMMANDS if command.route in (LOCAL, RENAMED) for alias in command.aliases}
+    return frozenset(completion.name.lower() for completion in completions("", catalog_pairs)) | aliases
 
 
 def slash_token_ranges(text: str, known: frozenset[str]) -> list[tuple[int, int]]:
