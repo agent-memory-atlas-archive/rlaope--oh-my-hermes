@@ -845,7 +845,8 @@ class DocumentedBoundaryTests(unittest.TestCase):
                       "too, except the tell row's below)", agents)
         self.assertIn("Hermes' `always` choice is offered only when the request lists it and is sent, like any allow, "
                       "only on the person's arrows and then Enter", agents)
-        self.assertIn("A steer (Ctrl+Enter, `/steer`, or what the person sends from the composer the tell row opened) "
+        self.assertIn("A steer (Ctrl+Enter, Ctrl+J while a turn runs, `/steer`, or what the person sends from the composer "
+                      "the tell row opened) "
                       "sends into the running turn only text the person typed and sent that way", agents)
         self.assertIn("the TUI never steers on its own, and a queued prompt is never turned into a steer", agents)
 

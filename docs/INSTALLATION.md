@@ -494,7 +494,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   while Hermes has approvals off on its own it reads `⏵⏵ accept all on (⇧⇥
   plan)`, since Shift+Tab then turns only plan on and off. The composer's rules
   keep their colour in every mode. While a turn runs in the normal mode the
-  left offers `ctrl+enter steer` (`/steer <text> steers` where the terminal
+  left offers `ctrl+enter to steer` (`ctrl+j to steer` where the terminal
   does not tell Ctrl+Enter from Enter), and `↑ edit queued` once prompts are
   queued (in accept all and plan it keeps the label and where Shift+Tab
   goes); while Hermes asks something it names that question's keys (`↑↓
@@ -1052,8 +1052,8 @@ Esc closes it):
 | Key | Does |
 | --- | --- |
 | Enter | Sends the composer |
-| `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
-| Ctrl+Enter | Steers a running turn with the composer's text, on a terminal that tells it from Enter (`/steer <text>` steers on any terminal); idle, sends it as Enter does |
+| `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line (Ctrl+J between turns; while one runs, it steers) |
+| Ctrl+Enter, Ctrl+J | Steer a running turn with the composer's text: Ctrl+Enter on a terminal that tells it from Enter, Ctrl+J on any terminal (`/steer <text>` too); idle, Ctrl+Enter sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed; on an open menu, Enter takes the highlighted row too, and sends a command already typed in full |
 | Shift+Tab | Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan (prompts go as /plan); while Hermes itself has approvals off, turns plan on and off |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max; the info line shows it as effort medium |
@@ -1103,13 +1103,18 @@ protocol and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only: the
 terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
 `TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. Both are
 switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
-Terminal.app among them, both keys send what Enter sends, so there
-`/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line;
-while a draft spans lines there (typed, or pasted), the info line says so
-(`⏎ sends · \⏎, alt+⏎ or ctrl+j adds a line`).
+Terminal.app among them, both keys send what Enter sends, so there Ctrl+J
+steers while a turn runs (every terminal sends it as a line feed, apart from
+Enter's carriage return) and `\` then Enter, Alt+Enter or Ctrl+J between
+turns adds a line; while a draft spans lines there (typed, or pasted), the
+info line says so (`⏎ sends · \⏎, alt+⏎ or ctrl+j adds a line`).
 A terminal on the list can ignore the request too (tmux with
-`extended-keys off`), so the info line names `/steer <text>` until a key has
-arrived in one of those reports, and `ctrl+enter steer` from then on.
+`extended-keys off`), so the info line names `ctrl+j to steer` until the
+terminal shows it took the request, and `ctrl+enter to steer` from then on.
+Where the kitty keyboard protocol was asked for, the start-up query asks the
+terminal which kitty flags are on (`CSI ? u`), and an answer that says the
+request took shows `ctrl+enter to steer` from the first frame; elsewhere it
+shows once a key has arrived in one of those reports.
 `OMH_TUI_KEYBOARD=legacy` stops the request on any terminal.
 
 Shift+Tab cycles three input modes, and the info line shows the one that is

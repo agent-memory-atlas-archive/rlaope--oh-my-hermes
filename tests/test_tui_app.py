@@ -63,7 +63,7 @@ from omh.tui.layout import BADGE_MIN_ROWS
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import CLOSED_EXIT, FALLBACK_EXIT, FALLBACK_SENTINEL_ENV, SESSION_FILE_ENV
-from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_COMMAND_HINT, STEER_KEY_HINT, info_line
+from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_FALLBACK_HINT, STEER_KEY_HINT, info_line
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME, theme_named
@@ -257,7 +257,7 @@ class ScriptedTerminal:
     def running(self) -> bool:
         """The info line offers a steer: a turn runs, nothing asks, normal mode."""
         row = self.info_row()
-        return STEER_COMMAND_HINT in row or STEER_KEY_HINT in row
+        return STEER_FALLBACK_HINT in row or STEER_KEY_HINT in row
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
@@ -1428,9 +1428,9 @@ class InfoLineLeftTests(unittest.TestCase):
 
     def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
         self.assertEqual(self.row(), "? for shortcuts")
-        self.assertEqual(self.row(busy=True), "/steer <text> steers")  # the working row offers the interrupt
-        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "ctrl+enter steer")
-        self.assertEqual(self.row(busy=True, queued=2), "/steer <text> steers · ↑ edit queued")
+        self.assertEqual(self.row(busy=True), "ctrl+j to steer")  # the working row offers the interrupt
+        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "ctrl+enter to steer")
+        self.assertEqual(self.row(busy=True, queued=2), "ctrl+j to steer · ↑ edit queued")
 
     def test_ctrl_enter_is_named_only_where_the_terminal_tells_it_from_enter(self) -> None:
         for busy in (False, True):
@@ -2492,6 +2492,24 @@ class KeyTests(AppTestCase):
         self.assertIn("esc again to", info_row_of(after))  # and the info line says what a second Esc does
         activity = [line for line in terminal.captures["running"] if INTERRUPT_ROW.search(line)]
         self.assertEqual(len(activity), 1, terminal.captures["running"])
+
+    def test_a_terminal_that_answers_the_kitty_query_names_ctrl_enter_from_the_first_busy_frame(self) -> None:
+        prompt = "Write the numbers from 1 to 300, one per line, nothing else."
+        for answer, hint in ((b"\x1b[?1u", STEER_KEY_HINT), (b"", STEER_FALLBACK_HINT)):
+            with self.subTest(answer=answer):
+                run = self.interrupted_run()
+                terminal = run.terminal
+                terminal.typed_during_query = answer  # what `Terminal.query_background` hands back
+                terminal.script(
+                    self.submit(run, prompt),  # legacy bytes only: no key arrives as a report
+                    Step(b"\x03", when=self.running(run), capture="running", label="running"),
+                    Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertTrue(info_row_of(terminal.captures["running"]).strip().startswith(hint))
+                (submit,) = run.calls("prompt.submit")
+                self.assertEqual(submit["params"]["text"], prompt)  # the answer typed nothing
 
     def test_the_activity_row_counts_the_seconds_since_the_prompt(self) -> None:
         run = self.interrupted_run()

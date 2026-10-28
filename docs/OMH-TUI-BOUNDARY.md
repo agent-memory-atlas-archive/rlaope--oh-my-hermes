@@ -140,14 +140,14 @@ nothing and turns only plan mode on and off.
 
 ## Steers
 
-A steer (Ctrl+Enter, `/steer`, or what the person sends from the composer the
-tell row opened) sends into the running turn only text the person typed and
-sent that way, and the tell row's text goes as an ordinary prompt once the turn
-has ended; the TUI never steers on its own, and a queued prompt is never turned
-into a steer. A steer Hermes does not take waits in the TUI's own queue for the
-running turn to end, whatever the busy mode, so it never interrupts that turn.
-A steer Hermes does not answer within 120 s goes back to the composer and is
-never re-sent.
+A steer (Ctrl+Enter, Ctrl+J while a turn runs, `/steer`, or what the person
+sends from the composer the tell row opened) sends into the running turn only
+text the person typed and sent that way, and the tell row's text goes as an
+ordinary prompt once the turn has ended; the TUI never steers on its own, and a
+queued prompt is never turned into a steer. A steer Hermes does not take waits
+in the TUI's own queue for the running turn to end, whatever the busy mode, so
+it never interrupts that turn. A steer Hermes does not answer within 120 s goes
+back to the composer and is never re-sent.
 
 ## Look
 

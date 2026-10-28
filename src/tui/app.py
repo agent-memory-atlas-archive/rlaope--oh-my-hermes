@@ -41,13 +41,13 @@ composer takes them back into the composer (a `!` line on its own, never
 joined to a prompt: `_recall_queue`). A turn the person interrupts does not
 start the next queued prompt: the queue comes back into the composer the
 same way, and what stays queued waits for the person (`_hold_queue`).
-Ctrl+Enter and `/steer <text>` send what the person typed into the running
-turn (`session.steer`); the TUI steers nothing on its own. Text Hermes does
-not take as a steer joins the TUI's queue while the turn runs, whatever the
-busy mode, and goes as a prompt once it ends; sent at once, it would
-interrupt or redirect the turn it was meant to steer. A steer answered after
-its session was left goes back to the composer instead: the session now live
-never receives it.
+Ctrl+Enter, Ctrl+J while a turn runs, and `/steer <text>` send what the
+person typed into the running turn (`session.steer`); the TUI steers nothing
+on its own. Text Hermes does not take as a steer joins the TUI's queue while
+the turn runs, whatever the busy mode, and goes as a prompt once it ends;
+sent at once, it would interrupt or redirect the turn it was meant to steer.
+A steer answered after its session was left goes back to the composer
+instead: the session now live never receives it.
 
 When the gateway child exits on its own with a failure, the loop spawns it
 again from the environment the launcher handed the TUI (`gateway_spawn`) and
@@ -353,6 +353,9 @@ CHAINS_CLOSED_NOTICE = "Hermes asked you something, so /omh-model closed:"
 # What the info line says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
 # arrives as Enter and sends; longest first.
 NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
+# Ctrl+J: a line feed from every terminal in raw mode, where Enter is a carriage return, so it is the steer key no
+# terminal folds into Enter. While a turn runs it is Ctrl+Enter; between turns it adds a line.
+STEER_FALLBACK_KEY = Key(CHAR, "j", ctrl=True)
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
 SHELL_PREFIX = "!"
 SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its output is not sent to the model."
@@ -2954,6 +2957,12 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and self._recall_queue(event):
             return
+        # While a turn runs Ctrl+J is Ctrl+Enter, unless a question, a picked agent steer or rewind, or a tell row takes
+        # what is sent: there, as between turns, it adds a line.
+        if event == STEER_FALLBACK_KEY and self._busy() and self.slot is None and (
+            self.agent_steer is None and self.rewind is None and self.tell_draft is None
+        ):
+            event = replace(event, name=ENTER, char="")
         before = self.composer.text
         action = self.composer.handle(event)
         if self.composer.text != before:
@@ -5497,12 +5506,14 @@ class App(ModesMixin, AgentViewMixin):
 
     @property
     def keyboard_protocol(self) -> bool:
-        """Whether Ctrl+Enter reaches the TUI apart from Enter: a key has arrived as a CSI u or modifyOtherKeys report.
+        """Whether Ctrl+Enter reaches the TUI apart from Enter: the terminal answered the kitty keyboard query with
+        the flag pushed on, or a key has arrived as a CSI u or modifyOtherKeys report.
 
         Asking the terminal for those reports is not enough, since a terminal
         on the list can ignore the request and send Ctrl+Enter as Enter. So
-        the info line names `/steer` until the first such key, and Ctrl+Enter
-        from then on.
+        the info line names Ctrl+J, which steers on any terminal, until one of
+        those, and Ctrl+Enter from then on: from the first frame on a terminal
+        that answers the query.
         """
         return self.decoder.protocol_reported
 

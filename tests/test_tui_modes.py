@@ -37,7 +37,9 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui import modes as modes_module
-from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, QueuedLine, queue_lines
+from omh.tui.app import (
+    ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, STEER_FALLBACK_KEY, App, QueuedLine, queue_lines,
+)
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
@@ -409,17 +411,52 @@ class SteerTests(unittest.TestCase):
         app, _client = make_app(busy=True)
         app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
 
-        def hint() -> str:
-            row = next(line for line in drawn(app) if line.startswith((INFO_INSET + "/steer", INFO_INSET + "ctrl+enter")))
-            return re.split(r" {3,}", row[len(INFO_INSET) :])[0]  # the left side: the right one stands 3 cells away
-
-        self.assertEqual(hint(), "/steer <text> steers")
+        self.assertEqual(steer_hint(app), "ctrl+j to steer")
         for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
             app._on_input(event)
-        self.assertEqual(hint(), "/steer <text> steers · ↑ edit queued")
+        self.assertEqual(steer_hint(app), "ctrl+j to steer · ↑ edit queued")
         for event in app.decoder.feed(b"\x1b[108;5u"):  # Ctrl+L, as kitty reports it (Esc would interrupt the turn)
             app._on_input(event)
-        self.assertEqual(hint(), "ctrl+enter steer · ↑ edit queued")
+        self.assertEqual(steer_hint(app), "ctrl+enter to steer · ↑ edit queued")
+
+    def test_a_kitty_flags_answer_names_ctrl_enter_before_any_key_and_types_nothing(self) -> None:
+        for answer, hint in ((b"\x1b[?1u", "ctrl+enter to steer"), (b"\x1b[?0u", "ctrl+j to steer")):
+            with self.subTest(answer=answer):
+                app, _client = make_app(busy=True)
+                type_text(app, "ab")
+                app._take_input(answer)  # the start-up query's answer, or one that came after its wait
+                type_text(app, "c")
+                self.assertEqual(app.composer.text, "abc")
+                app._set_composer("")
+                self.assertEqual(steer_hint(app), hint)
+
+    def test_ctrl_j_steers_a_running_turn_and_adds_a_line_between_turns(self) -> None:
+        for data in (b"\n", b"\x1b[106;5u", b"\x1b[27;5;106~"):  # a line feed, or Ctrl+J as either report sends it
+            with self.subTest(data=data):
+                app, client = make_app(busy=True)
+                type_text(app, "use the other file")
+                app._take_input(data)
+                self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "use the other file"})])
+                self.assertEqual(app.composer.text, "")
+        app, client = make_app()
+        type_text(app, "first")
+        app._take_input(b"\n")
+        self.assertEqual((app.composer.text, client.calls), ("first\n", []))
+
+    def test_ctrl_j_steers_nothing_while_a_question_or_a_picked_agent_steer_takes_what_is_sent(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(ServerRequest("srq-1", "vault.code", {}))
+        now[0] += SLOT_ARM_SECONDS
+        type_text(app, "12")
+        app._on_input(STEER_FALLBACK_KEY)
+        self.assertEqual((client.answers, client.calls), ([], []))
+
+        app, client = make_app(busy=True)
+        app.agent_steer = "sub-1"  # `s` in the agent list picked a subagent: Enter sends the line to it
+        type_text(app, "first")
+        app._on_input(STEER_FALLBACK_KEY)
+        self.assertEqual((app.composer.text, client.calls), ("first\n", []))  # a line, as between turns
 
     def test_only_ctrl_enter_and_the_steer_command_can_steer(self) -> None:
         # Steer text is what the person typed and sent, so `session.steer` has one sender with two callers.
@@ -502,6 +539,20 @@ class SteerReplayTests(AppTestCase):
         terminal.script(
             # One read: Ctrl+Enter lands while the first prompt's turn is pending.
             Step(b"first prompt\rsecond prompt" + CTRL_ENTER_BYTES, when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: "↪ steer queued by Hermes · second prompt" in terminal.history() and terminal.idle(), label="steered"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (steer,) = run.calls("session.steer")
+        self.assertEqual(steer["params"], {"session_id": LIVE_ID, "text": "second prompt"})
+        self.assertEqual(len(run.calls("prompt.submit")), 1)
+
+    def test_ctrl_j_from_a_terminal_that_sends_it_as_a_line_feed_steers(self) -> None:
+        run = self.steer_run("queued", "plain_turn")
+        terminal = run.terminal
+        terminal.script(
+            # One read: Ctrl+J, a bare line feed in raw mode, lands while the first prompt's turn is pending.
+            Step(b"first prompt\rsecond prompt\n", when=terminal.idle, label="idle"),
             Step(b"\x04", when=lambda: "↪ steer queued by Hermes · second prompt" in terminal.history() and terminal.idle(), label="steered"),
         )
         self.run_main(run)
@@ -1836,6 +1887,12 @@ class EffortTests(unittest.TestCase):
         app._on_input(Key(ENTER))
         (notice,) = notices(app)
         self.assertIn("Hermes sets no reasoning effort for this session, so the provider's default applies.", notice)
+
+
+def steer_hint(app: App) -> str:
+    """The info line's left side while it names a steer key: the right one stands 3 cells away."""
+    row = next(line for line in drawn(app) if line.startswith((INFO_INSET + "ctrl+j", INFO_INSET + "ctrl+enter")))
+    return re.split(r" {3,}", row[len(INFO_INSET) :])[0]
 
 
 def drawn(app: App) -> list[str]:

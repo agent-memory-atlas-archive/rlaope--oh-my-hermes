@@ -17,8 +17,9 @@ Shift+Enter can arrive as keys of their own; `OMH_TUI_KEYBOARD=legacy` keeps
 the plain bytes everywhere. `keyboard_protocol` says only that it asked: a
 terminal on the list can ignore the request (tmux with `extended-keys off`),
 and then Ctrl+Enter arrives as Enter. Whether the reports really come is
-`KeyDecoder.protocol_reported`, which turns on at the first key that arrives
-as one.
+`KeyDecoder.protocol_reported`, which turns on at the terminal's answer to the
+kitty keyboard query when that answer says the request took, or else at the
+first key that arrives as a report.
 
 Mouse reporting is off unless `set_mouse(True)` turns it on, and then only
 clicks and the wheel are reported, in SGR form; motion tracking is never
@@ -30,7 +31,9 @@ the first frame, so the theme can be measured against the background the
 person really has (`theme.build_theme`), and in the same write for the row
 its cursor is on, which the launch reads to know whether any row above the
 cursor needs pushing into scrollback before the first frame
-(`App.clear_launch_screen`): OSC 11, then the cursor position request (CSI 6n), with a device-attributes request behind them that
+(`App.clear_launch_screen`): OSC 11, then the cursor position request (CSI 6n), then, where entering asked for the kitty
+keyboard protocol, the kitty keyboard query (CSI ? u), whose answer stays in the input for the decoder to read, with a
+device-attributes request behind them that
 every terminal answers, in order, so that answer ends the wait whether or not
 the others were answered, and `BACKGROUND_QUERY_SECONDS` bounds it when
 nothing comes. Keys typed while it waits are handed back to the caller. A terminal that does not answer OSC 11
@@ -82,6 +85,9 @@ BRACKETED_PASTE_OFF = f"{CSI}?2004l"
 # keyboard protocol (push flag 1, "disambiguate") and xterm modifyOtherKeys level 2.
 KITTY_KEYBOARD_PUSH = f"{CSI}>1u"
 KITTY_KEYBOARD_POP = f"{CSI}<u"
+# Asks which kitty keyboard flags are on; a terminal that speaks the protocol answers `CSI ? <flags> u`, before its
+# answer to a device-attributes request sent after it, and one that does not answers nothing.
+KITTY_KEYBOARD_QUERY = f"{CSI}?u"
 MODIFY_OTHER_KEYS_ON = f"{CSI}>4;2m"
 MODIFY_OTHER_KEYS_OFF = f"{CSI}>4m"
 # Mouse reports: button presses and releases, the wheel included (xterm mode
@@ -287,6 +293,9 @@ class Terminal:
         self._winch_pipe: tuple[int, int] | None = None  # the resize signal writes here to end a `read`'s wait
         self._resized = False
         self._keyboard_request = keyboard_protocol_request(environ or {})
+        # Asked with the startup query only where the kitty flags were pushed: elsewhere its answer could say no more
+        # than that they are off.
+        self._keyboard_query = KITTY_KEYBOARD_QUERY if KITTY_KEYBOARD_PUSH in self._keyboard_request else ""
         # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
         self.keyboard_protocol = False
         # True while mouse reports are on (`set_mouse`).
@@ -368,15 +377,19 @@ class Terminal:
     def query_background(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[str | None, bytes, int | None]:
         """The background colour (`#RRGGBB`, or None), the input that arrived meanwhile, and the cursor's 1-based row.
 
-        Writes the background query, the cursor position request and the
+        Writes the background query, the cursor position request, the kitty
+        keyboard query where entering pushed the kitty flags, and the
         attributes request behind them, then reads until the attributes answer
         arrives or `timeout` passes. Only inside the `with` block, where input
         is raw. The row is None unless its report came before the attributes
-        answer (`split_cursor_reply`). An answer that comes after the wait is
-        no key either: the decoder drops an OSC string whole, and reads a late
-        position report as an unknown key, which types nothing.
+        answer (`split_cursor_reply`). The kitty answer stays in the input
+        handed back: the decoder reads it, types nothing, and learns from it
+        whether Ctrl+Enter comes as a key of its own. An answer that comes
+        after the wait is no key either: the decoder drops an OSC string whole,
+        reads a late kitty answer as it reads an early one, and a late position
+        report as an unknown key, which types nothing.
         """
-        self.write(BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        self.write(BACKGROUND_QUERY + CURSOR_POSITION_QUERY + self._keyboard_query + DEVICE_ATTRIBUTES_QUERY)
         row, data = split_cursor_reply(self._read_answers(timeout))
         colour, typed, _answered = split_background_replies(data)
         return colour, typed, row

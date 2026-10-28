@@ -51,8 +51,10 @@ MODE_HINTS = (" (⇧⇥ {cycle})", "")
 CYCLE_WORDS = "to cycle"
 HERMES_OWN_CYCLE = {MODE_ACCEPT: "plan", MODE_ACCEPT_PLAN: "plan off"}
 EFFORT_KEY = "ctrl+t effort"  # the right side's effort while Hermes has reported none
-STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
-STEER_COMMAND_HINT = "/steer <text> steers"
+# The steer key during a turn: Ctrl+Enter once the terminal is known to tell it from Enter (`App.keyboard_protocol`),
+# else Ctrl+J, which every terminal sends as a line feed apart from Enter's carriage return (`App._on_input`).
+STEER_KEY_HINT = "ctrl+enter to steer"
+STEER_FALLBACK_HINT = "ctrl+j to steer"
 QUEUED_KEY_HINT = "↑ edit queued"
 ACCEPT_LABEL = "⏵⏵ accept all on"
 PLAN_LABEL = "⏸ plan mode on"
@@ -208,7 +210,9 @@ def info_line(
     edge, after a label that takes its short words, then its glyph alone,
     when its own words do not fit. The right side then takes the longest of `right` that fits in what
     the shortened left side leaves. During a turn the hint names the steer
-    keys, not Esc: the working row offers the interrupt. The label always survives,
+    key, not Esc: the working row offers the interrupt. It is Ctrl+Enter where
+    `keyboard_protocol` says the terminal tells it from Enter, and Ctrl+J
+    everywhere else. The label always survives,
     in some form, and the count after it. Accept and plan say where Shift+Tab
     goes next (`cycle`; CYCLE_WORDS when not given). `drafting` (the composer
     holds text) takes the idle hint away.
@@ -219,7 +223,7 @@ def info_line(
     elif mode == MODE_SHELL:
         hints = (SHELL_HINT,)
     elif mode == MODE_NORMAL and busy:
-        keys = [STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
+        keys = [STEER_KEY_HINT if keyboard_protocol else STEER_FALLBACK_HINT]
         hints = (" · ".join(keys + ([QUEUED_KEY_HINT] if queued else [])),)
     else:
         hints = default_hints(mode, busy, cycle, drafting)

@@ -45,7 +45,7 @@ VIEW = [
     f"  {SPIN} find usages of old_api in src/ and list…  deepseek-v4.1-flash · 0s · 0 tools",
     f"  {SPIN} read the diff for risks                   deepseek-v4.1-flash · 0s · 0 tools",
 ]
-BUSY_HINT = "/steer <text> steers"
+BUSY_HINT = "ctrl+j to steer"
 IDLE_HINT = "? for shortcuts"
 
 
@@ -283,9 +283,9 @@ class ViewTests(unittest.TestCase):
 
     def test_a_narrow_row_cuts_the_hint_and_keeps_the_count_whole(self) -> None:
         app, _client = agent_app()
-        self.assertEqual(info_text(app).rstrip(), f"{CHIP} · {BUSY_HINT}" + " " * 23 + "ctrl+t effort")
-        narrow, _client = agent_app(cols=40)
-        self.assertEqual(info_text(narrow), f"{CHIP} · /steer <text> s…")
+        self.assertEqual(info_text(app).rstrip(), f"{CHIP} · {BUSY_HINT}" + " " * 28 + "ctrl+t effort")
+        narrow, _client = agent_app(cols=36)
+        self.assertEqual(info_text(narrow), f"{CHIP} · ctrl+j to s…")
 
     def test_the_spinner_turns_with_the_clock(self) -> None:
         now = [0.0]
@@ -499,7 +499,7 @@ class OneAgentSurfaceTests(unittest.TestCase):
         rows = view_text(app)
         self.assertTrue(rows[0].startswith("  ● main │ [global] 2 agents · 2 running"), rows)
         self.assertEqual([row[4:18] for row in rows[1:]], ["[sub] worker0 ", "[sub] worker1 "], rows)
-        self.assertTrue(info_text(app).startswith("2 agents · /steer"), "no list to open from the HUD's rows")
+        self.assertTrue(info_text(app).startswith("2 agents · ctrl+j"), "no list to open from the HUD's rows")
 
     def test_idle_with_agents_still_running_the_view_says_which_and_no_state_word_does(self) -> None:
         # The status line's `idle · 2 agents running` is gone with the status line: the view marks each agent.
@@ -953,7 +953,7 @@ class RoomTests(unittest.TestCase):
         emptied = drawn(app)
         self.assertEqual(app.frame_budget.agents, 0)
         self.assertEqual(app.region.last_row(12), 11)
-        self.assertIn("steers", emptied[11], "the info line is the screen's last row")
+        self.assertIn("to steer", emptied[11], "the info line is the screen's last row")
         # An agent of the new turn wants rows again, and gets them: no hold of an emptied view is kept.
         agent_event(app, "start", "sb-0", goal="task b0")
         self.assertEqual([row[:12] for row in view_text(app)], ["  ● main", "  ⠋ task b0 "])

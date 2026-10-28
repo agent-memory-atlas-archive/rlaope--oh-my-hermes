@@ -33,7 +33,8 @@ one read, and the x is not lost with the Esc), except Alt+B and Alt+F, legacy
 readline's do (Terminal.app sends Option+Left/Right that way); Enter submits,
 except right after a backslash, which it turns into a newline; Alt+Enter,
 Shift+Enter and Ctrl+J insert a newline (Ctrl+Enter is Enter here; the app
-decides what its submit means); Backspace/Delete remove one cluster;
+decides what its submit means, and hands Ctrl+J in as Ctrl+Enter while a
+turn runs); Backspace/Delete remove one cluster;
 Left/Right move one cluster, with Ctrl or Alt one word; Up/Down move one
 visual row and browse history at the first and last row; Home/End and
 Ctrl+A/Ctrl+E go to the start/end of the logical line; Ctrl+U/Ctrl+K kill to

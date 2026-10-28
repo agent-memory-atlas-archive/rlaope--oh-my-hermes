@@ -91,7 +91,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
                  "Hermes' profile archive, not this transcript (`hermes profile export` on a shared gateway)"),
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
-    SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter where it is a key)",
+    SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter or Ctrl+J)",
                  ("s",), echo=False),
     SlashCommand("effort", LOCAL, "Set this session's reasoning effort (/effort <level>; Ctrl+T steps through it)"),
     SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)", echo_bare=False),

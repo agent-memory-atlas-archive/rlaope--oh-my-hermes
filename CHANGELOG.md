@@ -135,6 +135,18 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **The OMH TUI names a steer key while a turn runs, on every terminal.**
+  The info line under the composer said `/steer <text> steers` on a terminal
+  that does not tell Ctrl+Enter from Enter, and on the others until a first
+  key arrived as a report. Ctrl+J now steers a running turn on any terminal
+  (it is a line feed, apart from Enter's carriage return; between turns it
+  still adds a line), and the line reads `ctrl+j to steer` there. Where the
+  TUI asks for the kitty keyboard protocol, it also asks which kitty flags
+  are on (`CSI ? u`) with its start-up query, so a terminal whose answer
+  says the request took shows `ctrl+enter to steer` from the first frame.
+  The answer types nothing, and a terminal that never answers costs the
+  start-up query's existing wait and no more. `/steer <text>` still works
+  and stays in `/help` and the `?` list.
 
 ## 4.0.3 - 2026-10-27
 

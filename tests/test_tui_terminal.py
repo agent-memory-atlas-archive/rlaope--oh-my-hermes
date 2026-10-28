@@ -28,6 +28,7 @@ from omh.tui.terminal import (
     BRACKETED_PASTE_ON,
     KITTY_KEYBOARD_POP,
     KITTY_KEYBOARD_PUSH,
+    KITTY_KEYBOARD_QUERY,
     MODIFY_OTHER_KEYS_OFF,
     MODIFY_OTHER_KEYS_ON,
     MOUSE_REPORTING_OFF,
@@ -463,6 +464,24 @@ class TerminalPtyTests(unittest.TestCase):
             self.assertEqual((colour, typed, row), ("#FFFFFF", b"abz", 7))
             written = (BACKGROUND_QUERY + CURSOR_POSITION_QUERY + DEVICE_ATTRIBUTES_QUERY).encode()
             self.assertEqual(self.master_output(), written)  # DA1 last: its answer still ends the wait
+
+    def test_where_kitty_flags_were_pushed_the_query_asks_for_them_and_hands_the_answer_back(self) -> None:
+        cases = {"kitty": KITTY_KEYBOARD_QUERY, "WezTerm": KITTY_KEYBOARD_QUERY, "ghostty": "", "Apple_Terminal": ""}
+        for program, asked in cases.items():
+            with self.subTest(program=program):
+                with Terminal(self.slave, self.slave, environ={"TERM_PROGRAM": program}) as term:
+                    self.master_output()
+                    os.write(self.master, b"\x1b[7;1R\x1b[?1u\x1b[?62;22c")
+                    self.assertEqual(term.query_background(), (None, b"\x1b[?1u", 7))  # the decoder reads it
+                    written = (BACKGROUND_QUERY + CURSOR_POSITION_QUERY + asked + DEVICE_ATTRIBUTES_QUERY).encode()
+                    self.assertEqual(self.master_output(), written)  # before DA1, so it is answered inside the wait
+
+    def test_a_terminal_that_answers_only_the_attributes_still_ends_the_wait_at_once(self) -> None:
+        with Terminal(self.slave, self.slave, environ={"TERM_PROGRAM": "kitty"}) as term:
+            os.write(self.master, b"\x1b[?62;22c")  # no kitty answer: the protocol is not spoken there
+            started = time.monotonic()
+            self.assertEqual(term.query_background(timeout=5.0), (None, b"", None))
+            self.assertLess(time.monotonic() - started, 1.0)
 
     def test_the_cursor_query_after_a_stop_asks_only_for_the_position(self) -> None:
         with Terminal(self.slave, self.slave) as term:
