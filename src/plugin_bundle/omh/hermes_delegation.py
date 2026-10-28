@@ -2553,6 +2553,30 @@ def _iso_utc(epoch: float) -> str:
         return ""
 
 
+def _observed_routes_reader(omh_home: str | Path | None) -> Any:
+    """``parent session -> {child session: observed route}`` from OMH's delegation ledger, read once per parent.
+
+    The ledger holds the ``route`` Hermes' own `delegate_task` result reported
+    for a backend-routed child (`delegation_ledger.observe_delegate_call`). No
+    OMH home, or an unreadable ledger, reports none.
+    """
+    cache: dict[str, dict[str, dict[str, Any]]] = {}
+
+    def routes_of(parent_id: str) -> dict[str, dict[str, Any]]:
+        if omh_home is None or not parent_id:
+            return {}
+        if parent_id not in cache:
+            ledger = _delegation_ledger.read_ledger(Path(omh_home).expanduser(), parent_id) or {}
+            cache[parent_id] = {
+                child["child_session_id"]: child["observed_route"]
+                for child in ledger.get("children", [])
+                if child.get("observed_route")
+            }
+        return cache[parent_id]
+
+    return routes_of
+
+
 def read_hermes_native_subagents(
     hermes_home: str | Path | None = None,
     *,
@@ -2590,6 +2614,7 @@ def read_hermes_native_subagents(
     children = state.get("children", [])
     if not children:
         return payload
+    observed_routes = _observed_routes_reader(omh_home)
     # The host manifests carry neither parent nor child session identity.
     # Timestamp/task-order matching cannot establish ownership when dispatches
     # overlap. Keep legacy global context, but never borrow it for a session.
@@ -2915,6 +2940,15 @@ def read_hermes_native_subagents(
                     row["route_origin"] = "fallback"
         if failure_hint:
             row["failure_hint"] = failure_hint
+        reported = observed_routes(child["parent_id"]).get(child["session_id"])
+        if reported:
+            # Where Hermes' delegation backend (0.22.5+) reports it ran this child. The model shown is the observed
+            # wire model above; the option name (`label`) is the user's own, and it outranks no OMH category.
+            row["route_backend"] = reported["backend"]
+            if reported.get("label"):
+                row["route_label"] = reported["label"]
+            if reported.get("fallback_activated"):
+                row["route_origin"] = "fallback"
         api_calls = usage.get("api_calls")
         if api_calls is not None:
             row["turn_count"] = int(api_calls)
@@ -2951,3 +2985,9 @@ def read_hermes_native_subagents(
     payload["active"] = running + blocked
     payload["status"] = "observed" if rows else "idle"
     return payload
+
+
+# Module scope, not call time: Hermes can evict the bundle from sys.modules
+# while its callbacks stay live (#1979). Last, because the ledger imports this
+# module: the cycle then finds every name defined here.
+from . import delegation_ledger as _delegation_ledger  # noqa: E402

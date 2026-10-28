@@ -39,6 +39,15 @@ from ..hermes_delegation import (
     resolve_provider_model,
     effective_mixture_category_chains,
 )
+from ..delegation_backend_mode import (
+    DEFAULT_BACKEND,
+    MODEL_MAP_BACKEND,
+    PROFILE_ROUTES_BACKEND,
+    STATUS_UNREADABLE,
+    option_chain,
+    option_for,
+    read_backend_mode,
+)
 from ..route_endpoint_guard import managed_config_layer, route_endpoint_refusal
 from ..provider_detection import config_provider_base_url_hosts, configured_provider_ids
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
@@ -50,6 +59,117 @@ _EVIDENCE_BOUNDARY = (
     "dispatch (Hermes re-reads config.yaml per dispatch). Writing a route is not "
     "execution, dispatch, or completion evidence."
 )
+_BACKEND_EVIDENCE_BOUNDARY = (
+    "Prepared choice only: under a non-default Hermes delegation backend OMH writes "
+    "nothing. A selected option applies only when the delegate_task task carries it, "
+    "and the backend decides; the child's own result `route` is what ran."
+)
+
+
+def _backend_route(
+    mode: dict[str, Any],
+    *,
+    category: str,
+    chain: tuple[tuple[str, str], ...],
+    alias: str,
+    effort: str,
+    after_option: str,
+    provider_routes: dict[str, tuple[str, str]],
+) -> dict[str, Any]:
+    """`set`/`fallback`'s answer when `delegation.backend` is not `default`.
+
+    No config byte is written and no provenance is recorded: the delegation
+    keys OMH would write are ignored by these backends, so writing them would
+    report a route nothing applies. Under `model_map` the user's own option
+    that serves the chain entry is named for the task's ``option`` field;
+    every other case is `not_applied` with the reason.
+    """
+    backend = str(mode.get("backend") or "")
+    base: dict[str, Any] = {
+        "delegation_backend": backend,
+        "category": category,
+        "evidence_boundary": _BACKEND_EVIDENCE_BOUNDARY,
+    }
+    if mode.get("status") == STATUS_UNREADABLE:
+        return {**base, "status": "not_applied", "reason": "backend_config_unreadable"}
+    if backend == PROFILE_ROUTES_BACKEND:
+        return {
+            **base,
+            "status": "not_applied",
+            "reason": "profile_routes_backend",
+            "profiles": list(mode.get("profiles") or []),
+            "default": str(mode.get("default") or ""),
+            "note": (
+                "profile_routes runs each child as a whole Hermes profile (its credentials and "
+                "tools). OMH never picks one: pass `profile` only when the user named it."
+            ),
+        }
+    if backend != MODEL_MAP_BACKEND:
+        return {
+            **base,
+            "status": "not_applied",
+            "reason": "backend_not_default",
+            "note": "OMH routes only the default and model_map backends; `/delegation default` restores OMH routing.",
+        }
+    options = list(mode.get("options") or [])
+    carried = option_chain(chain, options, provider_routes) if category else []
+    if alias:
+        # The lane's own model (the category head, or the user's explicit
+        # model) leads; the rest of the chain follows as its fallbacks.
+        provider, wire_model = provider_routes.get(alias, ("", ""))
+        name = option_for(options, alias, effort, wire_model=wire_model, provider=provider)
+        if name:
+            carried = [{"option": name, "alias": alias, "reasoning_effort": effort}] + [
+                entry for entry in carried if entry["option"] != name
+            ]
+    names = [entry["option"] for entry in carried]
+    if after_option:
+        if after_option not in names:
+            return {
+                **base,
+                "status": "not_applied",
+                "reason": "option_not_in_chain",
+                "option": after_option,
+                "option_chain": carried,
+            }
+        rest = carried[names.index(after_option) + 1 :]
+        if not rest:
+            return {
+                **base,
+                "status": "options_exhausted",
+                "option_chain": carried,
+                "default": str(mode.get("default") or ""),
+                "note": "No later option serves this category; dispatching with no `option` uses the backend's default.",
+            }
+        return {
+            **base,
+            "status": "option_selected",
+            "option": rest[0]["option"],
+            "alias": rest[0]["alias"],
+            "reasoning_effort": rest[0]["reasoning_effort"],
+            "fallback_from": after_option,
+            "option_chain": carried,
+        }
+    if not carried:
+        return {
+            **base,
+            "status": "not_applied",
+            "reason": "no_matching_option",
+            "available_options": [str(option.get("name", "")) for option in options],
+            "default": str(mode.get("default") or ""),
+            "note": (
+                "None of the user's model_map options runs this lane's models. Dispatch with no "
+                "`option` (the backend's default) or ask the user to add one; OMH never edits options."
+            ),
+        }
+    return {
+        **base,
+        "status": "option_selected",
+        "option": carried[0]["option"],
+        "alias": carried[0]["alias"],
+        "reasoning_effort": carried[0]["reasoning_effort"],
+        "option_chain": carried,
+    }
 
 
 # Anthropic models that cannot disable thinking: the Fable-tier generation
@@ -331,6 +451,8 @@ OMH_DELEGATE_ROUTE_SCHEMA = {
         "writing the delegation.model / "
         "delegation.reasoning_effort keys Hermes reads per dispatch. Sequence per lane: "
         "set the route, call delegate_task for that lane, then set the next lane's route. "
+        "Under a model_map delegation backend nothing is written: set/fallback return the "
+        "`option` to put on the task; other backends: not_applied. "
         "SET THE ROUTE IN THE SAME TURN THAT DISPATCHES. How long a route lives depends on "
         "the surface: in the Hermes TUI and CLI it is put back when the turn ends, so a "
         "route set in one turn and dispatched in the next runs on the previous model rather "
@@ -399,6 +521,10 @@ OMH_DELEGATE_ROUTE_SCHEMA = {
                     "provider/wire identity remains atomic."
                 ),
             },
+            "option": {
+                "type": "string",
+                "description": "fallback under model_map: the failed child's route.label.",
+            },
             "hermes_home": {
                 "type": "string",
                 "description": "Standalone operator override only. Native Hermes calls reject this field; omit it to use the active profile.",
@@ -447,7 +573,49 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
     # (often namespaced) model string; routing/model-providers.json supplies
     # that mapping. With no document every alias dispatches unchanged.
     provider_routes, provider_route_status = load_model_provider_routes(omh_home)
-
+    # Hermes 0.22.5+: a non-default `delegation.backend` ignores the keys this
+    # tool writes. Decide before any write so no `routed` answer names a
+    # route the backend will not apply.
+    mode = read_backend_mode(hermes_home)
+    if action in ("set", "fallback") and mode["backend"] != DEFAULT_BACKEND:
+        category = str(args.get("category", "") or "").strip()
+        model = str(args.get("model", "") or "").strip()
+        effort = str(args.get("reasoning_effort", "") or "").strip()
+        after_option = str(args.get("option", "") or "").strip() if action == "fallback" else ""
+        if category and category not in chains:
+            payload = {
+                "status": "error",
+                "error": f"unknown category {category!r}; choose one of " + ", ".join(sorted(chains)),
+            }
+            return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+        if action == "fallback" and not (category and after_option):
+            payload = {
+                "status": "error",
+                "error": (
+                    f"delegation.backend is {mode['backend']}: fallback needs the category and the "
+                    "`option` the failed child ran on"
+                ),
+                "delegation_backend": mode["backend"],
+            }
+            return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+        if action == "set" and not (category or model):
+            payload = {"status": "error", "error": "set needs a category or an explicit model"}
+            return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+        chain = tuple(chains.get(category, ()))
+        alias = model
+        if category and not model and action == "set" and chain:
+            alias, head_effort = chain[0]
+            effort = effort or head_effort
+        result = _backend_route(
+            mode,
+            category=category,
+            chain=chain,
+            alias=alias,
+            effort=effort,
+            after_option=after_option,
+            provider_routes=provider_routes,
+        )
+        return json.dumps(attach_public_observation(result, observation), sort_keys=True)
     if action == "status":
         route = read_delegation_route(hermes_home)
         if route.get("model"):
@@ -478,6 +646,13 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             },
             "chain_overrides": override_status,
             "chain_overrides_path": str(mixture_chain_overrides_path(omh_home)),
+            "delegation_backend": {
+                "backend": mode["backend"],
+                "status": mode["status"],
+                "default": mode["default"],
+                "options": [option["name"] for option in mode["options"]],
+                "profiles": list(mode["profiles"]),
+            },
             "provider_routes": provider_route_status,
             "provider_routes_path": str(model_provider_routes_path(omh_home)),
             "evidence_boundary": _EVIDENCE_BOUNDARY,
