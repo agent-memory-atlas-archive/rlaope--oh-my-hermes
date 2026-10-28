@@ -362,6 +362,17 @@ All notable changes will be documented here.
   waits on the default-model check, which before took its place and lost
   it. A prompt held for that check is never replaced: the queue waits
   behind it.
+- **`omh uninstall` removes an OMH home under `/var` or `/tmp` on macOS
+  again (#2359, reported and fixed by @Kenmege).** The uninstall guard that
+  keeps a home configured through a symlink walked every ancestor of the
+  configured path, and on macOS `/var`, `/tmp` and `/etc` are themselves
+  root-owned links into `/private`. Every home under them, including the
+  per-user temporary roots in `/var/folders`, was therefore kept with
+  "passes through a symlink or directory junction". A root-owned link
+  directly under the filesystem root now counts as an OS alias; a link
+  anywhere below it, or one a user owns, still refuses, and Windows never
+  takes the exemption. The same rule applies to the menu-bar refresh that
+  `omh update` skips for a linked home.
 
 ## 4.0.3 - 2026-10-27
 
