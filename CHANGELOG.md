@@ -262,6 +262,15 @@ All notable changes will be documented here.
   `session.list`, over the whole store, then among the listed sessions
   ignoring case. The one session with it opens; several (titles that
   differ only in case) or none open the picker filtered by the title.
+- **A prompt sent now is put back only when Hermes really dropped it.** The
+  OMH TUI counted a sent-now steer as read only after a tool finished and the
+  turn took a further step, so Esc in between could put back a steer Hermes
+  had already joined to the stopped tool batch, and resending it doubled it.
+  It now counts as read at the first tool that finishes after Hermes took
+  it, since Hermes finalizes even an interrupted batch. A sent-now steer
+  Hermes refuses after its turn ended and the next queued prompt started
+  goes back to the composer with a notice, instead of running after that
+  later prompt.
 
 ## 4.0.3 - 2026-10-27
 
