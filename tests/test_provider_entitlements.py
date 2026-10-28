@@ -97,7 +97,8 @@ class ParityTests(unittest.TestCase):
         # ahead of any chain placement.
         "deepseek-v4-pro": ("deepseek", "openrouter"),
         "glm-5.3-flashx": ("zai", "openrouter"),
-        "grok-4.7": ("xai", "openrouter"),
+        # grok-4.7 left this table on 2026-10-28, when the routing recipe
+        # placed it at the x-search head.
         "grok-4.6": ("xai", "openrouter"),
         "grok-4.5": ("xai", "openrouter"),
         "grok-4.3": ("xai", "openrouter"),

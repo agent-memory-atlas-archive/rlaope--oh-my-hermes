@@ -351,12 +351,21 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
 
     def test_every_head_labels_its_own_category_except_the_accepted_collisions(self):
         # A head shared by two categories labels only the earlier one in
-        # canonical order. The owner accepted exactly two such collisions on
+        # canonical order. The owner accepted two such collisions on
         # 2026-10-13 -- (claude-opus-5-5, high) heads deep and
         # visual-engineering, (claude-opus-5-5, medium) heads writing and
         # capable -- and chose `max` for deep-work so its label survives.
-        # Routing is unaffected; a third collision fails here by name.
-        accepted = {"visual-engineering": "deep", "capable": "writing"}
+        # Two more were accepted with the routing-recipe heads on 2026-10-28:
+        # (gpt-6-astra, xhigh) heads ultrabrain and forensics, and
+        # (claude-opus-5-5, xhigh) heads architect and synthesize, so those
+        # two labels reach a child only through a route-provenance record.
+        # Routing is unaffected; a fifth collision fails here by name.
+        accepted = {
+            "visual-engineering": "deep",
+            "capable": "writing",
+            "forensics": "ultrabrain",
+            "synthesize": "architect",
+        }
         for category, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
             alias, effort = chain[0]
             with self.subTest(category=category):
@@ -435,8 +444,10 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         self.assertIs(provider_serves_alias("kimi-k3.1-pro", "anthropic"), False)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "kimi-coding"), True)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "zai"), False)
-        # The shipped slots label K3.1 Pro at the efforts K3 carried.
-        for effort, category in (("xhigh", "architect"), ("medium", "unspecified-high"), ("low", "quick")):
+        # The shipped slots label K3.1 Pro at the efforts K3 carried. Since
+        # 2026-10-28 xhigh projects to review, where K3.1 Pro sits third
+        # against fourth in architect (the shallower slot wins).
+        for effort, category in (("xhigh", "review"), ("medium", "unspecified-high"), ("low", "quick")):
             with self.subTest(effort=effort):
                 self.assertEqual(
                     mixture_category_for("moonshotai/kimi-k3.1-pro", effort, parent_model="gpt-6.1-sol"), category
@@ -474,7 +485,8 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         )
 
     # Catalog sync, 2026-10-28: (input, output, cached input) per MTok as the
-    # vendor's own page lists it. Every id is recognition-only.
+    # vendor's own page lists it. Every id is recognition-only except Grok
+    # 4.7, which the 2026-10-28 routing recipe placed at the x-search head.
     _CATALOG_SYNC_RATES = {
         "grok-4.7": (2.0, 6.0, 0.50),
         "grok-4.6": (2.0, 6.0, 0.50),
@@ -516,8 +528,12 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 self.assertEqual(
                     cost(f"vendor/{model_id}", 1_000, 1_000, 1_000), cost(model_id, 1_000, 1_000, 1_000)
                 )
-                # None of them borrows a category label from a chain.
-                self.assertEqual(mixture_category_for(model_id, "high", parent_model="gpt-6.1-sol"), "")
+                # None of them borrows a category label from a chain, except
+                # Grok 4.7, which heads x-search since 2026-10-28.
+                self.assertEqual(
+                    mixture_category_for(model_id, "high", parent_model="gpt-6.1-sol"),
+                    "x-search" if model_id == "grok-4.7" else "",
+                )
 
     def test_mixed_case_served_ids_meet_the_lower_case_price_rows(self):
         # MiniMax serves `MiniMax-M3` and `MiniMax-M3.1-Flash`; cost lookup
@@ -657,7 +673,7 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         contracts = {
             "gpt-6-astra": ("openai", "xhigh", "ultrabrain", "openai", "anthropic"),
             "gpt-6.1-sol": ("openai", "high", "deep", "openai", "anthropic"),
-            "deepseek-v4.1-flash": ("deepseek", "low", "unspecified-low", "deepseek", "anthropic"),
+            "deepseek-v4.1-flash": ("deepseek", "low", "swarm", "deepseek", "anthropic"),
             "claude-opus-5-5": ("anthropic", "medium", "writing", "anthropic", "openai"),
             "claude-sonnet-5-5": ("anthropic", "medium", "writing", "anthropic", "openai"),
             "claude-haiku-5-5": ("anthropic", "low", "simple-work", "anthropic", "openai"),
@@ -696,10 +712,11 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         unknown = "openai/gpt-6-astra-pro-turbo"
         self.assertEqual(mixture_category_for(unknown, "xhigh", parent_model="kimi-k3"), "")
         self.assertIsNone(provider_serves_alias(unknown, "openai"))
-        # Both DeepSeek spellings label both DeepSeek slots at their efforts;
-        # the vendor-routed legacy id is not a declared alias and stays bare.
+        # Both DeepSeek spellings label the DeepSeek slots at their effort --
+        # swarm since 2026-10-28, whose head it is; the vendor-routed legacy
+        # id is not a declared alias and stays bare.
         for spelling in ("deepseek-flash", "deepseek/deepseek-v4.1-flash"):
-            self.assertEqual(mixture_category_for(spelling, "low", parent_model="kimi-k3"), "unspecified-low")
+            self.assertEqual(mixture_category_for(spelling, "low", parent_model="kimi-k3"), "swarm")
         self.assertEqual(mixture_category_for("deepseek/deepseek-v4-flash", "high", parent_model="kimi-k3"), "")
 
     def test_reverse_projection_is_limited_to_pointer_aliases(self):
@@ -778,10 +795,11 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 )
                 self.assertIs(provider_serves_alias(spelling, "openai"), True)
                 self.assertIs(provider_serves_alias(spelling, "anthropic"), False)
-        # A snapshot of the exact id reaches the served pointer the chain names.
+        # A snapshot of the exact id reaches the served pointer the chain names
+        # (the swarm head since 2026-10-28).
         self.assertEqual(
             mixture_category_for("deepseek/deepseek-v4.1-flash-2026-09-01", "low", parent_model="kimi-k3"),
-            "unspecified-low",
+            "swarm",
         )
         # The exact-contract label follows the snapshot too.
         self.assertEqual(

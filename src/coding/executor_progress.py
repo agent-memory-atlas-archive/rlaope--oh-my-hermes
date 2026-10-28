@@ -454,13 +454,19 @@ _ROUTING_CATEGORIES = frozenset(
         "capable",
         "deep",
         "deep-work",
+        "forensics",
+        "google-search",
         "quick",
+        "review",
         "simple-work",
+        "swarm",
+        "synthesize",
         "unspecified-high",
         "unspecified-low",
         "ultrabrain",
         "visual-engineering",
         "writing",
+        "x-search",
     }
 )
 

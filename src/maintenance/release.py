@@ -338,7 +338,14 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # `option` property fallback takes. Without them a parent under model_map
 # cannot learn that the config write it expects never happens. Only
 # omh_delegate_route moves (4770 -> 5015); re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69431
+# 69431 -> 69644: six routing-recipe categories join the closed mixture
+# vocabulary (google-search, x-search, review, swarm, forensics, synthesize;
+# 2026-10-28). Both tools whose `category` enum is that vocabulary grow by
+# the six values -- omh_dag 2908 -> 2983 (+75) and omh_delegate_route
+# 5015 -> 5153 (+138, the enum plus the description's category list, which
+# names every routable category). An enum value cannot be shortened without
+# renaming the category; measured per tool against base 49f8c35f6.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69644
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain

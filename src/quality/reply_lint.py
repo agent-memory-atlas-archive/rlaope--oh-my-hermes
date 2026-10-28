@@ -115,6 +115,8 @@ _RECORD_ID_TERMS: tuple[str, ...] = (
     "ultrabrain",
     "visual-engineering",
     "simple-work",
+    "google-search",
+    "x-search",
     "unspecified-high",
     "unspecified-low",
     "done_unverified",
@@ -128,7 +130,10 @@ _RECORD_ID_TERMS: tuple[str, ...] = (
     "repair_in_flight",
 )
 _ORDINARY_CATEGORY_IDS: frozenset[str] = frozenset(
-    {"architect", "artistry", "capable", "deep", "deep-work", "quick", "writing"}
+    {
+        "architect", "artistry", "capable", "deep", "deep-work", "forensics", "quick", "review",
+        "swarm", "synthesize", "writing",
+    }
 )
 
 # OMH schema ids, as exact literals. Scope rule: every `omh_`-prefixed id the
