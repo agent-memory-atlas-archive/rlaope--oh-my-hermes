@@ -31,7 +31,9 @@ terminal answering a query sends one (the startup background query's answer,
 when it comes after the TUI stopped waiting for it), and it types nothing. One
 that never ends is dropped whole at the next silence, or at `_MAX_OSC_LENGTH`
 bytes. `ESC ]` followed by anything else is Alt+], as the legacy encoding
-sends it, and the keys after it are keys. An `ESC ]` that ends a read waits
+sends it, and the keys after it are keys. The XTVERSION answer (`ESC P >`
+up to ST) is read the same way, and `ESC P` followed by anything else is
+Alt+P. An `ESC ]` that ends a read waits
 for the next byte, as a lone ESC does: a digit opens an OSC string, anything
 else makes it Alt+], and so does the next silence.
 
@@ -111,6 +113,10 @@ ESC_BYTE = 0x1B
 CSI_BYTE = ord("[")
 SS3_BYTE = ord("O")
 OSC_BYTE = ord("]")
+DCS_BYTE = ord("P")
+# `ESC P >` opens the XTVERSION answer (`ESC P > | name ST`, `Terminal.query_background` asks some terminals for it):
+# a DCS string, read as an OSC string is. `ESC P` followed by anything else is Alt+P.
+DCS_ANSWER_BYTE = ord(">")
 BEL_BYTE = 0x07
 STRING_TERMINATOR_BYTE = ord("\\")  # ESC and then this byte end an OSC string, as BEL does
 CARRIAGE_RETURN = 0x0D
@@ -552,6 +558,10 @@ def _decode_escape(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | 
         return None, start  # the next byte decides: an answer's OSC number, or anything else after Alt+]
     if second == OSC_BYTE and data[start + 2 : start + 3].isdigit():  # an answer's OSC number, not Alt+]
         return _decode_osc(data, start, final)
+    if second == DCS_BYTE and len(data) == start + 2 and not final:
+        return None, start  # the next byte decides: the XTVERSION answer's `>`, or anything else after Alt+P
+    if second == DCS_BYTE and data[start + 2 : start + 3] == bytes((DCS_ANSWER_BYTE,)):
+        return _decode_osc(data, start, final)  # the XTVERSION answer, a string to its ST like an OSC one
     if second == SS3_BYTE:
         return _decode_ss3(data, start, final)
     if second == ESC_BYTE:
@@ -609,6 +619,8 @@ def _continues_escape(data: bytes) -> bool:
         return True
     if len(data) > 1 and data[0] == SS3_BYTE:
         return data[1] in _SS3_FINALS
+    if len(data) > 1 and data[0] == DCS_BYTE:
+        return data[1] == DCS_ANSWER_BYTE
     return len(data) > 1 and data[0] == OSC_BYTE and data[1:2].isdigit()
 
 

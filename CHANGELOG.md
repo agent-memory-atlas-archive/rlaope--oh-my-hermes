@@ -180,23 +180,30 @@ All notable changes will be documented here.
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
 - **A queued prompt can be sent into the running turn now, and one line sits
   under the composer.** As in Claude Code, a muted row under the queued
-  prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; the
-  key sends the oldest queued prompt into the turn as a steer and takes it off
-  the queue (a queued `!` line or a skill's prompt keeps its place). Where
-  the terminal does not tell Ctrl+Enter from Enter the key is Ctrl+J, a line
-  feed from every terminal, which still adds a line between turns. The info
-  line no longer says `/steer <text> steers`; `/steer <text>` still works and
+  prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; on an
+  empty composer the key sends the oldest queued prompt into the turn as a
+  steer and takes it off the queue. A queued `!` line, skill prompt or plan
+  prompt keeps its place and shows no row. Where the terminal has not shown
+  that it tells Ctrl+Enter from Enter, the row names Ctrl+J, which every
+  terminal sends apart from Enter; with text typed, Ctrl+J still adds a line
+  and Ctrl+Enter steers that text, as before. A sent-now steer Hermes refuses
+  goes back to the head of the queue as it was, and one it took but had not
+  read when the turn is stopped is queued again, with a notice. The info line
+  no longer says `/steer <text> steers`; `/steer <text>` still works and
   stays in `/help` and the `?` list. The branch row is gone: the info line
-  starts with `[ ⚚ OMH Native ]` and carries the branch first on its right,
-  and the row goes back to the transcript. Between turns the line no longer
-  says `? for shortcuts`: the launch card names `? every shortcut`, and `?`
-  still opens the list. As the line narrows the model,
-  context and effort go first, then the badge shortens to `[ ⚚ OMH ]`, then
-  `⚚`, then goes; the mode's label and the branch stay to the end. The
+  starts with `[ ⚚ OMH Native ]` and the branch, then the mode and the keys
+  that matter, with the title, model, context and effort on the right, and
+  the row goes back to the transcript. Between turns it no longer says
+  `? for shortcuts`: the launch card names `? every shortcut`, and `?` still
+  opens the list. As the line narrows the right side's fields go first, then
+  the branch's name is cut, then the badge shortens to `[ ⚚ OMH ]` and `⚚`;
+  the mode's label and a question's or picker's keys keep their words. The
   start-up query now asks every terminal for its kitty keyboard flags
   (`CSI ? u`): one that answers gets them pushed, Otty with its
   `kitty-keyboard` setting on among them, and names Ctrl+Enter from the
-  first frame; the push is undone on every exit. A steer or a second
+  first frame; a terminal the environment does not name (over SSH) must also
+  name itself through XTVERSION as one known to read them, never Ghostty. The
+  push is undone on every exit but `kill -9`. A steer or a second
   `/compress` that waited behind a compression and went unanswered now says
   how long it really waited, not 120 s or 660 s.
 - **The exit card is the session's title and how to resume it.** Leaving

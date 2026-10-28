@@ -187,17 +187,17 @@ def info_line(
     badge: Sequence[Line] = (),
     branch: Sequence[Line] = (),
 ) -> Line:
-    """The one line under the composer. Its left side is `badge` (`[ ⚚ OMH Native ]`, forms longest first), the mode's
-    label (accept, plan, a shell line), the agent count and the keys that matter now; its right side is the first of
-    `branch` (the git branch, forms longest first) and then the first of `right` (the model, the context, the effort,
-    forms longest first) that leaves room for the left side whole.
+    """The one line under the composer. Its left side is `badge` (`[ ⚚ OMH Native ]`), `branch` (the git branch), the
+    mode's label (accept, plan, a shell line), the agent count and the keys that matter now, `BADGE_GAP` cells between
+    the first three; its right side is the first of `right` (the title, the model, the context, the effort) that leaves
+    room for the left side whole. `badge`, `branch` and `right` are forms, longest first.
 
-    What gives way, in order: the right side's fields (`right`, through its
-    forms, then whole), then the badge (to `[ ⚚ OMH ]`, then `⚚`, then
-    none), then the left side's words; the label and the branch stay to the
-    end. With no badge and the left side still too long beside the branch,
-    the branch takes the first of its forms that fits beside the label's
-    shortest words, and the left side shortens in what is left.
+    What gives way, in order: the right side (through its forms, then
+    whole), then the branch's name (`branch`'s shorter forms), then the
+    badge (to `[ ⚚ OMH ]`, then `⚚`, then none), then the branch; the
+    label, the agent count and what the next key does (a question's or a
+    picker's way out) keep their words until all of those are gone, and
+    only then shorten.
 
     `chip` is the count of the agents in the view under the line while there
     are any, after the label. `say`, when given, is what the next key
@@ -213,7 +213,7 @@ def info_line(
     interrupt, and the queue's own row the send-now key. The label always
     survives, in some form, and the count after it. Accept and plan say where
     Shift+Tab goes next (`cycle`; CYCLE_WORDS when not given). In the normal
-    mode between turns the left side is the badge alone.
+    mode between turns the left side is the badge and the branch alone.
     """
     forms = (say,) if isinstance(say, str) else say
     if any(forms):
@@ -237,25 +237,27 @@ def info_line(
 
     whole = line_width(label_of(0)) + (cell_width(placed(hints, label_of(0))[0]) if hints else 0)
 
-    def lead(form: Line) -> Line:
-        """A badge form, and the gap after it when anything follows on the left."""
-        return (*form, Span(" " * BADGE_GAP)) if form and whole else form
+    def lead(*parts: Line) -> Line:
+        """The badge and the branch forms shown, `BADGE_GAP` cells after each but a last one nothing follows."""
+        shown = [part for part in parts if part]
+        gap = Span(" " * BADGE_GAP)
+        joined: Line = ()
+        for index, part in enumerate(shown):
+            joined += (*part, *((gap,) if index < len(shown) - 1 or whole else ()))
+        return joined
 
     def fits(left: int, side: Line) -> bool:
         return left + (INFO_GAP + line_width(side) if side else 0) <= width
 
-    def joined(fields: Line) -> Line:
-        return (*branch[0], Span(INFO_SEPARATOR, theme.dim), *fields) if branch and fields else branch[0] if branch else fields
-
-    badges = [*badge, ()]  # the badge's forms, then none: it goes before the left side's words shorten
-    sides = [joined(form) for form in right if form] + [joined(())]
-    found = next(((badges[0], side) for side in sides if fits(line_width(lead(badges[0])) + whole, side)), None)
-    found = found or next(((form, sides[-1]) for form in badges[1:] if fits(line_width(lead(form)) + whole, sides[-1])), None)
-    if found is None:  # the label's shortest words beside the branch's first form that fits
-        shortest = line_width(label_of(len(ACCEPT_LABELS) - 1))
-        found = ((), next((form for form in branch if fits(shortest, form)), ()))
-    shown_badge, shown_right = found
-    front = lead(shown_badge)
+    badges, branches = list(badge) or [()], list(branch) or [()]
+    tries = [(badges[0], branches[0], side) for side in [*(form for form in right if form), ()]]
+    tries += [(badges[0], form, ()) for form in branches[1:]]
+    tries += [(form, branches[-1], ()) for form in [*badges[1:], ()]]
+    tries += [((), (), ())]
+    shown_badge, shown_branch, shown_right = next(
+        (tried for tried in tries if fits(line_width(lead(tried[0], tried[1])) + whole, tried[2])), tries[-1]
+    )
+    front = lead(shown_badge, shown_branch)
     room = width - (line_width(shown_right) + INFO_GAP if shown_right else 0) - line_width(front)
     label = label_of(0)
     hint = ""
@@ -273,9 +275,9 @@ def info_line(
         said = placed(hints, label)
         hint = next((text for text in said if cell_width(text) <= max(room - line_width(label), 0)), said[-1])
     rest = truncate_line(label, room) + truncate_line((Span(hint, say_style or theme.hint),), max(room - line_width(label), 0))
-    left = truncate_line((*front, *rest), width) if any(span.text for span in rest) else truncate_line(shown_badge, width)
+    left = truncate_line((*front, *rest), width)
     if not shown_right:
-        shown_right = next((side for side in [*sides, *branch[1:]] if side and fits(line_width(left), side)), ())
+        shown_right = next((side for side in right if side and fits(line_width(left), side)), ())
     if not shown_right:
         return left
     return (*left, Span(" " * (width - line_width(left) - line_width(shown_right))), *shown_right)

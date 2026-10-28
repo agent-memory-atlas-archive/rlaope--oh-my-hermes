@@ -20,7 +20,10 @@ and then Ctrl+Enter arrives as Enter. Every other terminal, unless it is
 Ghostty or `OMH_TUI_KEYBOARD=legacy` is set, gets the kitty flags pushed only
 when it answers the kitty keyboard query in the startup query
 (`query_background`): an answer says it speaks the protocol (Otty, with its
-`kitty-keyboard` setting on, is one). Whether the reports really come is
+`kitty-keyboard` setting on, is one). A terminal the environment does not
+name (over SSH, where TERM_PROGRAM rarely arrives) gets them only when its
+XTVERSION answer names one of `PUSH_BY_XTVERSION`, since an unnamed answer
+may come from Ghostty. Whether the reports really come is
 `KeyDecoder.protocol_reported`, which turns on at the terminal's answer to the
 kitty keyboard query when that answer says the flag is on, or else at the
 first key that arrives as a report.
@@ -133,6 +136,12 @@ _BACKGROUND_REPLY = re.compile(rb"\x1b\]11;rgb:([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1
 _DEVICE_ATTRIBUTES_REPLY = re.compile(rb"\x1b\[\?[0-9;]*c")
 # The kitty keyboard query's answer, `ESC [ ? flags u`: the terminal speaks the protocol.
 _KITTY_FLAGS_REPLY = re.compile(rb"\x1b\[\?[0-9]*u")
+# XTVERSION: asks the terminal its name and version; the answer is `ESC P > | name ST` (ST is `ESC \`, or BEL).
+XTVERSION_QUERY = f"{CSI}>0q"
+_XTVERSION_REPLY = re.compile(rb"\x1bP>\|([^\x1b\x07]*)(?:\x1b\\|\x07)")
+# The terminals an XTVERSION name may get the kitty flags pushed on an answer, by its first word, any case: the
+# ones known to read flag 1 as the TUI does. Ghostty is not one (its kitty mode drops Alt from Backspace).
+PUSH_BY_XTVERSION = frozenset({"kitty", "wezterm", "foot", "alacritty", "rio", "otty"})
 # `ESC [ row ; col R`, both 1-based: the cursor position report.
 _CURSOR_POSITION_REPLY = re.compile(rb"\x1b\[([0-9]{1,5});([0-9]{1,5})R")
 # `COLORFGBG`'s background field names a colour of the basic sixteen: 7 and 15 are the light ones (xterm's values),
@@ -209,6 +218,12 @@ def keyboard_protocol_request(environ: Mapping[str, str]) -> str:
     if name in MODIFY_OTHER_KEYS_ONLY_TERMINALS:
         return MODIFY_OTHER_KEYS_ON
     return KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON
+
+
+def xtversion_pushable(name: bytes) -> bool:
+    """Whether an XTVERSION answer's name (`kitty(0.35.2)`, `WezTerm 20240203`) is one of `PUSH_BY_XTVERSION`."""
+    first = re.split(rb"[\s(]", name.strip(), maxsplit=1)[0]
+    return first.decode("ascii", "replace").lower() in PUSH_BY_XTVERSION
 
 
 def _channel_byte(digits: bytes) -> int:
@@ -303,10 +318,14 @@ class Terminal:
         # Asked with the startup query on every terminal but a legacy one: the answer says whether the flags took.
         self._keyboard_query = "" if legacy else KITTY_KEYBOARD_QUERY
         # Where entering did not push the kitty flags, a terminal that answers the query gets them then (never
-        # Ghostty, whose kitty mode drops Alt from Backspace).
+        # Ghostty, whose kitty mode drops Alt from Backspace). One the environment does not name (over SSH,
+        # TERM_PROGRAM rarely arrives) is asked its name too (XTVERSION), and gets them only when that names a
+        # terminal in `PUSH_BY_XTVERSION`: an unnamed answer may be Ghostty.
+        name = terminal_name(environ)
         self._push_on_answer = not legacy and KITTY_KEYBOARD_PUSH not in self._keyboard_request and (
-            terminal_name(environ) not in MODIFY_OTHER_KEYS_ONLY_TERMINALS
+            name not in MODIFY_OTHER_KEYS_ONLY_TERMINALS
         )
+        self._name_query = XTVERSION_QUERY if self._push_on_answer and name == environ.get("TERM", "") else ""
         # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
         self.keyboard_protocol = False
         # True while mouse reports are on (`set_mouse`).
@@ -396,7 +415,10 @@ class Terminal:
         pushed now, and is asked again, with the attributes behind, so its
         second answer says whether the push took; the wait for it is bounded
         by `timeout` too, and the push is popped on exit and pushed again after
-        a stop, as the entry's own. Only inside the `with` block, where input
+        a stop, as the entry's own. Where the environment names no terminal,
+        XTVERSION goes before the kitty query, its answer is taken out of the
+        input, and only a name in `PUSH_BY_XTVERSION` gets the push; no
+        answer before the attributes, no push. Only inside the `with` block, where input
         is raw. The row is None unless its report came before the attributes
         answer (`split_cursor_reply`). The kitty answer stays in the input
         handed back: the decoder reads it, types nothing, and learns from it
@@ -405,11 +427,19 @@ class Terminal:
         reads a late kitty answer as it reads an early one, and a late position
         report as an unknown key, which types nothing.
         """
-        self.write(BACKGROUND_QUERY + CURSOR_POSITION_QUERY + self._keyboard_query + DEVICE_ATTRIBUTES_QUERY)
+        self.write(
+            BACKGROUND_QUERY + CURSOR_POSITION_QUERY + self._name_query + self._keyboard_query + DEVICE_ATTRIBUTES_QUERY
+        )
         data = self._read_answers(timeout)
         answered = _DEVICE_ATTRIBUTES_REPLY.search(data)
         flags = _KITTY_FLAGS_REPLY.search(data, 0, answered.start()) if answered is not None else None
-        if self._push_on_answer and flags is not None:
+        named = _XTVERSION_REPLY.search(data, 0, answered.start()) if answered is not None else None
+        if named is not None:  # an answer to a query, never a key: it leaves the input here
+            data = data[: named.start()] + data[named.end() :]
+            answered = _DEVICE_ATTRIBUTES_REPLY.search(data)
+        if self._name_query and not (named is not None and xtversion_pushable(named.group(1))):
+            self._push_on_answer = False  # unnamed, or named as a terminal not known to read the flags as asked
+        if self._push_on_answer and flags is not None and answered is not None:
             self._push_on_answer = False
             self._keyboard_request += KITTY_KEYBOARD_PUSH  # pushed again after a stop, popped on every exit
             self.keyboard_protocol = True

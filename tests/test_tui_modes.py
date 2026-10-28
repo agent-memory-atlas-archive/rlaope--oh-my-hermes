@@ -17,6 +17,7 @@ import base64
 from pathlib import Path
 import time
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
@@ -441,12 +442,19 @@ class SteerTests(unittest.TestCase):
                 answer(app, client, {"status": "queued", "text": "first queued"})
                 self.assertEqual(steers(app), ["↪ steer queued by Hermes · first queued"])
 
-    def test_a_refused_send_now_comes_back_behind_what_is_still_queued(self) -> None:
-        app, client = make_app(busy=True)
-        queue(app, "first queued", "second queued")
-        app._on_input(CTRL_ENTER)
-        answer(app, client, None, {"code": 4010, "message": "agent does not support steer"})
-        self.assertEqual([line.text for line in app.queued], ["second queued", "first queued"])
+    def test_a_refused_send_now_goes_back_to_the_head_of_the_queue_as_it_was(self) -> None:
+        for refusal in ({"error": {"code": 4010, "message": "agent does not support steer"}},
+                        {"result": {"status": "rejected", "text": "first queued"}}):
+            with self.subTest(refusal=refusal):
+                app, client = make_app(busy=True)
+                first = QueuedLine("first queued", "first ⟨chip⟩", chips=(("⟨chip⟩", "queued"),))
+                app.queued.extend([first, QueuedLine("second queued")])
+                app._on_input(CTRL_ENTER)
+                app.plan_mode = True  # a mode switched on since: the line is not wrapped again
+                answer(app, client, refusal.get("result"), refusal.get("error"))
+                self.assertIs(app.queued[0], first)
+                self.assertEqual([line.text for line in app.queued], ["first queued", "second queued"])
+                self.assertIn("back at the head of the queue", steers(app)[0])
 
     def test_the_send_now_key_leaves_a_shell_line_or_a_command_s_prompt_queued_and_shows_no_row(self) -> None:
         for head in (QueuedLine("ls", "!ls", shell=True), QueuedLine("skill prompt", typed="/myskill go")):
@@ -457,11 +465,48 @@ class SteerTests(unittest.TestCase):
                 app._on_input(CTRL_ENTER)
                 self.assertEqual((client.calls, len(app.queued)), ([], 2))
 
-    def test_a_plan_mode_prompt_is_sent_now_as_typed(self) -> None:
+    def test_a_plan_mode_prompt_keeps_its_place_and_shows_no_row(self) -> None:
+        # A plan request must not land in a turn that can edit: it waits, as a `!` line and a skill's prompt do.
         app, client = make_app(busy=True)
-        app.queued.append(QueuedLine(PLAN_PROMPT, typed="fix the flaky test"))
-        app._on_input(CTRL_ENTER)
-        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "fix the flaky test"})])
+        app.queued.extend([QueuedLine(PLAN_PROMPT, typed="fix the flaky test"), QueuedLine("later")])
+        self.assertIsNone(send_now_row(app))
+        for event in (CTRL_ENTER, STEER_FALLBACK_KEY):
+            app._on_input(event)
+        self.assertEqual((client.calls, len(app.queued)), ([], 2))
+
+    def test_the_send_now_key_needs_an_empty_composer_and_no_rewind_or_tell_row(self) -> None:
+        app, client = make_app(busy=True)
+        queue(app, "queued meanwhile")
+        type_text(app, "x")
+        app._on_input(STEER_FALLBACK_KEY)  # text typed: Ctrl+J adds a line, and nothing leaves the queue
+        self.assertEqual((app.composer.text, client.calls, len(app.queued)), ("x\n", [], 1))
+        for picked in ("rewind", "tell_draft"):
+            with self.subTest(picked=picked):
+                app, client = make_app(busy=True)
+                queue(app, "queued meanwhile")
+                setattr(app, picked, mock.sentinel.picked)  # a picked rewind, or an open tell row, takes what is sent
+                app._on_input(STEER_FALLBACK_KEY)
+                self.assertEqual((client.calls, len(app.queued)), ([], 1))
+
+    def test_a_sent_now_steer_the_turn_had_not_read_comes_back_when_the_turn_is_stopped(self) -> None:
+        for read in (False, True):
+            with self.subTest(read_by_the_turn=read):
+                app, client = make_app(busy=True)
+                queue(app, "first queued", "second queued")
+                app._on_input(CTRL_ENTER)
+                answer(app, client, {"status": "queued", "text": "first queued"})
+                if read:  # a tool finished after Hermes took it, then the turn took its next step: it read it
+                    for kind in ("tool.complete", "tool.start"):
+                        app._on_event(Event(kind, SID, {"tool_id": "t1", "name": "terminal"}))
+                app.interrupting = True
+                app._on_event(Event("message.complete", SID, {"text": "stopped"}))
+                said = app_module.SENT_NOW_DROPPED_NOTICE.format(count=1, s="")
+                if read:
+                    self.assertEqual(app.composer.text, "second queued")
+                    self.assertNotIn(said, notices(app, NOTICE_WARN))
+                else:  # Hermes dropped it with the turn: it is queued again ahead of the rest, and both come back
+                    self.assertEqual(app.composer.text, "first queued\nsecond queued")
+                    self.assertIn(said, notices(app, NOTICE_WARN))
 
     def test_no_send_now_row_between_turns_or_while_the_queue_is_held(self) -> None:
         app, _client = make_app()
@@ -473,14 +518,20 @@ class SteerTests(unittest.TestCase):
         self.assertIsNone(send_now_row(app))
         self.assertIn("held · ↑ edit", "\n".join(drawn(app)))
 
-    def test_ctrl_j_steers_a_running_turn_and_adds_a_line_between_turns(self) -> None:
+    def test_ctrl_j_with_text_adds_a_line_during_a_turn_and_ctrl_enter_steers_it(self) -> None:
         for data in (b"\n", b"\x1b[106;5u", b"\x1b[27;5;106~"):  # a line feed, or Ctrl+J as either report sends it
             with self.subTest(data=data):
                 app, client = make_app(busy=True)
+                queue(app, "queued meanwhile")
                 type_text(app, "use the other file")
                 app._take_input(data)
-                self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "use the other file"})])
-                self.assertEqual(app.composer.text, "")
+                self.assertEqual((app.composer.text, client.calls), ("use the other file\n", []))  # a line, as idle
+        app, client = make_app(busy=True)
+        queue(app, "queued meanwhile")
+        type_text(app, "use the other file")
+        app._take_input(CTRL_ENTER_BYTES)  # Ctrl+Enter with text steers the text; the queue stays as it was
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "use the other file"})])
+        self.assertEqual([line.text for line in app.queued], ["queued meanwhile"])
         app, client = make_app()
         type_text(app, "first")
         app._take_input(b"\n")
@@ -539,7 +590,8 @@ class DocumentedSteerTests(unittest.TestCase):
         self.assertIn("A steer Hermes does not take waits in the TUI's own queue for the running turn to end, whatever "
                       "the busy mode, so it never interrupts that turn.", self.prose("docs/OMH-TUI-BOUNDARY.md"))
         seconds = f"{app_module.CALL_ANSWER_SECONDS:g}"
-        self.assertIn(f"A steer Hermes does not answer within {seconds} s goes back to the composer and is never re-sent.",
+        self.assertIn(f"A steer Hermes does not answer within its answer budget ({seconds} s, longer when held behind a "
+                      "/compress) goes back to the composer and is never re-sent.",
                       self.prose("docs/OMH-TUI-BOUNDARY.md"))
 
 
@@ -594,8 +646,9 @@ class SteerReplayTests(AppTestCase):
         run = self.steer_run("queued", "plain_turn")
         terminal = run.terminal
         terminal.script(
-            # One read: Ctrl+J, a bare line feed in raw mode, lands while the first prompt's turn is pending.
-            Step(b"first prompt\rsecond prompt\n", when=terminal.idle, label="idle"),
+            # One read: a second prompt queued while the first prompt's turn is pending, then Ctrl+J, a bare line
+            # feed in raw mode, on the empty composer: it sends the queued prompt now.
+            Step(b"first prompt\rsecond prompt\r\n", when=terminal.idle, label="idle"),
             Step(b"\x04", when=lambda: "↪ steer queued by Hermes · second prompt" in terminal.history() and terminal.idle(), label="steered"),
         )
         self.run_main(run)

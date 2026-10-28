@@ -29,6 +29,7 @@ from omh.tui.terminal import (
     KITTY_KEYBOARD_POP,
     KITTY_KEYBOARD_PUSH,
     KITTY_KEYBOARD_QUERY,
+    XTVERSION_QUERY,
     MODIFY_OTHER_KEYS_OFF,
     MODIFY_OTHER_KEYS_ON,
     MOUSE_REPORTING_OFF,
@@ -462,8 +463,8 @@ class TerminalPtyTests(unittest.TestCase):
             os.write(self.master, b"ab\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[7;1R\x1b[?62;22cz")
             colour, typed, row = term.query_background()
             self.assertEqual((colour, typed, row), ("#FFFFFF", b"abz", 7))
-            written = (BACKGROUND_QUERY + CURSOR_POSITION_QUERY + KITTY_KEYBOARD_QUERY + DEVICE_ATTRIBUTES_QUERY).encode()
-            self.assertEqual(self.master_output(), written)  # DA1 last: its answer still ends the wait
+            written = BACKGROUND_QUERY + CURSOR_POSITION_QUERY + XTVERSION_QUERY + KITTY_KEYBOARD_QUERY + DEVICE_ATTRIBUTES_QUERY
+            self.assertEqual(self.master_output(), written.encode())  # DA1 last: its answer still ends the wait
 
     def test_every_terminal_is_asked_for_its_kitty_flags_and_the_answer_goes_to_the_decoder(self) -> None:
         startup = (BACKGROUND_QUERY + CURSOR_POSITION_QUERY + KITTY_KEYBOARD_QUERY + DEVICE_ATTRIBUTES_QUERY).encode()
@@ -483,6 +484,35 @@ class TerminalPtyTests(unittest.TestCase):
                         self.assertEqual(term.query_background(), (None, answer, 7))  # the decoder reads it
                         self.assertEqual(self.master_output(), startup)  # before DA1: answered inside the wait
                         self.assertEqual(term.keyboard_protocol, program != "Apple_Terminal")
+
+    def test_an_unnamed_terminal_gets_the_push_only_when_xtversion_names_a_known_one(self) -> None:
+        # Over SSH TERM_PROGRAM rarely arrives: the terminal is asked its name (XTVERSION) with the kitty query.
+        startup = BACKGROUND_QUERY + CURSOR_POSITION_QUERY + XTVERSION_QUERY + KITTY_KEYBOARD_QUERY + DEVICE_ATTRIBUTES_QUERY
+        cases = {
+            b"\x1bP>|kitty(0.35.2)\x1b\\": True,
+            b"\x1bP>|WezTerm 20240203-110809-5046fc22\x07": True,
+            b"\x1bP>|ghostty 1.1.3\x1b\\": False,  # its kitty mode drops Alt from Backspace
+            b"\x1bP>|iTerm2 3.5.10\x1b\\": False,  # not known to read the flag as the TUI does
+            b"": False,  # no name before the attributes: an unnamed answer may be Ghostty's
+        }
+        for name, pushed in cases.items():
+            with self.subTest(name=name):
+                with Terminal(self.slave, self.slave, environ={"TERM": "xterm-256color"}) as term:
+                    self.master_output()
+                    os.write(self.master, name + b"\x1b[?0u\x1b[?62;22c" + (b"\x1b[?1u\x1b[?62;22c" if pushed else b""))
+                    _colour, typed, _row = term.query_background()
+                    self.assertNotIn(b"\x1bP", typed)  # the name is an answer, never a key
+                    again = KITTY_KEYBOARD_PUSH + KITTY_KEYBOARD_QUERY + DEVICE_ATTRIBUTES_QUERY if pushed else ""
+                    self.assertEqual(self.master_output(), (startup + again).encode())
+                    self.assertEqual(term.keyboard_protocol, pushed)
+
+    def test_a_kitty_answer_after_the_attributes_answer_is_no_reason_to_push(self) -> None:
+        with Terminal(self.slave, self.slave, environ={"TERM_PROGRAM": "otty"}) as term:
+            self.master_output()
+            os.write(self.master, b"\x1b[?62;22c\x1b[?0u")  # a late answer: the decoder reads it, nothing is pushed
+            self.assertEqual(term.query_background(), (None, b"\x1b[?0u", None))
+            self.assertNotIn(KITTY_KEYBOARD_PUSH.encode(), self.master_output())
+            self.assertFalse(term.keyboard_protocol)
 
     def test_a_push_on_the_answer_is_popped_on_exit_and_pushed_again_after_a_stop(self) -> None:
         term = Terminal(self.slave, self.slave, environ={"TERM_PROGRAM": "otty"})

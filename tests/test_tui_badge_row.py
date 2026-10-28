@@ -183,6 +183,51 @@ class StatusTests(unittest.TestCase):
             self.assertIsNotNone(seen[0].wait(timeout=2.0), "git is gone with the watcher")
 
 
+class LongBranchTests(unittest.TestCase):
+    """A 63-character branch at 40, 80 and 120 columns (#2361 review H1): the fields go, then the name is cut, then
+    the badge shortens; the plan label keeps its words; the badge and the branch never leave the line empty."""
+
+    BRANCH = "feature/really-long-branch-name-for-the-steer-key-hint-work-063"
+
+    def bottom(self, scene: str, cols: int) -> str:
+        from types import SimpleNamespace
+
+        from test_tui_modes import drawn, make_app, queue, show_mode
+        from omh.tui.frame import MODE_PLAN
+
+        app, _client = make_app(cols=cols, busy=scene == "busy-queue")
+        app.git = SimpleNamespace(state=GitState(self.BRANCH, 3, 2), refresh=lambda: None, stop=lambda: None)
+        app.model, app.context_percent, app.effort = "claude-opus-5-5", 50.0, "high"
+        if scene == "plan":
+            show_mode(app, MODE_PLAN)
+        if scene == "busy-queue":
+            queue(app, "then stop")
+        screen = [row for row in drawn(app) if row]
+        if scene == "busy-queue":
+            self.assertIn("  ctrl+j to send now · ↑ to edit", screen)  # the queue's own row keeps its key
+        return screen[-1]
+
+    def test_every_scene_at_every_width(self) -> None:
+        self.assertEqual(len(self.BRANCH), 63)
+        expected = {
+            ("idle", 40): "  [ ⚚ OMH ]  branch:feature/rea… | !3 ?2",
+            ("idle", 80): "  [ ⚚ OMH Native ]  branch:feature/really-long-bra… | !3 ?2              ctx 50%",
+            ("idle", 120): "  [ ⚚ OMH Native ]  branch:feature/really-long-branch-name-for-the-steer-key-hint-work-063 | !3 ?2"
+                           "               ctx 50%",
+            ("plan", 40): "  ⏸ plan mode on (⇧⇥ to cycle)   ctx 50%",
+            ("plan", 80): "  [ ⚚ OMH Native ]  branch:feature/rea… | !3 ?2  ⏸ plan mode on (⇧⇥ to cycle)",
+            ("plan", 120): "  [ ⚚ OMH Native ]  branch:feature/really-long-bra… | !3 ?2  ⏸ plan mode on (⇧⇥ to cycle)"
+                           "          ctx 50% · effort high",
+            ("busy-queue", 40): "  [ ⚚ OMH ]  branch:feature/rea… | !3 ?2",
+            ("busy-queue", 80): "  [ ⚚ OMH Native ]  branch:feature/really-long-bra… | !3 ?2              ctx 50%",
+            ("busy-queue", 120): "  [ ⚚ OMH Native ]  branch:feature/really-long-branch-name-for-the-steer-key-hint-work-063"
+                                 " | !3 ?2               ctx 50%",
+        }
+        for (scene, cols), row in expected.items():
+            with self.subTest(scene=scene, cols=cols):
+                self.assertEqual(self.bottom(scene, cols), row)
+
+
 class BottomLineTests(unittest.TestCase):
     """One line under the composer (owner, 2026-10-28): the badge at its left end, the branch first on its right."""
 
@@ -196,43 +241,43 @@ class BottomLineTests(unittest.TestCase):
                                    right=self.RIGHT, badge=badge_forms(self.THEME, accent, word),
                                    branch=branch_forms(state, self.THEME), **facts))  # type: ignore[arg-type]
 
-    def test_the_badge_on_the_left_and_the_branch_then_the_fields_on_the_right(self) -> None:
+    def test_the_badge_then_the_branch_on_the_left_and_the_fields_on_the_right(self) -> None:
         text = self.line(130)
         self.assertEqual(len(text), 130)
-        self.assertTrue(text.startswith("[ ⚚ OMH Native ]   "), text)  # the badge alone: the line names no `?` key
-        self.assertTrue(text.endswith("branch:omh/terminology-unification | !3 ?128 · deepseek-v4.1-flash · ctx 12% · "
-                                      "effort high"), text)
+        self.assertTrue(text.startswith("[ ⚚ OMH Native ]  branch:omh/terminology-unification | !3 ?128   "), text)
+        self.assertTrue(text.endswith("   deepseek-v4.1-flash · ctx 12% · effort high"), text)
 
-    def test_the_fields_go_first_then_the_badge_shrinks_and_the_label_and_the_branch_stay(self) -> None:
+    def test_the_fields_go_first_then_the_branch_name_then_the_badge(self) -> None:
         branch = "branch:omh/terminology-unification | !3 ?128"  # 44 cells
-        widths = {  # between turns the left side is the badge alone: 16 cells, 9 as `[ ⚚ OMH ]`, 1 as `⚚`; the gap 3
-            109: ("[ ⚚ OMH Native ]", branch + " · deepseek-v4.1-flash · ctx 12% · effort high"),
-            108: ("[ ⚚ OMH Native ]", branch + " · ctx 12% · effort high"),
-            87: ("[ ⚚ OMH Native ]", branch + " · ctx 12% · effort high"),
-            86: ("[ ⚚ OMH Native ]", branch),
-            63: ("[ ⚚ OMH Native ]", branch),
-            62: ("[ ⚚ OMH ]", branch),
-            56: ("[ ⚚ OMH ]", branch),
-            55: ("⚚", branch),
-            48: ("⚚", branch),
-            47: ("", branch),  # the badge goes whole before the branch shortens
-            46: ("", "branch:omh/terminology-unifica… | !3 ?128"),  # then the branch's name is cut
+        cut24, cut12 = "branch:omh/terminology-unifica… | !3 ?128", "branch:omh/termino… | !3 ?128"  # 41 and 29
+        badge = "[ ⚚ OMH Native ]  "  # the badge's 16 cells and 2; `[ ⚚ OMH ]` is 9, `⚚` 1; the right side 3 away
+        widths = {
+            108: (badge + branch, "deepseek-v4.1-flash · ctx 12% · effort high"),
+            107: (badge + branch, "ctx 12% · effort high"),
+            86: (badge + branch, "ctx 12% · effort high"),
+            85: (badge + branch, ""),  # the fields go first
+            62: (badge + branch, ""),
+            61: (badge + cut24, ""),  # then the branch's name is cut, before the badge shortens
+            59: (badge + cut24, ""),
+            58: (badge + cut12, ""),
+            47: (badge + cut12, ""),
+            46: ("[ ⚚ OMH ]  " + cut12, ""),  # then the badge
+            40: ("[ ⚚ OMH ]  " + cut12, ""),
+            39: ("⚚  " + cut12, ""),
+            32: ("⚚  " + cut12, ""),
+            31: (cut12, ""),
         }
         for width, (left, right) in widths.items():
             with self.subTest(width=width):
                 text = self.line(width)
                 self.assertLessEqual(len(text), width)
-                self.assertTrue(text.startswith(left + "   "), text)
-                self.assertTrue(text.endswith(right), text)
-        # The label's glyph beside the whole branch; narrower, the branch's name is cut to 24 cells.
-        self.assertEqual(self.line(50, mode="accept"), "⏵⏵    branch:omh/terminology-unification | !3 ?128")
-        self.assertEqual(self.line(46, mode="accept"), "⏵⏵   branch:omh/terminology-unifica… | !3 ?128")
+                self.assertEqual(text.rstrip() if not right else text[: len(left)], left)
+                self.assertTrue(text.endswith("   " + right) if right else text == left, text)
 
-    def test_counts_that_are_zero_are_left_out_and_no_repository_shows_no_branch(self) -> None:
-        self.assertTrue(self.line(120, GitState("main", 0, 0)).endswith("branch:main · deepseek-v4.1-flash · ctx 12% · "
-                                                                       "effort high"))
-        self.assertIn("branch:main | ?4 ·", self.line(120, GitState("main", 0, 4)))
-        self.assertNotIn("branch:", self.line(120, None))
+    def test_the_label_and_a_question_s_way_out_keep_their_words_before_the_badge_and_the_branch(self) -> None:
+        self.assertEqual(self.line(50, mode="accept"), "⏵⏵ accept all on (⇧⇥ to cycle)")  # nothing else fits beside
+        said = self.line(70, say="↑↓ pick · enter confirms · d or esc denies and stops")
+        self.assertEqual(said, "↑↓ pick · enter confirms · d or esc denies and stops")
 
     def test_the_badge_and_the_branch_keep_their_colours(self) -> None:
         word, accent = native("spectrum", "#0D1117")

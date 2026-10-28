@@ -93,9 +93,12 @@ class TableTests(unittest.TestCase):
                 self.assertTrue(said[0].startswith("↑↓ move · enter ") and said[0].endswith(" · esc closes"), said)
 
     def test_the_steer_row_names_the_key_and_the_command_that_works_everywhere(self) -> None:
-        # The info line names /steer until the terminal has sent a CSI u or modifyOtherKeys key; the list names both.
-        (steer,) = [does for keys, does in SHORTCUTS if keys.startswith("Ctrl+Enter")]
+        # Ctrl+Enter steers typed text where it is a key; /steer <text> works everywhere; the list names both, and
+        # the send-now row names Ctrl+J, which every terminal sends apart from Enter.
+        (steer,) = [does for keys, does in SHORTCUTS if keys == "Ctrl+Enter"]
         self.assertIn("/steer <text>", steer)
+        (send_now,) = [does for keys, does in SHORTCUTS if keys == "Ctrl+Enter, Ctrl+J"]
+        self.assertIn("oldest queued prompt", send_now)
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()

@@ -474,21 +474,24 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The info line under the composer, two cells in so it starts under the
   composer's text (on the edge on a terminal too small for the rules), is the
   one line under it. On the left it starts with `[ ⚚ OMH Native ]` in the
-  launch look's colours, then says the input mode or the keys that matter
-  right now; on the right it says the session directory's git branch
+  launch look's colours, then the session directory's git branch
   (`branch:<name> | !3 ?128`: tracked files changed, then untracked, each
   only when not zero; a detached HEAD by its short sha; nothing outside a
   repository, or on a terminal too small for the rules), read by `git status`
   off the screen's thread after each tool, each turn and every 15 seconds,
-  then the session's title once
-  Hermes names it, the model, how full the context is and the reasoning effort, as `branch:main · Fix the login bug ·
+  then the input mode or the keys that matter right now; on the right it says
+  the session's title once Hermes names it, the model, how full the context
+  is and the reasoning effort, as `Fix the login bug ·
   deepseek/deepseek-v4.1-flash · ctx 5% · effort medium` (the context in the warning colour from 80 % full
   and the error colour from 95 %; `ctrl+t effort` while no level is
-  known). As the line narrows, the fields after the branch shorten and then
-  go first; then the badge shortens to `[ ⚚ OMH ]`, then `⚚`, then goes;
-  then the left side's words shorten, and the branch, its name cut to `…`
-  where it must be, and the mode's label stay to the end. Between turns in
-  the normal mode the left side is the badge alone: the launch card names
+  known). As the line narrows, the right side's fields shorten and then go
+  first; then the branch's name is cut to `…` (24, then 12 cells); then the
+  badge shortens to `[ ⚚ OMH ]`, then `⚚`, then goes, and then the branch;
+  the mode's label, the agent count and what the next key does (a question's
+  or a picker's way out) keep their words until all of those are gone. Room
+  the left side leaves goes to the right side's shortest fitting form, so a
+  filling context still shows. Between turns in
+  the normal mode the left side is the badge and the branch: the launch card names
   `? every shortcut`, and `?` on an empty composer still opens the list that
   names every key. In accept all it reads `⏵⏵ accept all on (⇧⇥ to cycle)` in
   accept's colour and in plan `⏸ plan mode on (⇧⇥ to cycle)` in plan's;
@@ -1052,8 +1055,9 @@ Esc closes it):
 | Key | Does |
 | --- | --- |
 | Enter | Sends the composer |
-| `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line (Ctrl+J between turns; while one runs, it steers) |
-| Ctrl+Enter, Ctrl+J | While a turn runs, send into it now, as a steer, the composer's text, or on an empty composer the oldest queued prompt (the row under the queue names the key: Ctrl+Enter on a terminal that tells it from Enter, else Ctrl+J; `/steer <text>` too); idle, Ctrl+Enter sends as Enter does |
+| `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
+| Ctrl+Enter | While a turn runs, sends the composer's text into it now as a steer (`/steer <text>` too); idle, sends as Enter does |
+| Ctrl+Enter, Ctrl+J | While a turn runs, on an empty composer, send the oldest queued prompt into it now as a steer; the row under the queue names the key (Ctrl+J where the terminal has not shown it tells Ctrl+Enter from Enter). A queued `!` line, skill prompt or plan prompt waits its turn |
 | Tab | Completes a slash command, or the `@` reference being typed; on an open menu, Enter takes the highlighted row too, and sends a command already typed in full |
 | Shift+Tab | Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan (prompts go as /plan); while Hermes itself has approvals off, turns plan on and off |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max; the info line shows it as effort medium |
@@ -1105,13 +1109,17 @@ terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
 start-up query then asks every terminal which kitty flags are on (`CSI ? u`).
 A terminal it did not ask that answers speaks the protocol, so it is asked
 then (Otty with its `kitty-keyboard` setting on is one; never Ghostty); an
-answer that says the request took names Ctrl+Enter from the first frame.
-Both reports are switched off on exit, a crash, SIGTERM and SIGHUP included,
-and asked for again after Ctrl+Z and `fg`. Elsewhere, Terminal.app among
-them, both keys send what Enter sends, so there Ctrl+J is the steer key while
-a turn runs (every terminal sends it as a line feed, apart from Enter's
-carriage return) and `\` then Enter, Alt+Enter or Ctrl+J between turns adds
-a line; while a draft spans lines there (typed, or pasted), the info line
+answer that says the request took names Ctrl+Enter from the first frame. A
+terminal the environment does not name (over SSH, where `TERM_PROGRAM`
+rarely arrives) is also asked its name (XTVERSION) and is asked only when
+that names kitty, WezTerm, foot, Alacritty, Rio or Otty, since an unnamed
+answer may be Ghostty's. Both reports are switched off on exit, a crash,
+SIGTERM and SIGHUP included (a `kill -9` leaves them on, as it leaves raw
+mode), and asked for again after Ctrl+Z and `fg`. Elsewhere, Terminal.app
+among them, both keys send what Enter sends, so there Ctrl+J is the send-now
+key (every terminal sends it as a line feed, apart from Enter's carriage
+return); anywhere else, `\` then Enter, Alt+Enter or Ctrl+J adds a
+line; while a draft spans lines there (typed, or pasted), the info line
 says so (`⏎ sends · \⏎, alt+⏎ or ctrl+j adds a line`). A terminal on the
 list can ignore the request too (tmux with `extended-keys off`), so the row
 under the queued prompts names `ctrl+j` until the terminal shows it took the

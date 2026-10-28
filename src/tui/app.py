@@ -41,12 +41,13 @@ composer takes them back into the composer (a `!` line on its own, never
 joined to a prompt: `_recall_queue`). A turn the person interrupts does not
 start the next queued prompt: the queue comes back into the composer the
 same way, and what stays queued waits for the person (`_hold_queue`).
-Ctrl+Enter, Ctrl+J while a turn runs, and `/steer <text>` send what the
-person typed into the running turn (`session.steer`); on an empty composer
-the same keys send the oldest queued prompt instead, the person's own choice
-(`_send_queued_now`), and the TUI steers nothing on its own. Text Hermes does not take as a steer joins the TUI's queue while
-the turn runs, whatever the busy mode, and goes as a prompt once it ends;
-sent at once, it would interrupt or redirect the turn it was meant to steer.
+Ctrl+Enter and `/steer <text>` send what the person typed into the running
+turn (`session.steer`); on an empty composer Ctrl+Enter, or Ctrl+J, sends the
+oldest queued prompt instead, the person's own choice (`_send_queued_now`),
+and the TUI steers nothing on its own. Text Hermes does not take as a steer
+joins the TUI's queue while the turn runs, whatever the busy mode, and goes
+as a prompt once it ends; sent at once, it would interrupt or redirect the
+turn it was meant to steer.
 A steer answered after its session was left goes back to the composer
 instead: the session now live never receives it.
 
@@ -160,7 +161,6 @@ from .aura import aura_ranges
 from .layout import Budget, choice_cap, is_tiny, slot_cap
 from .markdown import clean_text
 from .modes import (
-    BADGE_GAP,
     HERMES_OWN_CYCLE,
     INFO_SEPARATOR,
     LABEL_SEPARATOR,
@@ -358,8 +358,9 @@ CHAINS_CLOSED_NOTICE = "Hermes asked you something, so /omh-model closed:"
 # What the info line says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
 # arrives as Enter and sends; longest first.
 NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
-# Ctrl+J: a line feed from every terminal in raw mode, where Enter is a carriage return, so it is the steer key no
-# terminal folds into Enter. While a turn runs it is Ctrl+Enter (`SEND_NOW_KEY`); between turns it adds a line.
+# Ctrl+J: a line feed from every terminal in raw mode, where Enter is a carriage return, so the send-now key no
+# terminal folds into Enter: on an empty composer with a prompt queued during a turn it is `SEND_NOW_KEY`; anywhere
+# else it adds a line.
 STEER_FALLBACK_KEY = Key(CHAR, "j", ctrl=True)
 SEND_NOW_KEY = Key(ENTER, ctrl=True)
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
@@ -501,7 +502,7 @@ TERMINATE_GRACE_SECONDS = 2.0
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
-NATIVE_WORD = "Native"  # the badge under the info line's last word, in the launch look's colours
+NATIVE_WORD = "Native"  # the last word of the badge that starts the info line, in the launch look's colours
 # The block logo goes above the banner from this many rows (and as many columns as it is wide): its six rows and
 # the blank under it leave the composer region its room there.
 LOGO_MIN_ROWS = 24
@@ -601,6 +602,12 @@ INTERRUPTING = "interrupting…"
 STEER_REFUSED_OUTCOME = "{fallback} — Hermes refused the steer ({reason})"
 STEER_FALLBACK_QUEUED = "queued"  # a turn still runs: the text waits in the TUI's queue for it to end
 STEER_FALLBACK_SENT = "sent as a prompt"
+STEER_FALLBACK_HEAD = "back at the head of the queue"  # a sent-now steer: the line it was, in its place
+# A sent-now steer Hermes took but had not read when the turn stopped: Hermes dropped it, so its line is queued again.
+SENT_NOW_DROPPED_OUTCOME = "back in the queue — the turn stopped before Hermes read it"
+SENT_NOW_DROPPED_NOTICE = "The turn stopped before Hermes read {count} prompt{s} you sent now; back in the queue."
+# Events of a further step of the turn: after a tool finished, one of these means Hermes read the steers it held.
+SENT_NOW_READ_EVENTS = frozenset({"tool.start", "message.delta", "thinking.delta", "reasoning.delta"})
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
 # A steer with no answer is no refusal: Hermes may have taken it, so its text is never sent again but given back.
 STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the steer in {seconds:g} s"
@@ -794,6 +801,15 @@ class _Pending:
     # A `/compress` call: Hermes' shared gateway serves this connection's calls one at a time, so every call sent
     # while it is out waits until the compression ends.
     compressing: bool = False
+
+
+@dataclass
+class SentNow:
+    """A queued prompt the send-now key steered into the turn and Hermes took, until the turn reads it."""
+
+    line: QueuedLine
+    block: SteerBlock
+    batch_done: bool = False  # a tool finished since Hermes took it: the turn's next step reads it
 
 
 class QueuedLine(NamedTuple):
@@ -1496,6 +1512,7 @@ class App(ModesMixin, AgentViewMixin):
         self.tell_turn_runs = False  # the turn whose approval the open tell field denied has not ended (`_tell`)
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
+        self.sent_now: list[SentNow] = []  # sent-now steers Hermes took and the turn has not read yet
         self.queue_held = False  # the queue waits for the person after an interrupt (`_hold_queue`)
         self.interrupting = False  # the person interrupted the running turn and Hermes has not ended it yet
         self.sticky = ""
@@ -1836,6 +1853,7 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
         self.interrupting = self.queue_held = False  # both were about the session being left
+        self.sent_now = []  # steers into the session being left: theirs to settle
         self.turn_unknown = None  # the drift watch was for a turn of the session being left
         self.busy_since = self.clock()
         self.turn_waited = 0.0
@@ -2534,6 +2552,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.tail_misses.pop(as_text(payload.get("subagent_id")), None)
         else:
             self.transcript.apply(event)
+            self._track_sent_now(event.type)
             self._count_streamed(event.type, payload)
             if event.type == "tool.complete" and isinstance(payload, Mapping):
                 self._dag_moment(payload)
@@ -2980,13 +2999,12 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and self._recall_queue(event):
             return
-        # While a turn runs Ctrl+J is Ctrl+Enter, unless a question, a picked agent steer or rewind, or a tell row takes
-        # what is sent: there, as between turns, it adds a line. On an empty composer either sends the oldest queued
-        # prompt into the turn now.
-        steer_keys = self._steer_keys_live()
-        if steer_keys and event == STEER_FALLBACK_KEY:
-            event = replace(event, name=ENTER, char="")
-        if steer_keys and event == SEND_NOW_KEY and not self.composer.text and self._queue_head_steers():
+        # The send-now key, as Claude Code's: while a turn runs, on an empty composer with a prompt queued that can be
+        # sent, Ctrl+Enter (or Ctrl+J, where Ctrl+Enter may arrive as Enter) sends the oldest queued prompt into the
+        # turn. Anywhere else Ctrl+J adds a line, and Ctrl+Enter with text typed steers that text.
+        if event in (SEND_NOW_KEY, STEER_FALLBACK_KEY) and not self.composer.text and self._steer_keys_live() and (
+            self._queue_head_steers()
+        ):
             self._send_queued_now()
             return
         before = self.composer.text
@@ -3952,6 +3970,7 @@ class App(ModesMixin, AgentViewMixin):
             self.interrupting = False
             self._hold_queue(INTERRUPTED_WHY)
         else:
+            self.sent_now = []  # the turn ended on its own: Hermes passes a steer it held on as the next turn
             self._drain_queue()
         self._check_default()
 
@@ -3967,6 +3986,7 @@ class App(ModesMixin, AgentViewMixin):
         starts a turn (`_submit_prompt`) or Up takes it back. A notice says
         which.
         """
+        self._requeue_unread_steers()
         if not self.queued:
             return
         draft = self._draft()
@@ -4103,28 +4123,32 @@ class App(ModesMixin, AgentViewMixin):
     # ── steering ──
 
     def _steer_keys_live(self) -> bool:
-        """Whether Ctrl+Enter and Ctrl+J steer now: a turn runs, and no question, picked agent steer or rewind, or
-        tell row takes what is sent."""
+        """Whether the send-now key can act now: a turn runs, and no question, picked agent steer or rewind, or tell
+        row takes what is sent."""
         return self._busy() and self.slot is None and (
             self.agent_steer is None and self.rewind is None and self.tell_draft is None
         )
 
     def _queue_head_steers(self) -> bool:
-        """Whether the oldest queued line is a prompt the person typed, which the send-now key can steer with; a
-        queued `!` line or a prompt a command built (a skill's) waits for the turn's end, and the lines behind it too,
-        so the queue keeps its order."""
+        """Whether the oldest queued line is a prompt the person typed as it is, which the send-now key can steer with.
+
+        A queued `!` line, a prompt a command built (a skill's) and one plan
+        mode wrapped (a plan request must not land in a turn that can edit)
+        wait for the turn's end, and the lines behind them too, so the queue
+        keeps its order: each of those has a `typed` form or is a shell line.
+        """
         head = self.queued[0] if self.queued else None
-        return head is not None and not head.shell and parse_slash(head.typed) is None
+        return head is not None and not head.shell and not head.typed
 
     def _send_queued_now(self) -> None:
         """The send-now key: the oldest queued prompt leaves the queue and goes into the running turn as a steer.
 
-        As typed: a prompt plan mode wrapped goes without the wrapper, as a
-        steer typed in plan mode does. A steer Hermes does not take comes
-        back as the next prompt, behind what is still queued (`_steer_refused`).
+        A steer Hermes does not take goes back to the head of the queue as
+        it was (`_steer_refused`); one it took but had not read when the turn
+        stopped goes back there too (`_requeue_unread_steers`).
         """
         line = self.queued.popleft()
-        self._steer(line.typed or line.text)
+        self._steer(line.text, line)
 
     def _steer_or_submit(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command or a `!` line, it is Enter.
@@ -4149,8 +4173,9 @@ class App(ModesMixin, AgentViewMixin):
         else:
             self._send_typed(arg)
 
-    def _steer(self, text: str) -> None:
-        """Send `text` into the running turn. Its only callers pass what the person typed and sent."""
+    def _steer(self, text: str, queued: QueuedLine | None = None) -> None:
+        """Send `text` into the running turn. Its only callers pass what the person typed and sent; `queued` is the
+        queue's line the send-now key took it from."""
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
@@ -4159,27 +4184,58 @@ class App(ModesMixin, AgentViewMixin):
         self._request(
             "session.steer",
             {"session_id": sid, "text": text},
-            lambda result: self._on_steered(sid, block, result),
-            lambda error: self._on_steer_refused(sid, block, error),
+            lambda result: self._on_steered(sid, block, result, queued),
+            lambda error: self._on_steer_refused(sid, block, error, queued),
             lambda seconds: self._on_steer_unanswered(sid, block, seconds),
             steer=block,
         )
 
-    def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any]) -> None:
+    def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any], queued: QueuedLine | None = None) -> None:
         if sid != self.sid:
             self._steer_back(block.text)
         elif as_text(result.get("status")) == contract.STEER_REJECTED:
-            self._steer_refused(block, STEER_REJECTED_REASON)
+            self._steer_refused(block, STEER_REJECTED_REASON, queued)
         else:
             self.transcript.steer_answered(block, STEER_QUEUED)
+            if queued is not None:  # Hermes holds it until the turn's next step reads it (`_track_sent_now`)
+                self.sent_now.append(SentNow(queued, block))
 
-    def _on_steer_refused(self, sid: str, block: SteerBlock, error: dict[str, Any]) -> bool:
+    def _on_steer_refused(
+        self, sid: str, block: SteerBlock, error: dict[str, Any], queued: QueuedLine | None = None
+    ) -> bool:
         """Hermes could not steer (an agent still starting, or one that takes no steer): the text is the next prompt."""
         if sid != self.sid:
             self._steer_back(block.text)
             return True
-        self._steer_refused(block, as_text(error.get("message")) or "refused")  # Hermes' words, not its code
+        self._steer_refused(block, as_text(error.get("message")) or "refused", queued)  # Hermes' words, not its code
         return True
+
+    def _track_sent_now(self, event_type: str) -> None:
+        """Forget a sent-now steer once the turn has read it.
+
+        Hermes holds a steer until the tool batch running when it came ends
+        (it joins those results) or the next model request starts, and drops
+        it if the turn is stopped first. So one is read once a tool finished
+        after Hermes took it and the turn has taken a further step (a tool
+        starts, or the model writes again).
+        """
+        if event_type == "tool.complete":
+            for sent in self.sent_now:
+                sent.batch_done = True
+        elif event_type in SENT_NOW_READ_EVENTS:
+            self.sent_now = [sent for sent in self.sent_now if not sent.batch_done]
+
+    def _requeue_unread_steers(self) -> None:
+        """The turn stopped: a sent-now steer Hermes took but had not read was dropped with it, so its line goes back
+        to the head of the queue, in order, its row says so, and a notice names how many."""
+        unread, self.sent_now = self.sent_now, []
+        for sent in reversed(unread):
+            self.queued.appendleft(sent.line)
+            self.transcript.steer_answered(sent.block, STEER_REFUSED, SENT_NOW_DROPPED_OUTCOME)
+        if unread:
+            count = len(unread)
+            self.transcript.add_notice(SENT_NOW_DROPPED_NOTICE.format(count=count, s="" if count == 1 else "s"),
+                                       NOTICE_WARN)
 
     def _on_steer_unanswered(self, sid: str, block: SteerBlock, seconds: float) -> None:
         """No answer in the `seconds` the call was waited for: the text comes back to the person and the row leaves.
@@ -4206,12 +4262,21 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.steer_answered(block, STEER_REFUSED, STEER_UNANSWERED_OUTCOME.format(seconds=seconds))
         self._give_back(block.text)
 
-    def _steer_refused(self, block: SteerBlock, reason: str) -> None:
+    def _steer_refused(self, block: SteerBlock, reason: str, queued: QueuedLine | None = None) -> None:
         """The steer says what became of its text (with Hermes' `reason`), which goes as the next prompt.
 
         While a turn runs it waits in the TUI's queue, whatever the busy mode;
-        only an idle session gets it as a prompt at once.
+        only an idle session gets it as a prompt at once. A sent-now steer
+        (`queued`) goes back to the head of the queue as the line it was, its
+        wrapper and chips kept, never wrapped again by the mode now on.
         """
+        if queued is not None:
+            self.queued.appendleft(queued)
+            fallback = STEER_FALLBACK_HEAD if self._busy() or self.queue_held else STEER_FALLBACK_SENT
+            self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
+            if not self._busy():
+                self._drain_queue()
+            return
         fallback = STEER_FALLBACK_QUEUED if self._busy() else STEER_FALLBACK_SENT
         self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
         self._send_typed(block.text, hold=True)
@@ -5502,8 +5567,8 @@ class App(ModesMixin, AgentViewMixin):
         elif self._newline_keys_due():
             say = NEWLINE_KEYS
         badge = self._badge_forms()
-        # The count is sized beside the badge's last form: the badge shortens before the count does.
-        room = cols - inset - chip_column(self._display_mode(), self.theme) - (line_width(badge[-1]) + BADGE_GAP if badge else 0)
+        # The count is sized on the whole line: the badge and the branch give way before the count does (`info_line`).
+        room = cols - inset - chip_column(self._display_mode(), self.theme)
         if isinstance(say, tuple):
             room -= cell_width(LABEL_SEPARATOR + say[max(len(say) - 2, 0)])
         listing = self.list_selected is not None or self.tree_selected is not None
@@ -5588,9 +5653,9 @@ class App(ModesMixin, AgentViewMixin):
 
         Asking the terminal for those reports is not enough, since a terminal
         on the list can ignore the request and send Ctrl+Enter as Enter. So
-        the info line names Ctrl+J, which steers on any terminal, until one of
-        those, and Ctrl+Enter from then on: from the first frame on a terminal
-        that answers the query.
+        the row under the queued prompts names Ctrl+J, which every terminal
+        sends apart from Enter, until one of those, and Ctrl+Enter from then
+        on: from the first frame on a terminal that answers the query.
         """
         return self.decoder.protocol_reported
 

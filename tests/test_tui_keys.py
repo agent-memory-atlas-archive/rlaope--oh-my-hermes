@@ -533,6 +533,16 @@ class ProtocolReportedTests(unittest.TestCase):
         decoder.feed(b"\x1b[?0u")  # a later answer with the flag off takes nothing back
         self.assertTrue(decoder.protocol_reported)
 
+    def test_a_late_xtversion_answer_is_no_key_and_alt_p_stays_alt_p(self) -> None:
+        # One unknown key, as an OSC answer is: it types nothing, whole or split across reads.
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"a\x1bP>|kitty(0.35.2)\x1b\\b"), [char("a"), Key("unknown"), char("b")])
+        split = decoder.feed(b"\x1bP") + decoder.feed(b">|WezTerm\x07") + decoder.feed(b"c")
+        self.assertEqual(split, [Key("unknown"), char("c")])
+        self.assertEqual(decode(b"\x1bPx"), [Key("char", "P", alt=True), char("x")])
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1bP") + decoder.flush(), [Key("char", "P", alt=True)])
+
     def test_a_report_that_decodes_to_no_key_says_nothing(self) -> None:
         decoder = KeyDecoder()
         self.assertEqual(decoder.feed(b"\x1b[99;9u\x1b[99;5:3u\x1b[27;9;99~"), [Key("unknown")] * 3)
