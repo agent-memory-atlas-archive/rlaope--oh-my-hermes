@@ -101,6 +101,9 @@ class Style:
     underline: bool = False
     reverse: bool = False
     depth: str = TRUECOLOR  # how its colours are painted (`COLOR_DEPTHS`)
+    # A cell that frames the text and is no part of it (a block's rail, a reply's margin): never painted differently,
+    # and left out of what the pager copies (`Pager.handle_mouse`).
+    gutter: bool = False
 
     def sgr(self) -> str:
         """The SGR sequence that turns this style on; "" for the default style."""

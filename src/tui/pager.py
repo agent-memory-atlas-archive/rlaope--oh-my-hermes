@@ -15,22 +15,48 @@ at the cost of one page.
 Keys: j / Down one line down, k / Up one line up, Space / PageDown a page
 down, b / PageUp a page up, g / Home the top, G / End the bottom, q / Esc
 leave.
+
+The mouse is the pager's while it is open (`handle_mouse`): the alternate
+screen has no scrollback of its own to take away, so the app asks for reports
+with a held button's motion there. The wheel scrolls the page `WHEEL_LINES`
+lines a notch (never a highlight: the bot board's list keeps its row). A drag
+selects the cells it passes over, shown reversed, and its release hands back
+their text to copy: the cells of `gutter` spans (a block's rail, a reply's
+margin) left out of both, each row's trailing spaces and the empty rows at
+either end dropped; a wide character is in when either of its cells is. A
+double click picks the word under it and a triple click the row, and hands
+back that; a click counts toward them only after a plain click on the same
+cell (released where it was pressed, with no motion) ended less than
+`CLICK_SECONDS` before, so a second drag from where the last one started is a
+drag. The wheel does nothing while a drag is under way (a trackpad's inertia
+keeps sending it). The selection is of the page on the screen, so a key, a
+scroll or the next press lets it go. `note` is a row the footer's last row
+shows instead, while the app keeps it there (what a copy did).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
-from .keys import CHAR, DOWN, END, ESCAPE, HOME, PAGE_DOWN, PAGE_UP, UP, Key, Paste
+from .keys import (
+    BUTTON_LEFT, CHAR, DOWN, END, ESCAPE, HOME, PAGE_DOWN, PAGE_UP, UP, WHEEL_DOWN, WHEEL_UP, Key, Mouse, Paste,
+)
 from .screen import HIDE_CURSOR, SYNC_BEGIN, SYNC_END, paint_line
 from .style import CSI, Line, Span
 from .theme import Theme
+from .width import cell_width
 
 ALT_SCREEN_ON = f"{CSI}?1049h"
 ALT_SCREEN_OFF = f"{CSI}?1049l"
-FOOTER_KEYS = "j/k line · space/b page · g/G ends · q leaves"
+FOOTER_KEYS = "j/k line · space/b page · g/G ends · drag copies · q leaves"
+WHEEL_LINES = 3  # what one wheel notch scrolls, as a terminal that turns the wheel into arrows sends it
+# A press this soon after a plain click released on the same cell is a double click (a word) or a triple (a row).
+CLICK_SECONDS = 0.5
+WORD_PUNCTUATION = "_-./~"  # what a double click keeps in a word besides letters and digits, as paths and names have
+ROW_END = 1 << 30  # the last column of a selection that runs to the end of its row
+Cell = tuple[int, int]  # a body cell of the screen: its row and its column, from 0
 # The most blocks a `HistoryPager` keeps rendered; one scrolled back to after it left is rendered again.
 HISTORY_BLOCKS_KEPT = 256
 
@@ -47,9 +73,19 @@ class Pager:
     title: str
     lines: Sequence[Line]
     top: int = 0
+    note: Line = field(default=(), init=False, repr=False, compare=False)  # the footer's last row while it is set
     # What the last frame left on each screen row (the line and its bytes), and the size it was drawn at.
     _painted: dict[int, tuple[Line, str]] = field(default_factory=dict, init=False, repr=False, compare=False)
     _size: tuple[int, int] | None = field(default=None, init=False, repr=False, compare=False)
+    _shown: list[Line] = field(default_factory=list, init=False, repr=False, compare=False)  # the last frame's page
+    # The selection's first and last cell as the mouse made them (either can be the earlier one), whether a drag is
+    # still making it, the press the button is still down for (its cell and its click count) and whether the
+    # pointer left that cell since, and the last plain click (its cell, when it was released, its click count).
+    _selection: tuple[Cell, Cell] | None = field(default=None, init=False, repr=False, compare=False)
+    _dragging: bool = field(default=False, init=False, repr=False, compare=False)
+    _down: tuple[Cell, int] | None = field(default=None, init=False, repr=False, compare=False)
+    _moved: bool = field(default=False, init=False, repr=False, compare=False)
+    _click: tuple[Cell, float, int] | None = field(default=None, init=False, repr=False, compare=False)
 
     def invalidate(self) -> None:
         """Forget what is on the screen: the next frame paints every row."""
@@ -84,6 +120,85 @@ class Pager:
             self._scroll_to_end(True, rows)
         return True
 
+    def handle_mouse(self, event: Mouse, rows: int, now: float) -> str:
+        """Act on one report; the text to copy when a drag ends or a double or triple click picks a word or a row,
+        else "" (a press, a drag still moving, a plain click, the wheel, a selection of nothing but blanks)."""
+        if event.button in (WHEEL_UP, WHEEL_DOWN):
+            if event.pressed and not self._dragging:
+                self.clear_selection()
+                self._scroll(WHEEL_LINES if event.button == WHEEL_DOWN else -WHEEL_LINES, rows)
+            return ""
+        body = self.body_rows(rows)
+        cell = (min(event.y, body) - 1, event.x - 1)  # a report counts from 1; one under the page is on its last row
+        if event.button == BUTTON_LEFT and event.pressed and not event.motion:
+            return self._pressed(cell, event.y > body, now)
+        down = self._down
+        if down is None:
+            return ""
+        if event.motion and event.pressed:  # the held button's motion
+            self._moved = self._moved or cell != down[0]
+            if self._dragging and self._selection is not None:
+                self._selection = (self._selection[0], cell)
+            return ""
+        if event.pressed:
+            return ""
+        self._down = None
+        self._click = (down[0], now, down[1]) if not self._moved else None  # a plain click, timed from its release
+        if not self._dragging or self._selection is None:
+            return ""
+        self._dragging = False
+        return self._selected() if self._selection[0] != self._selection[1] else self.clear_selection()
+
+    def clear_selection(self) -> str:
+        self._selection, self._dragging = None, False
+        return ""
+
+    def _pressed(self, cell: Cell, under_page: bool, now: float) -> str:
+        """A left press: the start of a drag, or with the one or two before it on the same cell, a word or a row."""
+        last, self._click = self._click, None
+        count = last[2] % 3 + 1 if last is not None and last[0] == cell and now - last[1] <= CLICK_SECONDS else 1
+        self.clear_selection()
+        if under_page:
+            self._down = None
+            return ""
+        self._down, self._moved = (cell, count), False
+        if count == 1:
+            self._selection, self._dragging = (cell, cell), True
+            return ""
+        row, column = cell
+        bounds = _word_at(self._shown[row] if row < len(self._shown) else (), column) if count == 2 else (0, ROW_END)
+        if bounds is None:
+            return ""
+        self._selection = ((row, bounds[0]), (row, bounds[1]))
+        return self._selected()
+
+    def _span_on(self, row: int) -> tuple[int, int] | None:
+        """The first and last column the selection holds on screen row `row`; None off it."""
+        if self._selection is None:
+            return None
+        first, last = sorted(self._selection)
+        if not first[0] <= row <= last[0]:
+            return None
+        return first[1] if row == first[0] else 0, last[1] if row == last[0] else ROW_END
+
+    def _selected(self) -> str:
+        """The selection's text, row by row, without gutter cells or trailing spaces; "" (and none kept) for blanks."""
+        if self._selection is None:
+            return ""
+        first, last = sorted(self._selection)
+        texts = []
+        for row in range(first[0], last[0] + 1):
+            low, high = self._span_on(row) or (0, -1)
+            line = self._shown[row] if row < len(self._shown) else ()
+            kept = (char for start, end, char, gutter in _cells(line) if start <= high and end >= low and not gutter)
+            texts.append("".join(kept).rstrip())
+        while texts and not texts[-1]:
+            texts.pop()  # a drag past the content: no empty rows after it
+        while texts and not texts[0]:
+            texts.pop(0)
+        text = "\n".join(texts)
+        return text if text.strip() else self.clear_selection()
+
     def _scroll(self, step: int, rows: int) -> None:
         self.top = min(max(self.top + step, 0), self._last_top(rows))
 
@@ -107,11 +222,15 @@ class Pager:
             self.invalidate()
             self._size = (cols, rows)
         shown, position = self._page(cols, rows, theme)
+        self._shown = shown
         parts: list[str] = []
         body = self.body_rows(rows)
         for row in range(body):
-            self._paint(row, shown[row] if row < len(shown) else (), cols, parts)
+            line, span = shown[row] if row < len(shown) else (), self._span_on(row)
+            self._paint(row, _reversed(line, *span) if span is not None else line, cols, parts)
         footer = self.footer(position, theme)
+        if self.note and footer:
+            footer = [*footer[:-1], self.note]
         for at, line in enumerate(footer):
             if rows - len(footer) + at >= 0:  # a screen shorter than the footer keeps its last rows, over the page
                 self._paint(rows - len(footer) + at, line, cols, parts)
@@ -129,6 +248,61 @@ class Pager:
         painted = paint_line(line, cols)
         self._painted[row] = (line, painted)
         parts.append(_move_to(row) + painted)
+
+
+def _cells(line: Line) -> list[tuple[int, int, str, bool]]:
+    """Each character of `line` with the first and last column it covers (a wide one two, a zero-width one its base's)
+    and whether it is a gutter's."""
+    cells: list[tuple[int, int, str, bool]] = []
+    at = 0
+    for span in line:
+        for char in span.text:
+            width = cell_width(char)
+            if width == 0 and cells:
+                cells.append((cells[-1][0], cells[-1][1], char, span.style.gutter))
+                continue
+            cells.append((at, at + max(width, 1) - 1, char, span.style.gutter))
+            at += width
+    return cells
+
+
+def _word_at(line: Line, column: int) -> tuple[int, int] | None:
+    """The first and last column of the word on `column` (letters, digits and `WORD_PUNCTUATION`); None on a blank,
+    a gutter or past the row's end."""
+    cells = _cells(line)
+
+    def in_word(index: int) -> bool:
+        _start, _end, char, gutter = cells[index]
+        return not gutter and (char.isalnum() or char in WORD_PUNCTUATION)
+
+    index = next((index for index, (start, end, _char, _gutter) in enumerate(cells) if start <= column <= end), None)
+    if index is None or not in_word(index):
+        return None
+    low = high = index
+    while low > 0 and in_word(low - 1):
+        low -= 1
+    while high + 1 < len(cells) and in_word(high + 1):
+        high += 1
+    return cells[low][0], cells[high][1]
+
+
+def _reversed(line: Line, low: int, high: int) -> Line:
+    """`line` with the characters on columns `low` to `high` (a wide one when either of its cells is) drawn reversed, a
+    selection's highlight; gutter cells keep their look, as the copy leaves them out."""
+    spans: list[Span] = []
+    cells = iter(_cells(line))
+    for span in line:
+        if not span.text:
+            spans.append(span)  # a fill: the row's background to its edge
+        for char in span.text:
+            start, end, _char, _gutter = next(cells)
+            lit = start <= high and end >= low and not span.style.gutter
+            style = replace(span.style, reverse=not span.style.reverse) if lit else span.style
+            if spans and spans[-1].text and spans[-1].style == style:
+                spans[-1] = Span(spans[-1].text + char, style)
+            else:
+                spans.append(Span(char, style))
+    return tuple(spans)
 
 
 def _no_rows(index: int, width: int, theme: Theme) -> list[Line]:

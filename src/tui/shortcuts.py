@@ -98,6 +98,9 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                                             "now; it reads again every 5 s by itself"),
     ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, an agent's log, this list), "
                                           "move a line, a page, or to either end, or leave"),
+    ("Drag, double click, triple click, wheel", "In a pager (/dag and the bot board too), select text and copy it "
+                                                "when you let go (without the rails), copy a word, copy a row, or "
+                                                "scroll three lines; the footer says what the copy did"),
 )
 
 TITLE = "OMH TUI keys"
