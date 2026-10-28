@@ -741,16 +741,21 @@ run and approval decision stays Hermes'; the screen is OMH's.
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal, and the keys still
   open the list and the logs.
-- A view on the alternate screen (Ctrl+O, `/history`, `/logs`, an agent's
-  log, the bot board, `/keys`) takes the mouse for itself, since that screen
-  has no scrollback for the terminal to scroll: the wheel scrolls it three
-  lines a notch, a drag selects text (shown reversed) and copies it when you
+- A view on the alternate screen (Ctrl+O, `/history`, `/logs`, `/dag`, an
+  agent's log, the bot board, `/keys`) takes the mouse for itself, since that
+  screen has no scrollback for the terminal to scroll: the wheel scrolls the
+  page three lines a notch (on the bot board too, where the highlight stays
+  on its row), a drag selects text (shown reversed) and copies it when you
   let go, without the rail a block hangs on or a reply's margin, a double
   click copies a word and a triple click a row, and a key or the wheel drops
-  the selection. The footer then says `✓ copied 694 chars to clipboard` for
+  the selection; the wheel does nothing while you drag. A second click
+  counts toward a double click only after a plain click on the same cell, so
+  dragging again from where the last drag started selects again. The footer then says `✓ copied 694 chars to clipboard` for
   2 s. The copy goes out as OSC 52 to kitty, Ghostty, WezTerm and Alacritty,
   which honour it as they ship; on a Mac the OMH TUI runs on locally (no SSH),
-  any other terminal, tmux included, gets it through `pbcopy`. Elsewhere it
+  any other terminal gets it through `pbcopy`, and so does tmux once `tmux
+  show-environment SSH_CONNECTION` says its last client did not attach over
+  SSH. Elsewhere it
   goes out as OSC 52 with nothing to confirm it, and the footer says `⚠ copy
   sent (terminal may not support OSC 52)` (under tmux, that tmux passes it on
   only with `set-clipboard on`). On the main screen the terminal's own
@@ -932,7 +937,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
   - Each block hangs on a continuous rail with no fill behind it, one cell
     painted in the rail's colour that holds a space, so selecting the text
-    in the terminal copies no bar with it (only the two leading spaces): grey
+    in the terminal copies no bar with it (only the two leading spaces;
+    with `NO_COLOR` set only a reply's and a call's rail is painted, so your
+    prompt is told apart by its `❯` and no bar): grey
     for your prompt, the theme's accent for what Hermes said (which opens
     with a header row, `⚚ Hermes · <model>`, bold in the rail's colour and
     the model the reply was written under muted), and a tool call's state colour for
@@ -1134,7 +1141,7 @@ Esc closes it):
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
 | ↑ / ↓, Enter or →, ← or Esc or q, r | On the bot board, move, open a profile's sessions or a session's last messages, go back (on the profiles, close the board), or read it again now; it reads again every 5 s by itself |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
-| Drag, double click, triple click, wheel | In a pager, select text and copy it when you let go (without the rails), copy a word, copy a row, or scroll three lines; the footer says what the copy did |
+| Drag, double click, triple click, wheel | In a pager (`/dag` and the bot board too), select text and copy it when you let go (without the rails), copy a word, copy a row, or scroll three lines; the footer says what the copy did |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS

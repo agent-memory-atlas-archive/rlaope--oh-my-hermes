@@ -192,7 +192,7 @@ from .panels import (
 )
 from .dag_pager import DagPager
 from .bot_board import BoardReader, BotBoard
-from .clipboard import COPY_OSC52, COPY_PBCOPY, copy_route, pbcopy
+from .clipboard import COPY_OSC52, COPY_PBCOPY, copy_route, pbcopy, tmux_client_over_ssh
 from .prompts import CLOSED_CHOICES, Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import (
     CARRIAGE_RETURN,
@@ -1565,6 +1565,7 @@ class App(ModesMixin, AgentViewMixin):
         self.copy_noted_at: float | None = None  # when the pager's footer started saying what a copy did
         self.platform = sys.platform  # where `copy_route` looks for `pbcopy`
         self.pbcopy: Callable[[str], bool] = partial(pbcopy, environ=environ)
+        self.tmux_over_ssh: Callable[[Mapping[str, str]], bool] = tmux_client_over_ssh  # `copy_route`'s tmux question
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         # What reads the bot board (Ctrl+S, `/bots`) off this thread: made when it first opens, kept for the session
         # and paused while the board is closed, so a read stuck on a stalled file system never adds a thread.
@@ -5026,7 +5027,7 @@ class App(ModesMixin, AgentViewMixin):
     def _copy_selection(self, text: str) -> Line:
         """Put `text` on the clipboard by `copy_route`, and the row that says so: copied when OSC 52 went to a terminal
         that honours it or `pbcopy` succeeded, sent otherwise (OSC 52 is never answered, so nothing confirms it)."""
-        route = copy_route(self.environ, self.platform)
+        route = copy_route(self.environ, self.platform, self.tmux_over_ssh)
         if route == COPY_PBCOPY and self.pbcopy(text):
             confirmed = True
         else:

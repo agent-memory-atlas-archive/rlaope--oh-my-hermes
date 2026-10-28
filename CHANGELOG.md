@@ -9,10 +9,11 @@ All notable changes will be documented here.
 - **Selecting the transcript no longer copies its left bar, and the pager
   copies on drag.** Each block's rail was a `┃` glyph, so a terminal's own
   selection pasted `┃` in front of every row. The rail is now one cell
-  painted in the block's colour (reverse video, so it shows under `NO_COLOR`
-  too) that holds a space: a copy on the main screen carries two leading
-  spaces and no bar. In a pager (Ctrl+O, `/history`, `/logs`, an agent's log,
-  the bot board) the TUI now takes the mouse: the wheel scrolls three lines,
+  painted in the block's colour (reverse video, so a reply's and a call's
+  still show under `NO_COLOR`, where your prompt's `❯` marks it alone) that
+  holds a space: a copy on the main screen carries two leading spaces and no
+  bar. In a pager (Ctrl+O, `/history`, `/logs`, `/dag`, an
+  agent's log, the bot board) the TUI now takes the mouse: the wheel scrolls three lines,
   a drag selects and copies on release without the rails or a reply's
   margin, a double click copies a word and a triple click a row, and the
   footer says `✓ copied N chars to clipboard`. The copy is OSC 52 for kitty,

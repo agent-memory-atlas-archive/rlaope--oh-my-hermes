@@ -105,7 +105,7 @@ from .gateway import Event
 from . import gateway_contract as contract
 from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
-from .style import Line, Span, Style, fill
+from .style import NO_COLOR, Line, Span, Style, fill
 from .slash import slash_spans, slash_token_ranges
 from .theme import TOOL_FAMILIES, Theme, kind_style, on_band
 from .width import cell_width, line_width, truncate, truncate_left, truncate_line
@@ -771,7 +771,7 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
         tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
         if line_width(rows[0]) + line_width(tag) <= inner:
             rows[0] = (*rows[0], *tag)
-    rows = [_within((*_rail(theme.dim), *row), width) for row in rows]
+    rows = [_within((*_rail(theme.dim, faint=True), *row), width) for row in rows]
     return _banded(rows, band) if band.bg is not None else rows
 
 
@@ -934,7 +934,7 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
         hidden = len(output) - OUTPUT_PREVIEW_ROWS
         more = OUTPUT_MORE.format(count=hidden, noun="row" if hidden == 1 else "rows")  # rows at this width
         output = [*output[:OUTPUT_PREVIEW_ROWS], truncate_line((*rest, Span(more, theme.muted)), width)]
-    return [_within((*_rail(theme.dim), *row), full) for row in rows + output]
+    return [_within((*_rail(theme.dim, faint=True), *row), full) for row in rows + output]
 
 
 def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model: str | None = "") -> list[Line]:
@@ -1025,15 +1025,18 @@ def _glinted(text: str, style: Style, band: int, theme: Theme) -> list[Span]:
     return spans
 
 
-def rail_cell(style: Style) -> Span:
+def rail_cell(style: Style, faint: bool = False) -> Span:
     """A rail's painted cell: a space in `style`'s colour, reversed so it shows without colour too. It holds no bar
-    glyph, so a terminal's selection copies none."""
-    return Span(RAIL[0], Style(fg=style.fg, reverse=True, depth=style.depth, gutter=True))
+    glyph, so a terminal's selection copies none. Without colour a `faint` one (your prompt's, which its `❯` marks
+    anyway) is left unpainted, so a reply's bar still differs from it: dim on a reversed space showed no difference
+    in Terminal.app (measured for #2371)."""
+    plain = faint and style.depth == NO_COLOR
+    return Span(RAIL[0], Style(fg=style.fg, reverse=not plain, depth=style.depth, gutter=True))
 
 
-def _rail(style: Style) -> Line:
+def _rail(style: Style, faint: bool = False) -> Line:
     """The rail's cells: the painted one (`rail_cell`) and the space before the text."""
-    return (rail_cell(style), Span(RAIL[1:], GUTTER))
+    return (rail_cell(style, faint), Span(RAIL[1:], GUTTER))
 
 
 def _within(row: Line, width: int) -> Line:

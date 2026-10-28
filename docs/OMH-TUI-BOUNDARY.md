@@ -203,8 +203,10 @@ leaves the list, and every other report there does nothing. In a pager the
 wheel scrolls, and a drag, a double click or a triple click copies what it
 selected, rails and a reply's margin left out: as OSC 52 to a terminal that
 honours it as it ships (kitty, Ghostty, WezTerm, Alacritty, outside tmux),
-through `pbcopy` on a Mac with no SSH between it and the screen, and otherwise
-as OSC 52 the footer says was only sent. A report that starts
+through `pbcopy` on a Mac with no SSH between it and the screen (inside tmux,
+only once a fixed `tmux show-environment SSH_CONNECTION` answers within 1 s
+that the variable is not set), and otherwise as OSC 52 the footer says was
+only sent. A report that starts
 while reporting is on, or within 0.5 s after it goes off, types nothing if it
 arrives whole within 0.8 s of its first byte. If 300 ms pass after that byte
 without the next, the byte is read as Esc, and the rest is dropped only if it
