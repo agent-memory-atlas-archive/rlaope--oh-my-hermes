@@ -244,7 +244,7 @@ All notable changes will be documented here.
   name in the skill hue, other commands keep that hue and their descriptions
   are muted. A prompt you sent runs on a band to the right edge, tinted by
   the launch look. The one line under the composer starts with
-  `[ ⚚ OMH Native ]` and shows the session directory's git branch with its
+  `[⚚ OMH Native]` and shows the session directory's git branch with its
   changed and untracked counts, read off the screen's thread, first on its
   right. The working row, the
   plan and the composer get a blank row between them where the terminal has
@@ -308,12 +308,12 @@ All notable changes will be documented here.
   read when the turn is stopped is queued again, with a notice. The info line
   no longer says `/steer <text> steers`; `/steer <text>` still works and
   stays in `/help` and the `?` list. The branch row is gone: the info line
-  starts with `[ ⚚ OMH Native ]` and the branch, then the mode and the keys
+  starts with `[⚚ OMH Native]` and the branch, then the mode and the keys
   that matter, with the title, model, context and effort on the right, and
   the row goes back to the transcript. Between turns it no longer says
   `? for shortcuts`: the launch card names `? every shortcut`, and `?` still
   opens the list. As the line narrows the right side's fields go first, then
-  the branch's name is cut, then the badge shortens to `[ ⚚ OMH ]` and `⚚`;
+  the branch's name is cut, then the badge shortens to `[⚚ OMH]` and `⚚`;
   the mode's label and a question's or picker's keys keep their words. The
   start-up query now asks every terminal for its kitty keyboard flags
   (`CSI ? u`): one that answers gets them pushed, Otty with its

@@ -592,7 +592,7 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run, CLOSED_EXIT)  # `omh` launched it: Hermes prints no epilogue, `omh` its card
         screen = run.terminal.captures["ready"]
         info = info_index(screen)
-        self.assertTrue(screen[info].startswith(INFO_INSET + "[ ⚚ OMH Native ]   "), screen)  # the badge alone on the left
+        self.assertTrue(screen[info].startswith(INFO_INSET + "[⚚ OMH Native]   "), screen)  # the badge alone on the left
         self.assertIn("v4.1-flash-ultrafast · ", screen[info])  # its short name beside the badge at 80 columns
         composer = info - 1 - UNDER_COMPOSER
         self.assertEqual(composer_text(screen[composer]), "❯ Ask Hermes anything", screen)
@@ -1342,20 +1342,20 @@ class InfoLineRightTests(unittest.TestCase):
             self.assertNotIn(gone, row)
 
     def test_the_model_shortens_first_then_goes_then_the_effort_then_the_context(self) -> None:
-        # The inset, the badge and the 3-cell gap take 21 cells; the right side takes the longest form that fits
+        # The inset, the badge and the 3-cell gap take 19 cells; the right side takes the longest form that fits
         # beside, and goes whole before the badge shortens.
         app = self.app()
         expected = {
-            82: f"{self.MODEL} · ctx 5% · effort high",
-            81: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            73: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            72: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            64: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            63: "ctx 5% · effort high",
-            41: "ctx 5% · effort high",
-            40: "ctx 5%",
-            27: "ctx 5%",
-            26: "",
+            80: f"{self.MODEL} · ctx 5% · effort high",
+            79: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            71: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            70: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            62: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            61: "ctx 5% · effort high",
+            39: "ctx 5% · effort high",
+            38: "ctx 5%",
+            25: "ctx 5%",
+            24: "",
         }
         self.assertEqual({width: self.right(app, width) for width in expected}, expected)
 

@@ -476,7 +476,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer and the info line on the bottom rows, the rows between them empty.
 - The info line under the composer, two cells in so it starts under the
   composer's text (on the edge on a terminal too small for the rules), is the
-  one line under it. On the left it starts with `[ ⚚ OMH Native ]` in the
+  one line under it. On the left it starts with `[⚚ OMH Native]` in the
   launch look's colours, then the session directory's git branch
   (`branch:<name> | !3 ?128`: tracked files changed, then untracked, each
   only when not zero; a detached HEAD by its short sha; nothing outside a
@@ -489,7 +489,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   and the error colour from 95 %; `ctrl+t effort` while no level is
   known). As the line narrows, the right side's fields shorten and then go
   first; then the branch's name is cut to `…` (24, then 12 cells); then the
-  badge shortens to `[ ⚚ OMH ]`, then `⚚`, then goes, and then the branch;
+  badge shortens to `[⚚ OMH]`, then `⚚`, then goes, and then the branch;
   the mode's label, the agent count and what the next key does (a question's
   or a picker's way out) keep their words until all of those are gone. Room
   the left side leaves goes to the right side's shortest fitting form, so a

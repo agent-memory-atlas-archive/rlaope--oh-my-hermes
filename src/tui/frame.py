@@ -222,11 +222,11 @@ def build_frame(
 
 
 def badge_forms(theme: Theme, accent: Style, native: Line) -> tuple[Line, ...]:
-    """`[ ⚚ OMH Native ]` and its shorter forms, longest first, for the left end of the info line: `[ ⚚ OMH ]`, then
+    """`[⚚ OMH Native]` and its shorter forms, longest first, for the left end of the info line: `[⚚ OMH]`, then
     the caduceus alone. `accent` paints the caduceus and `native` is `Native` in the launch look's colours."""
     return (
-        (Span("[ ", theme.dim), Span("⚚", accent), Span(" OMH ", theme.faint), *native, Span(" ]", theme.dim)),
-        (Span("[ ", theme.dim), Span("⚚", accent), Span(" OMH ]", theme.faint)),
+        (Span("[", theme.dim), Span("⚚", accent), Span(" OMH ", theme.faint), *native, Span("]", theme.dim)),
+        (Span("[", theme.dim), Span("⚚", accent), Span(" OMH]", theme.faint)),
         (Span("⚚", accent),),
     )
 

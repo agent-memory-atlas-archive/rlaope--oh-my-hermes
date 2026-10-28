@@ -5123,7 +5123,7 @@ class App(ModesMixin, AgentViewMixin):
         return self.launch_picker.highlighted if self.launch_picker is not None else self.launch_look
 
     def _badge_forms(self) -> tuple[Line, ...]:
-        """`[ ⚚ OMH Native ]` in the shown look and its shorter forms (`frame.badge_forms`), for the info line's left
+        """`[⚚ OMH Native]` in the shown look and its shorter forms (`frame.badge_forms`), for the info line's left
         end; none on a tiny terminal, which keeps its one line for what the keys do. Built again only when the look or
         the theme changed."""
         if is_tiny(self.size[1], self.size[0]):
