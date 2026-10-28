@@ -198,6 +198,7 @@ from .panels import (
     plan_text,
 )
 from .dag_pager import DagPager
+from .background import BackgroundProcess, askable, finished_line, report_prompt, running_line, tool_call
 from .bot_board import BoardReader, BotBoard
 from .clipboard import COPY_OSC52, COPY_PBCOPY, copy_route, pbcopy, tmux_client_over_ssh
 from .prompts import CLOSED_CHOICES, Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
@@ -812,7 +813,7 @@ class PollerLike(Protocol):
     def stop(self) -> None: ...
     def set_session(self, stored_id: str) -> None: ...
     def take(self) -> HudSnapshot | None: ...
-    def refresh(self) -> None: ...
+    def refresh(self) -> int: ...
     def watch_tokens(self, session_ids: Sequence[str]) -> None: ...
 
 
@@ -1609,6 +1610,16 @@ class App(ModesMixin, AgentViewMixin):
         self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
         # The session and the highest catch `seq` this transcript has accounted for (`_print_catches`).
         self.catch_seen: tuple[str, int] | None = None
+        # The background-process row (`background`): the session whose processes these are, the ones still running
+        # (oldest first), when each was last seen with no turn running and nothing to wake the session on its exit
+        # (on `clock`), and the ones that then ended unreported, in the order they ended, with when the first did
+        # (on `wall_clock`).
+        self.bg_session = ""
+        self.bg_running: tuple[BackgroundProcess, ...] = ()
+        self.bg_quiet: dict[str, float] = {}
+        self.bg_done: tuple[tuple[BackgroundProcess, ...], float] | None = None
+        # The poller's refresh count at the last turn's end: an older read may predate that end (`_take_background`).
+        self.bg_after = 0
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
@@ -2125,7 +2136,7 @@ class App(ModesMixin, AgentViewMixin):
             due.append(now + READ_TIMEOUT_SECONDS)
         if self.redraw_at is not None:
             due.append(self.redraw_at)
-        elif self._busy() or self._panel_live() or self._aura_live():
+        elif self._busy() or self._panel_live() or self._aura_live() or self._background_live():
             due.append(self.last_render + self._tick_seconds())
         if self.path_due is not None and self.sid:
             due.append(self.path_due)
@@ -2637,6 +2648,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.git.refresh()  # a tool or the turn may have changed the files or the branch
             if event.type == "message.start":
                 self._claimed()  # Hermes admitted the turn, so it took what was staged for it
+                self.bg_done = None  # the session is awake: the row's offer was for an idle one
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
                     self.turn_waited = 0.0
@@ -3195,6 +3207,8 @@ class App(ModesMixin, AgentViewMixin):
                 self._tell(action.text, action.shown, action.chips, images)
             elif steer:
                 self._steer_or_submit(action.text, action.shown, action.chips, images)
+            elif not action.text and self.bg_done is not None and self.agent_steer is None and self.rewind is None:
+                self._report_background()
             else:
                 self._submit(action.text, action.shown, action.chips, images=images)
         elif action.kind == INTERRUPT:
@@ -4074,6 +4088,7 @@ class App(ModesMixin, AgentViewMixin):
         self.sticky = shown or text
         self.flushed_since_prompt = 0
         self._clear_roster()  # the agents shown were the last turn's
+        self.bg_done = None  # a turn starts: the finished row's offer was for an idle session
         self.turn_pending = True
         self.turn_unknown, self.turn_unknown_count = [], 0
         self.busy_since = self.clock()
@@ -4186,6 +4201,7 @@ class App(ModesMixin, AgentViewMixin):
         # A turn ended before Hermes admitted it (refused, cancelled while the agent built) left what was staged for
         # it: detached. After `message.start` nothing is left (`_claimed` emptied `staged`).
         self._release_staged()
+        self.bg_after = self.poller.refresh()  # the background row stamps what still runs now (`_take_background`)
         if self.interrupting:
             self.interrupting = False
             self._hold_queue(INTERRUPTED_WHY)
@@ -5624,6 +5640,7 @@ class App(ModesMixin, AgentViewMixin):
             self.dirty = True
             self._retire_finished_plan()
             self._print_catches()
+            self._take_background(snapshot)
 
     def _print_catches(self) -> None:
         """One row per catch OMH made in this session since the last payload (`catch_lines`), as it happens.
@@ -5649,6 +5666,79 @@ class App(ModesMixin, AgentViewMixin):
             if seq > seen and line:
                 self.transcript.add_aside(NoticeBlock(line, one_line=True, mark=CATCH_MARK))
         self.catch_seen = (hud.session_id, max(seen, newest))
+
+    def _take_background(self, snapshot: HudSnapshot) -> None:
+        """The session's background processes from this read, and whether one ended unreported.
+
+        One ended unreported when it was last seen with no turn running since,
+        nothing could wake the session on its exit, its end could be asked
+        (`askable`), and no turn runs now. The row then says it finished and
+        the bell rings once; one that ends before that offer is taken joins
+        it. A process that ended while a turn ran just goes, and so does one
+        Hermes may report: `notify_on_complete` on, or watch patterns, which
+        Hermes turns into a completion notice in memory once they stop
+        matching (`process_registry`), with no checkpoint rewrite to show it.
+        One whose end cannot be asked just goes too, since its row also drops
+        when another interpreter rewrites the file. Another session's read
+        starts over and reports nothing. The first read after each turn is
+        always delivered (`_turn_ended` refreshes the poller), so a process
+        first seen during a turn is stamped quiet once it is over. Only a read
+        that started after that refresh stamps: one taken during the turn and
+        handed over after it may list a process that has since ended.
+        """
+        if snapshot.session_id != self.bg_session:
+            self.bg_session = snapshot.session_id
+            self.bg_running, self.bg_quiet, self.bg_done = (), {}, None
+        running = {process.proc_id for process in snapshot.processes}
+        ended = tuple(
+            process for process in self.bg_running
+            if process.proc_id not in running and not process.notify and not process.watched and askable(process)
+            and self.bg_quiet.get(process.proc_id, -math.inf) > self.busy_since
+        )
+        if ended and not self._busy():
+            done, at = self.bg_done or ((), self.wall_clock())
+            self.bg_done = (done + ended, at)
+            self._alert_background(ended[0])
+        self.bg_running = snapshot.processes
+        self.bg_quiet = {key: at for key, at in self.bg_quiet.items() if key in running}
+        if not self._busy() and snapshot.refreshes >= self.bg_after:
+            self.bg_quiet.update((process.proc_id, self.clock()) for process in self.bg_running)
+
+    def _alert_background(self, process: BackgroundProcess) -> None:
+        """The bell a question rings (`_alert_question`), once, as a process ends unreported; none with OMH_TUI_BELL=0."""
+        if self.environ.get(BELL_ENV) == BELL_OFF:
+            return
+        signal = attention_sequence(self.environ, truncate(f"{tool_call(process)} finished", QUESTION_ALERT_CHARS))
+        self.terminal.write(BELL if signal == BELL else BELL + signal)
+
+    def _report_background(self) -> None:
+        """Enter on an empty composer under a finished row: the one prompt that tells the session, and the row goes."""
+        done = self.bg_done
+        if done is None:
+            return
+        self.bg_done = None
+        self.dirty = True
+        self._send_prompt(report_prompt(done[0]))  # every process the row counts
+
+    def _background_line(self, cols: int) -> Line | None:
+        """The background-process row: the first process that ended unreported (and how many more did), else the
+        running one most at risk of going unnoticed (the newest Hermes will not wake the session for), else none."""
+        if self.bg_done is not None:
+            done, at = self.bg_done
+            return finished_line(done[0], ago=self.wall_clock() - at, theme=self.theme, width=cols, more=len(done) - 1)
+        if not self.bg_running:
+            return None
+        quiet = [process for process in self.bg_running if not process.notify and not process.watched]
+        shown = (quiet or list(self.bg_running))[-1]
+        glyph = WORKING_GLYPHS[self._spinner_frame() % len(WORKING_GLYPHS)]
+        return running_line(
+            shown, more=len(self.bg_running) - 1, now=self.wall_clock(), glyph=glyph, turn_runs=self._busy(),
+            theme=self.theme, width=cols,
+        )
+
+    def _background_live(self) -> bool:
+        """Whether the background-process row shows, so its spinner turns and its clock ticks."""
+        return bool(self.bg_running) or self.bg_done is not None
 
     def _retire_finished_plan(self) -> None:
         """Stop drawing a plan whose every item is done, once no turn runs, as Claude Code's list goes once done.
@@ -5705,7 +5795,8 @@ class App(ModesMixin, AgentViewMixin):
         if self.redraw_at is not None:
             return  # the screen is mid-reflow; the settled redraw paints it
         now = self.clock()
-        due = (self._busy() or self._panel_live() or self._aura_live()) and now - self.last_render >= self._tick_seconds()
+        due = (self._busy() or self._panel_live() or self._aura_live() or self._background_live()) \
+            and now - self.last_render >= self._tick_seconds()
         if not (self.dirty or due):
             return
         self.dirty = False
@@ -6160,21 +6251,26 @@ class App(ModesMixin, AgentViewMixin):
         if self.model_picker is not None:
             return self.model_picker.lines(cols, self.theme, cap)
         # Nothing has the keys, or the agent list under the info line has them (the slot keeps its rows then, so
-        # nothing moves): the queued prompts take the slot's last rows, right above the composer's top rule,
-        # Hermes' notification the row above them, Hermes' standing goal the row above that, and the menu or the
-        # plan gets the rows left. A question or the picker hides them, since Up then does not edit the queue.
+        # nothing moves): the background-process row takes the slot's last row, right above the composer's top
+        # rule, the queued prompts the rows above it, Hermes' notification the row above them, Hermes' standing goal
+        # the row above that, and the menu or the plan gets the rows left. A question or the picker hides them,
+        # since Up then does not edit the queue. With one row, the queue keeps it: its `↑ edit` says what Up does.
+        found = self._background_line(cols)
+        background = [found] if found is not None and (cap > 1 or not self.queued) else []
         hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
         send_now = self._steer_keys_live() and self._queue_head_steers()
         below = SEND_NOW_HINT.format(key=SEND_NOW_KEYS[self.keyboard_protocol]) if send_now else ""
-        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint, below)
-        notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
+        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap - len(background), self.theme,
+                            hint, below)
+        taken = len(background) + len(queue)
+        notice = [self.notification.line(cols, self.theme)] if self.notification and cap > taken else []
         shown = goal_line(self.goal, cols, self.theme)
-        goal = [shown] if shown is not None and cap > len(queue) + len(notice) else []
-        menu = self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal))
+        goal = [shown] if shown is not None and cap > taken + len(notice) else []
+        menu = self._menu_or_panel_lines(cols, cap - taken - len(notice) - len(goal))
         if self.menu_below:  # the menu goes under the composer, and the panel stays away as it does for the menu
             self.menu_under, menu = menu, []
             self.panel_shown = False
-        return menu + goal + notice + queue
+        return menu + goal + notice + queue + background
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:
