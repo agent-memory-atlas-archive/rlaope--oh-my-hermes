@@ -35,8 +35,8 @@ from pathlib import Path
 import sys
 
 from .config_adapter import (
+    anchored_external_dir,
     ensure_external_dir,
-    expand_external_dir_entry,
     external_dir_names_a_root,
     external_dirs,
     remove_external_dir_entries,
@@ -140,7 +140,12 @@ class RegistrationMigration:
 
 
 def migrate_managed_registration(
-    config_text: str, registered_dir: Path, candidates: Iterable[Path], *, current: Path | None = None
+    config_text: str,
+    registered_dir: Path,
+    candidates: Iterable[Path],
+    *,
+    hermes_home: Path,
+    current: Path | None = None,
 ) -> RegistrationMigration:
     """Register `registered_dir` and retire every OTHER managed candidate, in one text.
 
@@ -156,11 +161,14 @@ def migrate_managed_registration(
     older entry spelled through `~`, a trailing slash or a symlink is
     retired too -- Hermes expands and resolves every entry, and a spelling
     the migration could not match would be reported as an ambiguity that
-    `omh update` can never clear. A relative entry is never matched: Hermes
-    anchors it at its own home, so resolving it against this command's
-    working directory would name a directory Hermes never reads
-    (`external_dir_names_a_root`). An entry resolving to `registered_dir`
-    itself is one directory to Hermes and stays. Whether a home should be
+    `omh update` can never clear. Every entry is read the way Hermes reads
+    it in `hermes_home`, the home whose config this is
+    (`anchored_external_dir`): a relative one names a directory under that
+    home, never under this command's working directory, and a drive-less
+    rooted one on Windows sits on the home's drive. An entry naming
+    `registered_dir` in any of those spellings is not added beside, and an
+    entry resolving to `registered_dir` itself is one directory to Hermes and
+    stays. Whether a home should be
     registered at all, and whether this command may retire anything, are the
     caller's questions: this function always writes today's path, the
     opt-out rule (a home naming no managed directory is left alone) is
@@ -175,22 +183,22 @@ def migrate_managed_registration(
 
     Pure text work, so it can be run against a copy of a live config.
     """
-    change = ensure_external_dir(config_text, registered_dir)
+    change = ensure_external_dir(config_text, registered_dir, hermes_home=hermes_home)
     registered_real = _real_key(registered_dir)
     candidate_reals = {_real_key(candidate) for candidate in candidates}
     candidate_reals.discard(registered_real)
-    packs = set(generation_pack_entries(change.text, current))
+    packs = set(generation_pack_entries(change.text, current, hermes_home=hermes_home))
     to_retire = [
         entry
         for entry in external_dirs(change.text)
-        if entry in packs or _rooted_real_key(entry) in candidate_reals
+        if entry in packs or _anchored_real_key(entry, hermes_home) in candidate_reals
     ]
     removal = remove_external_dir_entries(change.text, to_retire)
     retired = list(to_retire) if removal.changed else []
     return RegistrationMigration(text=removal.text, added=change.changed, message=change.message, retired=retired)
 
 
-def generation_pack_entries(config_text: str, current: Path | None) -> list[str]:
+def generation_pack_entries(config_text: str, current: Path | None, *, hermes_home: Path) -> list[str]:
     """The registered entries that name one generation's own pack, gone or not.
 
     `current` is the shared pointer, `<root>/current/skills`, and every
@@ -205,36 +213,44 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     owns. Matched by the real path of the `generations` directory, so the
     entry's spelling through `~`, a trailing slash or a link to the root is
     the same entry; `generations/<id>` itself is not resolved, because the
-    pack it names may no longer exist. An entry is expanded the way Hermes
-    expands it (`expand_external_dir_entry`), so a spelling through `${VAR}`
-    is the same entry too. A relative entry is never one: Hermes anchors it at
-    its own home, so it names a directory there, not under the managed root,
-    whatever directory this command runs from (`external_dir_names_a_root`).
-    Config order is kept.
+    pack it names may no longer exist. An entry is read the way Hermes reads
+    it in `hermes_home` (`anchored_external_dir`), so a spelling through
+    `${VAR}` is the same entry, a relative one is one only when it reaches
+    the managed root from that home (`../m/generations/<id>/skills`), and a
+    drive-less rooted one on Windows sits on the home's drive -- whatever
+    directory, and drive, this command runs from. Config order is kept.
     """
     if current is None:
         return []
     generations = _real_key(current.parent.parent / "generations")
     entries: list[str] = []
     for entry in external_dirs(config_text):
-        normalized = os.path.normpath(expand_external_dir_entry(entry))
-        if not external_dir_names_a_root(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
+        anchored = _anchored(entry, hermes_home)
+        if anchored is None:
+            continue
+        normalized = os.path.normpath(anchored)
+        if os.path.normcase(os.path.basename(normalized)) != "skills":
             continue
         if _real_key(os.path.dirname(os.path.dirname(normalized))) == generations:
             entries.append(entry)
     return entries
 
 
-def _rooted_real_key(entry: str) -> str | None:
-    """The real-path key of an entry Hermes reads from a root, else None.
+def _anchored(entry: str, hermes_home: Path) -> str | None:
+    """`entry` as Hermes reads it in `hermes_home`, or None when that is not rooted.
 
-    A relative entry names a directory under Hermes' home, which no reader
-    here is given; resolved against this command's working directory it
-    could be taken for a managed directory when OMH runs from the managed
-    root.
+    Only a drive-relative entry on a drive other than the home's stays
+    unrooted; Hermes resolves it against its own process's directory on that
+    drive, which no command here can know, so it is never matched.
     """
-    expanded = expand_external_dir_entry(entry)
-    return _real_key(expanded) if external_dir_names_a_root(expanded) else None
+    anchored = anchored_external_dir(entry, hermes_home)
+    return anchored if external_dir_names_a_root(anchored) else None
+
+
+def _anchored_real_key(entry: str, hermes_home: Path) -> str | None:
+    """The real-path key of the directory Hermes reads for `entry`, else None."""
+    anchored = _anchored(entry, hermes_home)
+    return None if anchored is None else _real_key(anchored)
 
 
 def _real_key(path: str | Path) -> str:
@@ -246,7 +262,7 @@ def _real_key(path: str | Path) -> str:
 
 
 def registered_managed_entries(
-    config_text: str, candidates: Iterable[Path], *, current: Path | None = None
+    config_text: str, candidates: Iterable[Path], *, hermes_home: Path, current: Path | None = None
 ) -> list[str]:
     """The registered entries that name a managed directory present on disk, one per real directory.
 
@@ -256,26 +272,26 @@ def registered_managed_entries(
     once; two that resolve to different directories are the ambiguity. An
     entry whose directory is not on disk is not counted at all: Hermes skips
     a missing external directory when it collects skills, so nothing can be
-    ambiguous through it. A relative entry is not counted either: Hermes
-    reads it under its own home, never under this command's working
-    directory (`_rooted_real_key`). Config order is kept so a message names
-    them the way the file does.
+    ambiguous through it. Every entry is read the way Hermes reads it in
+    `hermes_home` (`_anchored_real_key`), never against this command's
+    working directory or drive. Config order is kept so a message names them
+    the way the file does.
 
     With `current`, the shared pointer, an entry naming one generation's own
     pack is managed too (`generation_pack_entries`): beside the pointer it
     becomes a second directory as soon as the pointer moves on.
     """
-    packs = generation_pack_entries(config_text, current)
-    candidates = [*candidates, *(Path(expand_external_dir_entry(entry)) for entry in packs)]
+    packs = generation_pack_entries(config_text, current, hermes_home=hermes_home)
+    candidates = [*candidates, *(Path(anchored_external_dir(entry, hermes_home)) for entry in packs)]
     keys = {external_dir_key(candidate) for candidate in candidates}
     reals = {_real_key(candidate) for candidate in candidates}
     seen: set[str] = set()
     entries: list[str] = []
     for entry in external_dirs(config_text):
-        real = _rooted_real_key(entry)
+        real = _anchored_real_key(entry, hermes_home)
         if real is None or (external_dir_key(entry) not in keys and real not in reals):
             continue
-        if not os.path.isdir(expand_external_dir_entry(entry)):
+        if not os.path.isdir(anchored_external_dir(entry, hermes_home)):
             continue
         if real in seen:
             continue

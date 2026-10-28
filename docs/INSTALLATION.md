@@ -2877,7 +2877,9 @@ the same config write that registers the pointer: the older OMH-managed
 entry is retired, matched by real path the way Hermes resolves entries (a
 spelling through `${VAR}`, `~`, a trailing slash or a symlink is the same
 directory; an unset variable stays as written, as it does in Hermes, and a
-relative entry, which Hermes reads under its own home, never matches),
+relative entry is read under the home that names it, as Hermes reads it,
+so `../.omh/skills` in `~/.hermes` is the older entry and the directory
+the command runs from never matters),
 the home ends up naming exactly one managed directory, and the update
 prints the move (`Bot profile <name>: registration migrated from <old> to
 <new>.`; `Hermes registration migrated ...` for the primary home). Only
@@ -2896,11 +2898,12 @@ update retire every such entry, from the primary home and every bot
 profile, whether the generation is still on disk or already collected, and
 a home naming only one is migrated to the pointer rather than read as the
 opt-out; `omh uninstall --registration-only` removes them too. Only
-absolute entries under the pointer's own managed root match: a `skills`
-directory under some other `generations/` directory, and any relative
-entry (Hermes anchors those at its own home), stay. On Windows an entry
-rooted without a drive, such as `\omh\...`, is not relative: Hermes loads it
-from its home's drive, and it matches. Entries are expanded in the running
+entries that name a directory under the pointer's own managed root, read
+from the home that names them, match: a `skills` directory under some
+other `generations/` directory stays, and a relative entry matches only
+when it reaches the managed root from that home. On Windows an entry
+rooted without a drive, such as `\omh\...`, is read on the home's drive,
+whichever drive the command runs from. Entries are expanded in the running
 command's environment, which a Hermes service may not share.
 `omh doctor` reports a home that still names two managed directories on
 disk, an older generation's pack beside the pointer included, as

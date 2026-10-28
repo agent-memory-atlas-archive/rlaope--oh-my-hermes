@@ -220,6 +220,30 @@ class SharedStoreUninstallTests(_Fixture):
 
         self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
 
+    def test_a_skills_reference_relative_to_a_second_profile_protects_the_store(self) -> None:
+        # The twin of the primary case: the reference sits in another bot
+        # profile and is read under that profile's own home, where
+        # `../../../omh/skills` reaches this store. Anchored at the primary,
+        # or at the cwd, it names nothing.
+        bot = self.hermes / "profiles" / "bot"
+        other = self.hermes / "profiles" / "other"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        self._profile_binding(other, self.root / "other-runtime")
+        config_path = other / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ../../../omh/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with TemporaryDirectory() as unrelated:
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                plan = store_removal_plan(paths, remove_profiles=False)
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(other)]))
+
     def test_shared_store_dry_run_does_not_delete_or_rewrite_files(self) -> None:
         """Mutation control, independently of whether the proposed plan is safe."""
         bot = self.hermes / "profiles" / "bot"
