@@ -26,7 +26,7 @@ from ..coding.model_recommendations import (
     SHIPPED_MODEL_RECOMMENDATIONS,
     resolve_model_recommendation,
 )
-from ..config_adapter import external_dirs, read_config
+from ..config_adapter import anchor_external_dir_entry, external_dirs, read_config
 from ..paths import default_hermes_home, expand_path, find_project_root
 from ..plugin_bundle.omh import hermes_memory
 from ..plugin_bundle.omh.memory_dreaming import MODE_SETTING_UNRECOGNIZED, read_dreaming_mode_setting
@@ -863,7 +863,7 @@ def _derive_skill_dirs(hermes_home: Path) -> list[Path]:
     config_text = read_config(config_path)
     dirs: list[Path] = []
     for raw in external_dirs(config_text):
-        candidate = Path(raw).expanduser()
+        candidate = anchor_external_dir_entry(raw, hermes_home)
         if candidate.is_dir():
             dirs.append(candidate)
     return dirs

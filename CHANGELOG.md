@@ -74,6 +74,23 @@ All notable changes will be documented here.
   collected; only the installer-managed command, which retires the pack in
   the same write, counts it as a registration. A relative entry, which
   Hermes anchors at its own home, never matches.
+- **A skills entry spelled through `${VAR}` is matched the way Hermes reads
+  it.** Hermes expands `${VAR}` and `~` in `skills.external_dirs` before it
+  resolves an entry, but setup, update and `omh doctor` expanded only `~`,
+  so `${XDG_DATA_HOME}/omh/generations/<id>/skills` beside the pointer was
+  neither retired nor reported and the home lost every OMH skill once the
+  pointer moved. Such entries are now expanded first; one whose variable is
+  unset is left untouched, as Hermes leaves it. A Windows entry rooted
+  without a drive (`\omh\...`), which Hermes loads from its home's drive, is
+  matched on every Python version instead of through 3.12 only. A relative
+  entry, which Hermes reads under its own home, is no longer resolved
+  against the directory `omh` runs from, so update cannot retire it or read
+  the home as registered through it, and doctor cannot count it as a second
+  managed directory. Uninstall's
+  check for a store another Hermes home still names, `omh hermes
+  readiness` and the installed-skill weight advisory expand entries the same
+  way and read a relative one under the home that names it, so uninstall
+  keeps a store a home names as `../omh/skills`.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
@@ -129,6 +146,31 @@ All notable changes will be documented here.
   plan the key cannot expand. A redraw due while a pager is open (a catalog,
   rewind or resume answer) waits until the pager closes, so the session is
   no longer left twice in scrollback.
+- **A promo or demo video asked for in a shared channel reaches
+  `show-reel` when the channel's backfill is only greetings and thanks.**
+  On Discord, Hermes puts the messages others posted since the bot's last
+  turn before `[New message]`, and any such backfill made a closed request
+  ("Make a demo video for the app") ask instead. The request now routes as
+  it would without the backfill when the backfill is the Discord adapter's
+  own shape -- the `[Recent channel messages]` header, the `[unverified]`
+  notice exactly when a sender is tagged, and `[<name>] <text>` lines with
+  a one- or two-word name -- and every message is acknowledgement-only
+  chatter: greetings, thanks, acks, times of day and "all", "everyone"
+  or "folks" ("morning all", "thank you", "ok, nice!"), with no noun,
+  verb, number, question mark, link, code or emoji and no pronoun but the
+  "you" of "thank you". Any other
+  backfill, a reply pointer or an attachment note still makes it ask. A
+  closed request beside a character that folding removes entirely
+  (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **The exit card is the session's title and how to resume it.** Leaving
+  the OMH TUI printed five lines: the title, a line of id, turns, messages
+  and duration, a line of tokens and model, `omh --resume <id>` and
+  `omh -c "<title>"`. It now prints the title (`untitled session` when
+  there is none) and, after a blank line, `resume: omh --resume <id>` with
+  the whole id, plus `-p <profile>` for a profile launch, then a blank
+  line so the shell prompt does not sit right under it. The
+  `-c "<title>"` line is gone with the counts, since the id always opens
+  this session and a title can be shadowed by a newer `<title> #N`.
 
 ## 4.0.3 - 2026-10-27
 

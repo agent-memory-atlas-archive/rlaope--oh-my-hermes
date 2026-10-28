@@ -13,9 +13,12 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 import json
+import ntpath
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import posixpath
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -23,12 +26,15 @@ from _platform_support import requires_symlinks
 
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs, write_config
+from omh.install import config_adapter as _config_adapter_module
+from omh.install import skill_registration as _registration_module
 from omh.install.skill_registration import (
     ambiguous_registration_message,
     generation_pack_entries,
     managed_skill_dir_candidates,
     migrate_managed_registration,
     registered_managed_entries,
+    registered_skill_dir,
     registration_home_label,
 )
 from omh.maintenance import doctor as _doctor_module
@@ -39,6 +45,23 @@ from omh.paths import OmhPaths
 def _config_naming(*dirs: Path | str) -> str:
     items = "".join(f"    - {Path(item).as_posix()}\n" for item in dirs)
     return f"skills:\n  external_dirs:\n{items}"
+
+
+def _windows_path(realpath=None) -> SimpleNamespace:
+    """`os.path` as a Windows host on Python 3.13+ answers it, for POSIX runners.
+
+    `isabs` is pathlib's answer, which 3.13+ `ntpath.isabs` shares. On 3.11,
+    which CI runs, `ntpath.isabs` and the root rule agree on every input
+    (measured over drive-less rooted, UNC, device and drive-relative
+    spellings), so only this stub makes a reintroduced `os.path.isabs` fail
+    on every interpreter. `realpath`, when given, stands in for a resolve
+    on the command's drive.
+    """
+    module = {name: getattr(ntpath, name) for name in dir(ntpath) if not name.startswith("__")}
+    module["isabs"] = lambda path: PureWindowsPath(path).is_absolute()
+    if realpath is not None:
+        module["realpath"] = realpath
+    return SimpleNamespace(**module)
 
 
 def _managed_paths(root: Path, generation: Path) -> OmhPaths:
@@ -66,8 +89,9 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             self.assertEqual(registered_managed_entries(migration.text, candidates), [pointer.as_posix()])
 
     def test_an_older_entry_is_retired_however_the_file_spells_it(self) -> None:
-        # Hermes expands `~` and resolves every entry, so a spelling through
-        # `~`, a trailing slash or a symlink is the same directory to it. The
+        # Hermes expands `${VAR}` and `~` and resolves every entry, so a
+        # spelling through either, a trailing slash or a symlink is the same
+        # directory to it. The
         # migration matches by real path too -- the rule the ambiguity reader
         # and `external_dir_registered` use -- so no spelling is left for
         # `omh update` to report as an ambiguity it can never clear.
@@ -84,9 +108,11 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             # (then HOMEDRIVE+HOMEPATH) and ignores HOME, so a HOME-only
             # fixture would expand `~` to the runner's real profile on
             # Windows. Same pair the other home-redirecting tests patch.
-            with mock.patch.dict(os.environ, {"HOME": str(root), "USERPROFILE": str(root)}):
+            environment = {"HOME": str(root), "USERPROFILE": str(root), "OMH_TEST_OMH_HOME": paths.omh_home.as_posix()}
+            with mock.patch.dict(os.environ, environment):
                 spellings["tilde"] = "~/.omh/skills"
                 self.assertEqual(Path(spellings["tilde"]).expanduser(), old)
+                spellings["variable"] = "${OMH_TEST_OMH_HOME}/skills"
                 for label, spelled in spellings.items():
                     with self.subTest(label):
                         # Written raw: `_config_naming` would normalize the
@@ -200,6 +226,100 @@ class GenerationPackEntriesTests(unittest.TestCase):
                 self.assertEqual(entries, [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"])
             self.assertEqual(generation_pack_entries(text, None), [])
 
+    def test_a_pack_spelled_through_a_variable_is_named_and_retired_and_an_unset_one_is_left(self) -> None:
+        # Hermes expands `${VAR}` before `~`, so the first entry is the older
+        # pack to it. An unset variable stays as written there, as it does
+        # here, and the entry is then relative: a directory under Hermes'
+        # own home, which is the person's and is never touched.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, _older, _gone = self._layout(root)
+            spelled = "${OMH_TEST_MANAGED_ROOT}/generations/20261025/skills"
+            unset = "${OMH_TEST_UNSET_ROOT}/generations/20261025/skills"
+            with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": root.as_posix()}):
+                os.environ.pop("OMH_TEST_UNSET_ROOT", None)
+                text = _config_naming(pointer) + f"    - {spelled}\n    - {unset}\n"
+                self.assertEqual(external_dirs(text), [pointer.as_posix(), spelled, unset])
+
+                self.assertEqual(generation_pack_entries(text, pointer), [spelled])
+                self.assertEqual(
+                    registered_managed_entries(text, [pointer], current=pointer), [pointer.as_posix(), spelled]
+                )
+                migration = migrate_managed_registration(text, pointer, [pointer], current=pointer)
+
+            self.assertEqual((migration.retired, migration.registration), ([spelled], "migrated"))
+            self.assertEqual(external_dirs(migration.text), [pointer.as_posix(), unset])
+
+    def test_a_rooted_entry_without_a_drive_names_a_root_on_every_python(self) -> None:
+        # Hermes joins a non-absolute entry onto its home, and a Windows join
+        # with a rooted entry keeps only the home's drive: `\\omh\\...` names
+        # `C:\\omh\\...`, never a directory under the home. Only a
+        # drive-relative or a bare relative entry lands under it.
+        # A UNC share is a root of its own. `ntpath.isabs` called the
+        # drive-less rooted entry absolute through 3.12 and relative from
+        # 3.13, so the check must not ask it (`_windows_path`). Run through
+        # `ntpath` and `posixpath` so POSIX runners pin the Windows answer.
+        home = PureWindowsPath("C:\\Users\\u\\.hermes")
+        self.assertEqual(home / "\\omh\\generations\\abc\\skills", PureWindowsPath("C:\\omh\\generations\\abc\\skills"))
+        self.assertEqual(home / "C:omh\\x", home / "omh" / "x")
+        windows = {
+            "\\omh\\generations\\abc\\skills": True,
+            "/omh/generations/abc/skills": True,
+            "C:\\omh\\generations\\abc\\skills": True,
+            "C:/omh/generations/abc/skills": True,
+            "\\\\server\\share\\omh\\generations\\abc\\skills": True,
+            "\\\\server\\share": True,
+            "\\\\.\\pipe": True,
+            "C:omh\\generations\\abc\\skills": False,
+            "generations\\abc\\skills": False,
+        }
+        self.assertTrue(PureWindowsPath("\\\\server\\share").root)
+        with mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=_windows_path())):
+            for entry, rooted in windows.items():
+                with self.subTest(entry):
+                    self.assertIs(_config_adapter_module.external_dir_names_a_root(entry), rooted)
+        posix = {"/omh/generations/abc/skills": True, "generations/abc/skills": False}
+        with mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=posixpath)):
+            for entry, rooted in posix.items():
+                with self.subTest(entry):
+                    self.assertIs(_config_adapter_module.external_dir_names_a_root(entry), rooted)
+
+    def test_on_windows_a_rooted_pack_without_a_drive_is_named_and_retired(self) -> None:
+        # Hermes loads `\\omh\\generations\\abc\\skills` from its home's drive,
+        # so beside the pointer it is the #1857 ambiguity once the pointer
+        # moves. This module's path functions as a Windows host whose
+        # command runs on C: sees them; a pack on another drive and a
+        # drive-relative entry are not the managed root.
+        # The pointer is spelled the way registration writes it, with POSIX
+        # separators (`_normalize`): `ensure_external_dir` compares text, and
+        # on a Windows host `C:\\omh\\...` would not equal what it writes, so
+        # it would add the pointer a second time.
+        written = "C:/omh/current/skills"
+        pointer = PureWindowsPath(written)
+        rooted = "\\omh\\generations\\abc\\skills"
+        text = (
+            "skills:\n  external_dirs:\n"
+            f"    - {written}\n    - {rooted}\n"
+            "    - C:omh\\generations\\abc\\skills\n    - D:\\omh\\generations\\abc\\skills\n"
+        )
+
+        def realpath(path: str, *, strict: bool = False) -> str:
+            return ntpath.normpath(ntpath.join("C:\\", path))
+
+        windows = _windows_path(realpath)
+        with (
+            mock.patch.object(_registration_module, "os", SimpleNamespace(path=windows)),
+            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
+        ):
+            self.assertEqual(generation_pack_entries(text, pointer), [rooted])
+            migration = migrate_managed_registration(text, written, [], current=pointer)
+
+        self.assertEqual((migration.added, migration.retired), (False, [rooted]))
+        self.assertEqual(
+            external_dirs(migration.text),
+            [written, "C:omh\\generations\\abc\\skills", "D:\\omh\\generations\\abc\\skills"],
+        )
+
     def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:
         # Including the pack the pointer resolves to today: it is the same
         # files only until the next update moves the pointer.
@@ -274,6 +394,27 @@ class GenerationPackEntriesTests(unittest.TestCase):
             self.assertIn(f"({expected[0]} and {expected[1]})", lines[0])
 
 
+class RegisteredSkillDirTests(unittest.TestCase):
+    """The one directory setup, update and chat's target auto-apply write."""
+
+    def test_the_pointer_only_when_it_is_on_disk_and_the_command_is_managed(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            paths = _managed_paths(root, root / "generations" / "20261025" / "skills")
+            managed = mock.Mock(return_value={"managed": True})
+            unmanaged = mock.Mock(return_value={"managed": False})
+
+            # No pointer on disk: the runtime probe is never asked.
+            self.assertEqual(registered_skill_dir(paths, current=pointer, runtime=managed), paths.skills_dir)
+            self.assertEqual(registered_skill_dir(paths, current=None, runtime=managed), paths.skills_dir)
+            managed.assert_not_called()
+
+            pointer.mkdir(parents=True)
+            self.assertEqual(registered_skill_dir(paths, current=pointer, runtime=managed), pointer)
+            self.assertEqual(registered_skill_dir(paths, current=pointer, runtime=unmanaged), paths.skills_dir)
+
+
 class RegisteredManagedEntriesTests(unittest.TestCase):
     def test_two_managed_directories_are_both_named_in_config_order(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -319,6 +460,30 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             entries = registered_managed_entries(
                 _config_naming(gone, pointer), managed_skill_dir_candidates(paths, current=pointer)
             )
+            self.assertEqual(entries, [pointer.as_posix()])
+
+    def test_a_relative_entry_is_never_matched_from_the_managed_root(self) -> None:
+        # Hermes reads `skills` as `$HERMES_HOME/skills`, its own directory.
+        # Run from the managed root, the same text resolves to the managed
+        # `<root>/skills`; neither the migration nor the ambiguity reader may
+        # take it for that, or update retires the person's entry and doctor
+        # reports an ambiguity Hermes never sees.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            older = root / "skills"
+            for directory in (pointer, older, root / "mine" / "x"):
+                directory.mkdir(parents=True)
+            candidates = [pointer, older]
+            text = _config_naming(pointer) + "    - skills\n    - mine/x\n"
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                migration = migrate_managed_registration(text, pointer, candidates, current=pointer)
+                entries = registered_managed_entries(text, candidates, current=pointer)
+            finally:
+                os.chdir(cwd)
+            self.assertEqual((migration.text, migration.retired, migration.registration), (text, [], "unchanged"))
             self.assertEqual(entries, [pointer.as_posix()])
 
     def test_a_foreign_directory_is_never_a_managed_entry(self) -> None:

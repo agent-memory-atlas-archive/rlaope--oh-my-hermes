@@ -58,7 +58,7 @@ from ..config_adapter import (
     update_config,
 )
 from ..install.compression_defaults import ensure_compression_defaults
-from ..install.lifecycle_safety import command_runtime_owned, primary_hermes_home, store_removal_plan
+from ..install.lifecycle_safety import primary_hermes_home, store_removal_plan
 from ..install.config_reversal import (
     DISPLAY_KEYS,
     DISPLAY_RELEASED_FIELD,
@@ -79,9 +79,11 @@ from ..install.skill_registration import (
     external_dir_key,
     generation_pack_entries,
     hermes_profile_dirs,
+    managed_command_runtime as _managed_command_runtime,
     managed_skill_dir_candidates,
     migrate_managed_registration,
     registered_managed_entries,
+    registered_skill_dir,
     registration_home_label,
 )
 from ..doctor import DEFAULT_DOCTOR_NEXT_ACTION, doctor_ok, recommended_next_action, run_doctor
@@ -109,7 +111,6 @@ from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
 from ..paths import (
     OmhPaths,
-    managed_command_venv_dir,
     managed_current_workflow_pack_dir,
     configured_omh_home,
 )
@@ -1031,11 +1032,8 @@ def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
 
 
 def _registered_workflow_dir(paths: OmhPaths) -> Path:
-    """Keep installer consumers under the non-resolved shared pointer."""
-    current = managed_current_workflow_pack_dir()
-    if current is not None and current.is_dir() and _managed_command_runtime().get("managed"):
-        return current
-    return paths.skills_dir
+    """`registered_skill_dir` through this module's own bindings, the ones the managed-install fixtures stub."""
+    return registered_skill_dir(paths, current=managed_current_workflow_pack_dir(), runtime=_managed_command_runtime)
 
 
 def _registration_retires_older_entries(registered_dir: Path) -> bool:
@@ -1660,21 +1658,6 @@ def _reentry_argv_with_command_package_updated() -> list[str]:
     if "--command-package-updated" not in argv:
         argv.append("--command-package-updated")
     return argv
-
-
-def _managed_command_runtime() -> dict[str, object]:
-    venv_dir = managed_command_venv_dir()
-    if venv_dir is None:
-        return {"managed": False, "reason": "no home directory or OMH_VENV_DIR is available"}
-    executable = Path(sys.executable).expanduser()
-    if not command_runtime_owned(executable, venv_dir):
-        return {
-            "managed": False,
-            "reason": "current omh command is not running from the installer-managed OMH venv",
-            "python": str(executable.resolve()),
-            "venv_dir": str(venv_dir),
-        }
-    return {"managed": True, "reason": "", "python": str(executable), "venv_dir": str(venv_dir)}
 
 
 def _is_relative_to_without_resolving_symlinks(path: Path, parent: Path) -> bool:

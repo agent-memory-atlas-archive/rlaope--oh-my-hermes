@@ -979,7 +979,13 @@ def _route_identity(row: Mapping[str, Any]) -> tuple[str, str]:
     category = _safe_text(row.get("category"))
     if origin == "exhausted_to_inherit" and route_category:
         category = route_category
-    if category == "inherit":
+    label = _safe_text(row.get("route_label"))
+    if label:
+        # Hermes' delegation backend ran this child on the user's option: a model that equals the parent's is not
+        # inheritance there, and the option is named beside whatever lane the model maps to.
+        lane = "" if category == "inherit" else category
+        text = f"{ROUTE_PREFIX}{lane}@{label}{f'({detail})' if detail else ''}"
+    elif category == "inherit":
         text = f"inherit{f'({model})' if model else ''}"
     elif category:
         text = f"{ROUTE_PREFIX}{category}{f'({detail})' if detail else ''}"

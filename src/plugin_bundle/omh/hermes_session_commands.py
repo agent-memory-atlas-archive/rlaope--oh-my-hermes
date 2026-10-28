@@ -130,6 +130,7 @@ import unicodedata
 from .jev_consent import BACKFILL_SEPARATOR, HOST_BLOCK_END, HOST_BLOCK_OPENERS, SENDER_PREFIX
 from .reference_regions import executable_routing_text
 from .request_lead import after_courtesy
+from .show_reel_cues import backfill_is_inert
 
 
 @dataclass(frozen=True)
@@ -538,7 +539,8 @@ def person_request_text(message: str, *, messaging: bool = False) -> str:
 
 # A reply pointer, an attachment or image note, and the channel backfill a
 # gateway puts before `[New message]`: material a person's words may point at
-# ("make a demo video of this") that routing does not read.
+# ("make a demo video of this") that routing does not read. `[New message]`
+# stays last: `host_context_removed` reads the backfill by its content.
 _CONTEXT_BLOCK_OPENERS = ("[Replying to", "[The user sent", "[If you need a closer look", "[Image attached", "[New message]")
 
 
@@ -547,9 +549,18 @@ def host_context_removed(message: str) -> bool:
 
     Routing reads only the person's words; a reader that must prove the request
     whole (a closed show-reel form) treats removed context like masked text.
+    An inert backfill (`backfill_is_inert`: the Discord adapter's shape, with
+    acknowledgement-only messages), after the trigger note Hermes writes
+    before it, is not counted: it holds nothing such a request could be
+    pointing at.
     """
     text = _after_gateway_material(message)
     removed = message[: len(message) - len(text)] if message.endswith(text) else message
+    if BACKFILL_SEPARATOR in removed and not any(opener in removed for opener in _CONTEXT_BLOCK_OPENERS[:-1]):
+        backfill, after = removed.rsplit(BACKFILL_SEPARATOR, 1)
+        if backfill.startswith("[Triggering message id:"):
+            backfill = backfill.partition(HOST_BLOCK_END)[2]
+        return bool(after.strip()) or not backfill_is_inert(backfill)
     return any(opener in removed for opener in _CONTEXT_BLOCK_OPENERS)
 
 

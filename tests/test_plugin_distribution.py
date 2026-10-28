@@ -25,6 +25,7 @@ from _platform_support import requires_hermes_host, requires_posix, requires_sym
 load_local_package()
 
 from _legacy_display import brand_legacy_home, seed_legacy_skins, seed_legacy_widget
+from omh.commands import chat as _chat_module
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
@@ -2792,27 +2793,23 @@ class HermesProfileSyncTests(unittest.TestCase):
         is not what these tests exercise. `pack` is the running generation's
         own pack when it is not the pointer itself, as on a real install,
         where the pointer is `<root>/current/skills` and the pack
-        `<root>/generations/<id>/skills`.
+        `<root>/generations/<id>/skills`. `omh chat --auto-apply-target-change`
+        reads the pointer and the verdict through its own bindings, so they
+        are stubbed there too.
         """
+        runtime = {"managed": True, "reason": "", "python": sys.executable, "venv_dir": str(current.parent)}
         with (
             mock.patch.object(
                 _setup_module, "managed_current_workflow_pack_dir", return_value=current
             ),
+            mock.patch.object(_chat_module, "managed_current_workflow_pack_dir", return_value=current),
+            mock.patch.object(_chat_module, "managed_command_runtime", return_value=runtime),
             mock.patch.object(
                 sys.modules[resolve_paths.__module__],
                 "managed_workflow_pack_dir",
                 return_value=pack or current,
             ),
-            mock.patch.object(
-                _setup_module,
-                "_managed_command_runtime",
-                return_value={
-                    "managed": True,
-                    "reason": "",
-                    "python": sys.executable,
-                    "venv_dir": str(current.parent),
-                },
-            ),
+            mock.patch.object(_setup_module, "_managed_command_runtime", return_value=runtime),
             mock.patch.object(
                 _setup_module,
                 "_command_package_self_update_plan",
