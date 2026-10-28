@@ -31,6 +31,19 @@ All notable changes will be documented here.
   from 106,957 to 98,121 characters (8.3%), and no hint grew. Selection, the payload, `first_response_shape=` and
   `not_evidence_yet=` do not change, and the per-turn ratchets drop with the
   render (`pre_llm_call` 5786 -> 5632, fallback 7338 -> 7184).
+- **A long turn in the OMH TUI no longer ends with blank rows over the
+  composer.** Once a turn's output scrolled the prompt off the screen, the
+  `↳ you:` reminder and the blank row over it took two rows on the bottom
+  rows. That scrolled two transcript rows into scrollback, where nothing can
+  bring them back. When the turn ended, the region kept its height, so the
+  done line (`✻ 7m 11s · 12 tools`) stood three blank rows above the
+  composer, and four with the plan shown. The frame that ends a turn now
+  gives up the rows nothing in it takes: the reminder, its blank row, and the
+  blank row over the plan. The done line sits one blank row above the
+  composer or the plan, as between any two blocks. The composer rises by
+  those rows, at most three, with the freed rows left blank under the footer,
+  and the next turn's output takes it back to the bottom rows.
+
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character
   `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history

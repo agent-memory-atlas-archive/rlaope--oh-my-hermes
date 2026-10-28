@@ -1582,6 +1582,7 @@ class App(ModesMixin, AgentViewMixin):
         # The cells a click opens, as last drawn: rows above the region's last row → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.frame_budget: Budget | None = None  # the rows the last frame gave each part of the region
+        self.frame_busy = False  # the last frame was drawn while a turn ran
         # The rows the agent view wanted, the rows it got and the tail's working rows in the last frame drawn while a
         # turn ran (`_held_view_rows`).
         self.view_hold: tuple[int, int, int] | None = None
@@ -5347,6 +5348,14 @@ class App(ModesMixin, AgentViewMixin):
         # follows the content. Where the region's place is not certain it counts as above.
         pinned = self.region.last_row(rows) == rows - 1
         min_height = max(self.region.height - len(stable), 0) if pinned else 0
+        # The frame a turn ends with, on the bottom rows: the turn's last frame. Its working rows, their spacer and
+        # the done line balance out, but the sticky prompt (and the blank row over it) and the blank row over the plan
+        # have nothing in this frame to take their rows. The sticky came in once the prompt had scrolled off, scrolling
+        # as many transcript rows into scrollback, and nothing brings those back, so kept they would stand as blank
+        # rows between the done line and the composer. The region gives them up and the composer rises by them.
+        ended = self.frame_budget if pinned and self.frame_busy and not self._busy() else None
+        if ended is not None:
+            min_height = max(min_height - ended.sticky - ended.sticky_gap, 0)
         top = self.region.top_row(rows)
         if not pinned and self.launch_layout and top is not None:
             # Until the first prompt the launch fills the screen: the rows under the banner pad the region down to the
@@ -5386,6 +5395,10 @@ class App(ModesMixin, AgentViewMixin):
             else "",
         )
         frame = build()
+        if ended is not None and frame.budget.gaps[0] < ended.gaps[0]:  # the tail now ends blank, its own gap
+            min_height = max(min_height - (ended.gaps[0] - frame.budget.gaps[0]), 0)
+            build = partial(build, min_height=min_height)
+            frame = build()
         if self._place_menu(rows, len(stable), frame):
             build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
             frame = build()
@@ -5428,6 +5441,7 @@ class App(ModesMixin, AgentViewMixin):
         # the frame is drawn under them. Flush and frame are one write, so no screen between them shows.
         self.region.render(frame.lines, frame.cursor, cols, flush=stable, screen_rows=rows)
         self.frame_budget = frame.budget
+        self.frame_busy = busy
         if busy:
             self.view_hold = (wanted, frame.budget.agents, self._working_rows())
         self._take_clickable(frame.budget, self._clickable_rows())
