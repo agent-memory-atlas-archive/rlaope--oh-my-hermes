@@ -131,6 +131,9 @@ def transform_tool_result(**kwargs: Any) -> str | None:
         args=kwargs.get("args"),
         result=kwargs.get("result"),
         session_id=session_id,
+        # The catch it records for the person resolves the home the way the
+        # nudge above does: the host passes none, so runtime_paths decides.
+        omh_home=str(kwargs.get("omh_home", "") or ""),
     )
     if recovered is not None:
         annotated = recovered
@@ -149,6 +152,7 @@ def transform_tool_result(**kwargs: Any) -> str | None:
         # boundary, which is why the directive declines without it.
         turn_id=str(kwargs.get("turn_id", "") or ""),
         hermes_home=str(kwargs.get("hermes_home", "") or ""),
+        omh_home=str(kwargs.get("omh_home", "") or ""),
     )
     if waited is not None:
         annotated = waited
