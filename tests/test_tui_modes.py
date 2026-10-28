@@ -484,7 +484,11 @@ class SteerTests(unittest.TestCase):
             with self.subTest(picked=picked):
                 app, client = make_app(busy=True)
                 queue(app, "queued meanwhile")
-                setattr(app, picked, mock.sentinel.picked)  # a picked rewind, or an open tell row, takes what is sent
+                # A picked rewind, or an open tell row, takes what is sent.
+                if picked == "rewind":
+                    app.rewind = mock.sentinel.picked
+                else:
+                    app.tell_draft = mock.sentinel.picked
                 app._on_input(STEER_FALLBACK_KEY)
                 self.assertEqual((client.calls, len(app.queued)), ([], 1))
 
