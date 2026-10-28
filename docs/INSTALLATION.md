@@ -2875,7 +2875,9 @@ skill present in both failed to load by name in that bot. `omh setup` and
 `omh update` run from the installer-managed command migrate such a home in
 the same config write that registers the pointer: the older OMH-managed
 entry is retired, matched by real path the way Hermes resolves entries (a
-spelling through `~`, a trailing slash or a symlink is the same directory),
+spelling through `${VAR}`, `~`, a trailing slash or a symlink is the same
+directory; an unset variable stays as written, as it does in Hermes, and a
+relative entry, which Hermes reads under its own home, never matches),
 the home ends up naming exactly one managed directory, and the update
 prints the move (`Bot profile <name>: registration migrated from <old> to
 <new>.`; `Hermes registration migrated ...` for the primary home). Only
@@ -2896,7 +2898,10 @@ a home naming only one is migrated to the pointer rather than read as the
 opt-out; `omh uninstall --registration-only` removes them too. Only
 absolute entries under the pointer's own managed root match: a `skills`
 directory under some other `generations/` directory, and any relative
-entry (Hermes anchors those at its own home), stay.
+entry (Hermes anchors those at its own home), stay. On Windows an entry
+rooted without a drive, such as `\omh\...`, is not relative: Hermes loads it
+from its home's drive, and it matches. Entries are expanded in the running
+command's environment, which a Hermes service may not share.
 `omh doctor` reports a home that still names two managed directories on
 disk, an older generation's pack beside the pointer included, as
 `external_dir_ambiguity` (one row per affected profile) and

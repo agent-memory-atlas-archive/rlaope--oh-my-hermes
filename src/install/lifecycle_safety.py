@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from .config_adapter import external_dirs, plugin_is_enabled, read_config
+from .config_adapter import anchor_external_dir_entry, external_dirs, plugin_is_enabled, read_config
 from ..paths import managed_command_generations_dir
 from ..plugin_bundle.omh import runtime_paths
 
@@ -59,7 +59,7 @@ def store_removal_plan(paths, *, remove_profiles: bool, detached_homes: tuple[Pa
                     candidate not in detached_homes or explicit or plugin_is_enabled(config, "omh")
                 )
                 if (runtime_reference and store == target) or any(
-                    Path(entry).expanduser().resolve().is_relative_to(target)
+                    anchor_external_dir_entry(entry, candidate).resolve().is_relative_to(target)
                     for entry in external_dirs(config)
                 ):
                     shared.append(str(candidate))

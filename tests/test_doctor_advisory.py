@@ -342,6 +342,25 @@ class SkillWeightTests(unittest.TestCase):
         self.assertEqual(entry.status, "advice")
         self.assertIn("2 installed OMH skill(s)", entry.observed)
 
+    def test_config_entries_are_read_the_way_hermes_reads_them(self) -> None:
+        # `${VAR}` then `~`, and a relative entry anchored at the home --
+        # never at the directory this command runs from.
+        skills_dir = self._skills_dir(2)
+        home = Path(tempfile.mkdtemp())
+        relative = os.path.relpath(skills_dir, home)
+        _write(
+            home / "config.yaml",
+            f"skills:\n  external_dirs:\n    - ${{OMH_TEST_SKILLS_DIR}}\n    - {relative}\n",
+        )
+        cwd = os.getcwd()
+        os.chdir(tempfile.mkdtemp())
+        try:
+            with mock.patch.dict(os.environ, {"OMH_TEST_SKILLS_DIR": str(skills_dir)}):
+                dirs = advisory._derive_skill_dirs(home)
+        finally:
+            os.chdir(cwd)
+        self.assertEqual([path.resolve() for path in dirs], [skills_dir.resolve(), skills_dir.resolve()])
+
     def test_no_skill_dir_is_unobserved(self) -> None:
         entry = check_installed_skill_context_weight(Path(tempfile.mkdtemp()))
         self.assertEqual(entry.status, "unobserved")
