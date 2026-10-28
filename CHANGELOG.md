@@ -150,14 +150,15 @@ All notable changes will be documented here.
   synchronized update as the frame drawn after it, so a terminal that holds
   the update (DEC 2026) swaps the old screen for the new one in one step.
 - **The TUI's menus lose their bands, a sent prompt gains one, and the
-  bottom row names the branch.** The completion menu, the session, model,
+  bottom line names the branch.** The completion menu, the session, model,
   rewind and launch-look pickers, the agent list, the delegation view and the
   bot board's sessions draw no fill: the highlighted row is a `❯` and a bold
   name in the skill hue, other commands keep that hue and their descriptions
   are muted. A prompt you sent runs on a band to the right edge, tinted by
-  the launch look. From 30 rows the region's last row shows the session
-  directory's git branch with its changed and untracked counts, read off the
-  screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
+  the launch look. The one line under the composer starts with
+  `[ ⚚ OMH Native ]` and shows the session directory's git branch with its
+  changed and untracked counts, read off the screen's thread, first on its
+  right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
 - **A long `/compress` is waited for, and side answers are not lost
@@ -206,6 +207,34 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **A queued prompt can be sent into the running turn now, and one line sits
+  under the composer.** As in Claude Code, a muted row under the queued
+  prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; on an
+  empty composer the key sends the oldest queued prompt into the turn as a
+  steer and takes it off the queue. A queued `!` line, skill prompt or plan
+  prompt keeps its place and shows no row. Where the terminal has not shown
+  that it tells Ctrl+Enter from Enter, the row names Ctrl+J, which every
+  terminal sends apart from Enter; with text typed, Ctrl+J still adds a line
+  and Ctrl+Enter steers that text, as before. A sent-now steer Hermes refuses
+  goes back to the head of the queue as it was, and one it took but had not
+  read when the turn is stopped is queued again, with a notice. The info line
+  no longer says `/steer <text> steers`; `/steer <text>` still works and
+  stays in `/help` and the `?` list. The branch row is gone: the info line
+  starts with `[ ⚚ OMH Native ]` and the branch, then the mode and the keys
+  that matter, with the title, model, context and effort on the right, and
+  the row goes back to the transcript. Between turns it no longer says
+  `? for shortcuts`: the launch card names `? every shortcut`, and `?` still
+  opens the list. As the line narrows the right side's fields go first, then
+  the branch's name is cut, then the badge shortens to `[ ⚚ OMH ]` and `⚚`;
+  the mode's label and a question's or picker's keys keep their words. The
+  start-up query now asks every terminal for its kitty keyboard flags
+  (`CSI ? u`): one that answers gets them pushed, Otty with its
+  `kitty-keyboard` setting on among them, and names Ctrl+Enter from the
+  first frame; a terminal the environment does not name (over SSH) must also
+  name itself through XTVERSION as one known to read them, never Ghostty. The
+  push is undone on every exit but `kill -9`. A steer or a second
+  `/compress` that waited behind a compression and went unanswered now says
+  how long it really waited, not 120 s or 660 s.
 - **The exit card is the session's title and how to resume it.** Leaving
   the OMH TUI printed five lines: the title, a line of id, turns, messages
   and duration, a line of tokens and model, `omh --resume <id>` and

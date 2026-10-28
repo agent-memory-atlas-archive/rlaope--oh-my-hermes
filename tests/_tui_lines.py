@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-import re
 
 from omh.tui.frame import INFO_INSET as INFO_INSET_CELLS, RULE
 from omh.tui.style import Line
@@ -11,16 +10,25 @@ from omh.tui.style import Line
 INFO_INSET = " " * INFO_INSET_CELLS  # the info line under the composer's rule starts this far in
 
 
-def is_badge_row(row: str) -> bool:
-    """The region's last row (`frame.badge_line`): `[ ⚚ OMH Native ]` on its right edge, or, too narrow for that,
-    the branch alone two cells in (`branch:` and a name right after it, never a transcript line saying "branch: ...")."""
-    return row.rstrip().endswith("[ ⚚ OMH Native ]") or re.match(rf"{INFO_INSET}branch:\S", row) is not None
+BADGE_TEXTS = ("[ ⚚ OMH Native ]", "[ ⚚ OMH ]", "⚚")  # the badge at the info line's left end, longest form first
+BADGE_GAP = "  "  # between the badge and what follows it
 
 
 def info_row_index(screen: list[str]) -> int:
-    """The info line's row: the last that is not blank and not the badge row under it, since every row under the
-    region is blank."""
-    return max(index for index, row in enumerate(screen) if row and not is_badge_row(row))
+    """The info line's row: the last that is not blank, since every row under the region is (the agent view's rows
+    aside, which tests that draw one place themselves)."""
+    return max(index for index, row in enumerate(screen) if row)
+
+
+def without_badge(row: str) -> str:
+    """The info line's text with the badge at its left end taken out, its inset kept: what the line says after the
+    badge, as the line read before the badge moved onto it."""
+    body = row.removeprefix(INFO_INSET)
+    for badge in BADGE_TEXTS:
+        if body.startswith(badge):
+            rest = body[len(badge) :]
+            return INFO_INSET + rest.removeprefix(BADGE_GAP) if rest.startswith(BADGE_GAP) or not rest.strip() else row
+    return row
 
 
 def line_text(line: Line) -> str:

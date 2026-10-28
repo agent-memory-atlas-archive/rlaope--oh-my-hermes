@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import INFO_INSET, line_text, lines_text
+from _tui_lines import INFO_INSET, line_text, lines_text, without_badge
 from test_tui_agent_view import agent_app
 from test_tui_modes import answer, make_app
 from omh.tui.app import App, banner_lines
@@ -29,7 +29,7 @@ SECRET = ServerRequest("srq-3", "secret", {"env_var": "TOKEN"})
 
 
 def mode_row(app: App) -> str:
-    return line_text(app._info_line(100))
+    return without_badge(line_text(app._info_line(100)))
 
 
 class QuestionKeyTests(unittest.TestCase):
