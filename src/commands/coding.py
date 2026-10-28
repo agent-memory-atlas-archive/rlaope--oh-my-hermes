@@ -3747,7 +3747,8 @@ def _add_coding_commands(sub) -> None:
         help=(
             "ULW model category for this run (ultrabrain, deep, deep-work, architect, capable, "
             "quick, simple-work, writing, visual-engineering, artistry, unspecified-high, "
-            "unspecified-low); resolved through the "
+            "unspecified-low, google-search, x-search, review, swarm, forensics, synthesize); "
+            "resolved through the "
             "category-maestro table when one is configured. --model still wins."
         ),
     )
@@ -3777,7 +3778,8 @@ def _add_coding_commands(sub) -> None:
         help=(
             "ULW model category, orthogonal to role: visual-engineering, ultrabrain, deep, "
             "deep-work, architect, capable, artistry, quick, simple-work, unspecified-low, "
-            "unspecified-high, or writing; ulw-* aliases accepted."
+            "unspecified-high, writing, google-search, x-search, review, swarm, forensics, "
+            "or synthesize; ulw-* aliases accepted."
         ),
     )
     model_route.add_argument(
@@ -3839,7 +3841,7 @@ def _add_coding_commands(sub) -> None:
         help=(
             "Model category (ultrabrain, deep, deep-work, architect, capable, quick, "
             "simple-work, writing, visual-engineering, artistry, unspecified-high, "
-            "unspecified-low)."
+            "unspecified-low, google-search, x-search, review, swarm, forensics, synthesize)."
         ),
     )
     category_maestro_set.add_argument(

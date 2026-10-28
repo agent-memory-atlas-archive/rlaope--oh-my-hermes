@@ -396,10 +396,10 @@ window.OMH_I18N = {
       zh: "每条 lane 用自己的模型"
     },
     "models.lead": {
-      en: "Twelve categories ship with an ordered chain each. <code>omh model</code> opens the picker: arrow keys pick the category, left and right change the head model, minus and plus change the effort. The same picker opens inside the OMH TUI as <code>/omh-model</code>.",
-      ko: "카테고리 12개가 각자 순서 있는 chain과 함께 제공됩니다. <code>omh model</code>이 피커를 엽니다. 화살표 키로 카테고리를 고르고, 좌우로 첫 모델을, -/+로 effort를 바꿉니다. OMH TUI 안에서는 <code>/omh-model</code>이 같은 피커를 엽니다.",
-      ja: "12 のカテゴリが、それぞれ順序付きの chain とともに出荷されます。<code>omh model</code> でピッカーが開きます。矢印キーでカテゴリを選び、左右で先頭モデルを、-/+ で effort を変えます。OMH TUI では <code>/omh-model</code> が同じピッカーを開きます。",
-      zh: "十二个类别各自附带一条有序 chain。<code>omh model</code> 打开选择器：方向键选类别，左右切换首选模型，-/+ 调整 effort。在 OMH TUI 里，<code>/omh-model</code> 打开同一个选择器。"
+      en: "Eighteen categories ship with an ordered chain each. <code>omh model</code> opens the picker: arrow keys pick the category, left and right change the head model, minus and plus change the effort. The same picker opens inside the OMH TUI as <code>/omh-model</code>.",
+      ko: "카테고리 18개가 각자 순서 있는 chain과 함께 제공됩니다. <code>omh model</code>이 피커를 엽니다. 화살표 키로 카테고리를 고르고, 좌우로 첫 모델을, -/+로 effort를 바꿉니다. OMH TUI 안에서는 <code>/omh-model</code>이 같은 피커를 엽니다.",
+      ja: "18 のカテゴリが、それぞれ順序付きの chain とともに出荷されます。<code>omh model</code> でピッカーが開きます。矢印キーでカテゴリを選び、左右で先頭モデルを、-/+ で effort を変えます。OMH TUI では <code>/omh-model</code> が同じピッカーを開きます。",
+      zh: "十八个类别各自附带一条有序 chain。<code>omh model</code> 打开选择器：方向键选类别，左右切换首选模型，-/+ 调整 effort。在 OMH TUI 里，<code>/omh-model</code> 打开同一个选择器。"
     },
     "route.state.resolved": {
       en: "A confirmed model was selected.",
@@ -520,6 +520,42 @@ window.OMH_I18N = {
       ko: "최상위 깊이의 긴 작업",
       ja: "最高深度の長時間タスク",
       zh: "最高深度的长任务"
+    },
+    "chain.google-search": {
+      en: "Research grounded in Google Search",
+      ko: "Google 검색에 근거한 조사",
+      ja: "Google 検索に基づく調査",
+      zh: "以 Google 搜索为依据的调研"
+    },
+    "chain.x-search": {
+      en: "Live search on X",
+      ko: "X 실시간 검색",
+      ja: "X のリアルタイム検索",
+      zh: "X 上的实时搜索"
+    },
+    "chain.review": {
+      en: "A different model tries to break the diff",
+      ko: "다른 모델이 diff를 깨뜨려 보는 검토",
+      ja: "別のモデルが diff を壊しにかかるレビュー",
+      zh: "由另一个模型尝试攻破 diff"
+    },
+    "chain.swarm": {
+      en: "Many parallel workers on separate slices",
+      ko: "여러 병렬 작업자가 각자 나눈 조각을 처리",
+      ja: "多数の並列ワーカーが別々の断片を担当",
+      zh: "多个并行 worker 各自处理不同切片"
+    },
+    "chain.forensics": {
+      en: "Root-causing a live symptom or a captured trace",
+      ko: "실제 증상이나 수집한 trace의 근본 원인 추적",
+      ja: "実際の症状や取得した trace の根本原因の特定",
+      zh: "追查实时症状或已捕获 trace 的根因"
+    },
+    "chain.synthesize": {
+      en: "Merging many results into one answer",
+      ko: "여러 결과를 하나의 답으로 종합",
+      ja: "多くの結果を一つの答えに統合",
+      zh: "将多个结果合并为一个答案"
     },
     "chain.edit": {
       en: "Every chain is yours to reorder. Edit <code>~/.omh/routing/model-chains.json</code>, then run <code>omh model-chains show</code> to print what is in effect.",

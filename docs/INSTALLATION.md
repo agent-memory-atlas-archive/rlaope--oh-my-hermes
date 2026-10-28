@@ -1944,6 +1944,12 @@ The shipped catalog is editorial policy, not benchmark output:
 | `capable` | Strong general work | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`), Claude Fable 5.1 (`medium`), Kimi K3.1 Pro (`medium`) |
 | `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), DeepSeek V4.1 Flash (`low`) |
 | `deep-work` | Long tasks at frontier depth | Claude Opus 5.5 (`max`), GPT-6.1 Sol (`max`) |
+| `google-search` | Research grounded in Google Search | Gemini 3.1 Pro (`medium`), GPT-6.1 Sol (`medium`), Claude Opus 5.5 (`medium`) |
+| `x-search` | Live search on X | Grok 4.7 (`high`), Kimi K3.1 Pro (`high`), Gemini 3.1 Pro (`high`) |
+| `review` | A different model tries to break the diff | GPT-6.1 Sol (`xhigh`), Claude Opus 5.5 (`xhigh`), Kimi K3.1 Pro (`xhigh`) |
+| `swarm` | Many parallel workers on separate slices | DeepSeek V4.1 Flash (`low`), GLM 5.3 Flash (`low`), GPT-6 Luna (`low`) |
+| `forensics` | Root-causing a live symptom or a captured trace | GPT-6 Astra (`xhigh`), Claude Opus 5.5 (`xhigh`), Kimi K3.1 Pro (`xhigh`) |
+| `synthesize` | Merging many results into one answer | Claude Opus 5.5 (`xhigh`), GPT-6.1 Sol (`xhigh`), Gemini 3.1 Pro (`high`) |
 | `x_platform_data` affinity | X-platform data affinity | Grok Build 0.1, Kimi K3.1 Pro, Gemini 3.1 Pro |
 | Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`) |
 <!-- omh:model-chain-table:end -->

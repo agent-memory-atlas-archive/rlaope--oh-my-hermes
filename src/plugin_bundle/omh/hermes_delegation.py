@@ -74,9 +74,10 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # projection.
     # Non-head entries move the same way: (claude-opus-5-5, medium) projects
     # to writing, which covers unspecified-high's second entry and the
-    # last_resort head; (kimi-k3.1-pro, high) projects to deep from
-    # visual-engineering and artistry; (gpt-6-luna, low) and
-    # (claude-haiku-5-5, low) reached through quick project to simple-work.
+    # last_resort head; (kimi-k3.1-pro, high) from visual-engineering and
+    # artistry projects to x-search since 2026-10-28 (to deep before), where
+    # it sits second; (gpt-6-luna, low) and (claude-haiku-5-5, low) reached
+    # through quick project to simple-work.
     "ultrabrain": (("gpt-6-astra", "xhigh"),),
     # DeepSeek V4.1 Flash left `deep`: a Flash budget model does not fit the
     # strong tier, and Opus 5.5 and Kimi K3.1 Pro now carry its cross-ecosystem
@@ -176,6 +177,63 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # would be a label nothing could ever carry. `max` is a documented rung of
     # both entries' ladders.
     "deep-work": (("claude-opus-5-5", "max"), ("gpt-6.1-sol", "max")),
+    # The six routing-recipe categories (owner recipe, 2026-10-28), appended
+    # after deep-work for the same tie-break reason. Heads are the owner's;
+    # each tail crosses into another provider ecosystem (owner rule above).
+    # They are opt-in: no role or scale names them.
+    #
+    # Two heads collide with an earlier category's head. The owner kept
+    # both heads (2026-10-28), so the earlier category keeps the label:
+    #   (gpt-6-astra, xhigh)     heads ultrabrain and forensics  -> "ultrabrain"
+    #   (claude-opus-5-5, xhigh) heads architect and synthesize  -> "architect"
+    # Routing is unaffected, and a lane routed through `omh_delegate_route`
+    # keeps its own category through the route-provenance record; only a
+    # child with no matching record is labelled by projection, so forensics
+    # and synthesize are labels only a routed lane carries.
+    # Six projections move (diffed over every shipped (model, effort) pair):
+    # (deepseek-flash, low) unspecified-low -> swarm and (gemini-3.1-pro,
+    # medium) writing -> google-search, because each now heads a chain;
+    # (gpt-6.1-sol, xhigh) and (grok-4.7, high) had no label and now head
+    # review and x-search; (kimi-k3.1-pro, high) deep -> x-search and
+    # (kimi-k3.1-pro, xhigh) architect -> review, because the shallower
+    # chain position wins (second in x-search against third in deep; third
+    # in review against fourth in architect).
+    "google-search": (
+        ("gemini-3.1-pro", "medium"),
+        ("gpt-6.1-sol", "medium"),
+        ("claude-opus-5-5", "medium"),
+    ),
+    # Grok 4.7 is a separate entry from the x_platform_data affinity, which
+    # keeps Grok Build 0.1.
+    "x-search": (
+        ("grok-4.7", "high"),
+        ("kimi-k3.1-pro", "high"),
+        ("gemini-3.1-pro", "high"),
+    ),
+    # A category, not the `review` role: the role still resolves through
+    # unspecified-high/unspecified-low and never reaches this chain.
+    "review": (
+        ("gpt-6.1-sol", "xhigh"),
+        ("claude-opus-5-5", "xhigh"),
+        ("kimi-k3.1-pro", "xhigh"),
+    ),
+    "swarm": (
+        ("deepseek-flash", "low"),
+        ("glm-5.3-flash", "low"),
+        ("gpt-6-luna", "low"),
+    ),
+    # Labelled "ultrabrain" by projection: its head is ultrabrain's.
+    "forensics": (
+        ("gpt-6-astra", "xhigh"),
+        ("claude-opus-5-5", "xhigh"),
+        ("kimi-k3.1-pro", "xhigh"),
+    ),
+    # Labelled "architect" by projection: its head is architect's.
+    "synthesize": (
+        ("claude-opus-5-5", "xhigh"),
+        ("gpt-6.1-sol", "xhigh"),
+        ("gemini-3.1-pro", "high"),
+    ),
 }
 
 # User-editable chain overrides. The document replaces only the chains of the
@@ -426,8 +484,9 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     "grok-build-0.1": ("xai", "openrouter"),
     # Retired on 2026-10-01: xAI lists it as an alias of grok-build-0.1.
     "grok-code-fast": ("xai", "openrouter"),
-    # Recognition-only, in no shipped chain (catalog sync, 2026-10-28): each
-    # has its own docs.x.ai model page and an OpenRouter `x-ai/<id>` listing.
+    # Each has its own docs.x.ai model page and an OpenRouter `x-ai/<id>`
+    # listing (catalog sync, 2026-10-28). Grok 4.7 heads x-search since the
+    # routing recipe of the same day; the older three stay recognition-only.
     "grok-4.7": ("xai", "openrouter"),
     "grok-4.6": ("xai", "openrouter"),
     "grok-4.5": ("xai", "openrouter"),

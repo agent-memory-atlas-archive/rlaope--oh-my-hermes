@@ -59,6 +59,7 @@ MODEL_DISPLAY_LABELS: Final[dict[str, str]] = {
     "gpt-6-sol": "GPT-6 Sol",
     "gpt-6.1-sol": "GPT-6.1 Sol",
     "gpt-6.1-terra": "GPT-6.1 Terra",
+    "grok-4.7": "Grok 4.7",
     "grok-build-0.1": "Grok Build 0.1",
     "grok-code-fast": "Grok Code Fast",
     "kimi-k3": "Kimi K3",
@@ -83,6 +84,12 @@ ROUTE_PURPOSE_PHRASES: Final[dict[str, str]] = {
     "artistry": "unconventional work",
     "simple-work": "small everyday tasks",
     "deep-work": "long, demanding tasks",
+    "google-search": "research grounded in Google Search",
+    "x-search": "live search on X",
+    "review": "an independent attempt to break the change",
+    "swarm": "one of many parallel slices",
+    "forensics": "root-causing a live symptom or a captured trace",
+    "synthesize": "merging many results into one answer",
 }
 ROUTE_NO_PURPOSE_REASONS: Final[dict[str, str]] = {
     "deep": "a strength tier; it names no kind of work",

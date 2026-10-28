@@ -309,6 +309,15 @@ MODEL_CATEGORIES: Final[tuple[str, ...]] = (
     "capable",
     "simple-work",
     "deep-work",
+    # The six routing-recipe categories (owner recipe, 2026-10-28), appended
+    # after deep-work by the same rule. They are opt-in: no role or scale
+    # names them, so a unit reaches one only by declaring it.
+    "google-search",
+    "x-search",
+    "review",
+    "swarm",
+    "forensics",
+    "synthesize",
 )
 
 _CATEGORY_ALIASES: Final[dict[str, str]] = {
@@ -429,6 +438,17 @@ BUILTIN_CATEGORY_MODELS: Final[dict[str, dict[str, tuple[dict[str, str], ...]]]]
         "capable": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
         "simple-work": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "low"},),
         "deep-work": ({"model_id": "gpt-6-astra", "reasoning_effort": "high"},),
+        # The six routing-recipe categories (2026-10-28) keep the same rule.
+        # forensics is the depth category, so it alone earns Astra, at xhigh
+        # like ultrabrain; review and synthesize are frontier-shaped but
+        # judged by a second opinion and a merge, so they stay on Sol; the
+        # two search lanes and swarm are cost-tier Sol.
+        "google-search": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "x-search": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "medium"},),
+        "review": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "xhigh"},),
+        "swarm": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "low"},),
+        "forensics": ({"model_id": "gpt-6-astra", "reasoning_effort": "xhigh"},),
+        "synthesize": ({"model_id": "gpt-6.1-sol", "reasoning_effort": "high"},),
     },
     # Claude Code: every frontier category runs the owner-ordered Claude chain
     # (owner decision, 2026-10-13, reversing the 2026-09-06 Fable -> Opus
@@ -466,6 +486,17 @@ BUILTIN_CATEGORY_MODELS: Final[dict[str, dict[str, tuple[dict[str, str], ...]]]]
         "capable": _CLAUDE_FRONTIER_CHAIN("medium"),
         "simple-work": ({"model_id": "haiku", "reasoning_effort": ""},),
         "deep-work": _CLAUDE_FRONTIER_CHAIN("high"),
+        # The six routing-recipe categories (2026-10-28): review, forensics
+        # and synthesize are frontier-shaped and run the ordered chain at
+        # xhigh; swarm is a cost-tier pick on the haiku lane; the two search
+        # lanes join the sonnet lanes. Neither search lane gets Claude's own
+        # search grounding from this table -- it names a model, not a tool.
+        "google-search": ({"model_id": "sonnet", "reasoning_effort": ""},),
+        "x-search": ({"model_id": "sonnet", "reasoning_effort": ""},),
+        "review": _CLAUDE_FRONTIER_CHAIN("xhigh"),
+        "swarm": ({"model_id": "haiku", "reasoning_effort": ""},),
+        "forensics": _CLAUDE_FRONTIER_CHAIN("xhigh"),
+        "synthesize": _CLAUDE_FRONTIER_CHAIN("xhigh"),
     },
 }
 

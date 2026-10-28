@@ -861,6 +861,10 @@ class RouteVocabularyPolicyTests(unittest.TestCase):
             "visual-engineering": "high",
             "capable": "medium",
             "deep-work": "high",
+            # The frontier-shaped routing-recipe categories (2026-10-28).
+            "review": "xhigh",
+            "forensics": "xhigh",
+            "synthesize": "xhigh",
         }
         frontier = {
             category: chain
