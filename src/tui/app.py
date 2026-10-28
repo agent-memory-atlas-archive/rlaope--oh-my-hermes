@@ -676,6 +676,10 @@ RESUME_REFUSED = 4001
 # filtered by it.
 TITLE_SHARED_NOTICE = '{count} sessions are titled "{title}": pick one.'
 TITLE_UNKNOWN_NOTICE = 'No session is titled "{title}": pick one, or change the filter.'
+# The shapes of Hermes' session ids: a stored one (`20261028_101538_a1b2c3`) and a canonical local one
+# (`local-` and hex, whole or as the 16-character hint). A typed target of that shape that no lookup finds is an id
+# the owner refused, so its refusal is said rather than a title notice.
+SESSION_ID_SHAPE = re.compile(r"\d{8}_\d{6}_[0-9a-f]+|local-[0-9a-f]{16,}")
 # `complete.path` goes out once the `@` token has held still this long.
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
@@ -4660,7 +4664,8 @@ class App(ModesMixin, AgentViewMixin):
         id, matching case first and then ignoring it. Several with that title
         (they differ only in case: Hermes refuses an exact duplicate), or none,
         open the picker filtered by `title` and say how many matched; with no
-        session listed at all the refusal is said.
+        session listed at all, or none matching a target shaped as a session id
+        (`SESSION_ID_SHAPE`), the refusal is said.
         """
         rows = session_rows(result)
         if not rows or any(row.id == title for row in rows):
@@ -4671,6 +4676,9 @@ class App(ModesMixin, AgentViewMixin):
         ]
         if len(matched) == 1:
             self._switch_session(matched[0].id, notice)
+            return
+        if not matched and SESSION_ID_SHAPE.fullmatch(title):
+            self._on_resume_refused(title, error)
             return
         said = TITLE_SHARED_NOTICE if matched else TITLE_UNKNOWN_NOTICE
         self.transcript.add_notice(said.format(count=len(matched), title=title), NOTICE_WARN)

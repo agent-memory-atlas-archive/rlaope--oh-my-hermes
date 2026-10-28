@@ -159,6 +159,16 @@ class TitleTests(unittest.TestCase):
                 ])
                 self.assertIsNone(app.picker)
 
+    def test_a_compressed_lineage_resumes_its_tip_found_by_the_roots_title(self) -> None:
+        # `list_sessions` answers the lineage root as `id` and its compression tip as `resolved_id`; the tip's own
+        # title may be the root's with a `#N` continuation, and `root_title` keeps the root's.
+        tip = {"session_id": "20261027_101010_00f00d", "id": "20261001_090000_000001",
+               "resolved_id": "20261027_101010_00f00d", "title": "Long refactor #3", "root_title": "Long refactor",
+               "source": "tui", "started_at": 1_791_900_000.0, "message_count": 9, "running": False}
+        app, client = self.typed("/resume Long refactor", {"sessions": [tip], "scope": "stored"})
+        self.assertEqual(client.calls[-1], ("session.resume", {"session_id": "20261027_101010_00f00d", "cols": 80}))
+        self.assertEqual(len(client.calls), 3)
+
     def test_with_no_exact_title_the_listing_is_scanned_ignoring_case(self) -> None:
         for line, sid in (("/resume RELEASE NOTES for 4.0.3", "20261027_084038_000003"),
                           ("/resume terminal capture DRIVER", None)):  # two differ only in case: none is picked
@@ -206,6 +216,12 @@ class TitleTests(unittest.TestCase):
             (f"/resume {refused_id}", (looked_up(picker_row(refused_id, "Weekly ops review", 3)),), 2),  # the lookup
             (f"/resume {refused_id}", (looked_up(), LISTED), 3),  # the listing has it
             ("/resume Weekly ops review", (looked_up(), {"error": {"code": 5006, "message": "store locked"}}), 3),
+        )
+        cases += (
+            ("/resume Weekly ops review", (looked_up(), {"sessions": []}), 3),  # an empty listing: nothing to pick from
+            # Shaped as Hermes' ids, refused, and found by neither lookup: the owner's reason, not a title notice.
+            ("/resume 20250101_101010_abcdef", (looked_up(), LISTED), 3),
+            ("/resume local-0123456789abcdef", (looked_up(), LISTED), 3),
         )
         for line, answers, sent in cases:
             with self.subTest(line=line, sent=sent):

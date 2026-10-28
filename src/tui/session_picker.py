@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
+import math
 
 from .composer import PROMPT
 from .frame import RULE
@@ -81,9 +82,17 @@ def _number(value: object) -> float:
 
 
 def _seconds(value: object) -> float:
-    """A start time in seconds: one given in milliseconds is scaled down."""
+    """A start time in seconds: one given in milliseconds is scaled down, and one no calendar holds (inf, nan, a
+    year past 9999) is unknown, 0."""
     number = _number(value)
-    return number / 1000 if number > MILLISECONDS_FROM else number
+    number = number / 1000 if number > MILLISECONDS_FROM else number
+    if not math.isfinite(number):
+        return 0.0
+    try:
+        date.fromtimestamp(number)
+    except (ValueError, OverflowError, OSError):
+        return 0.0
+    return number
 
 
 def session_rows(result: Mapping[str, object]) -> list[SessionRow]:
@@ -121,8 +130,8 @@ def day_group(started_at: float, now: float) -> int:
 
 
 def age_text(started_at: float, now: float) -> str:
-    """`just now`, `5m ago`, `3h ago`, `2d ago`; "" when the start time is unknown."""
-    if started_at <= 0:
+    """`just now`, `5m ago`, `3h ago`, `2d ago`; "" when the start time is unknown (none, or not a finite number)."""
+    if not math.isfinite(started_at) or started_at <= 0:
         return ""
     seconds = max(0, int(now - started_at))
     for size, suffix in ((86400, "d"), (3600, "h"), (60, "m")):
@@ -192,7 +201,9 @@ def picker_frame(
     still fit; with less room the rules go first. With two rows or fewer
     the header goes too, so the highlighted row stays. A list row that
     only heads the rows after it (`heading`) is never the last row shown
-    while its rows are below: the list scrolls one further.
+    while its rows are below: that row is left blank instead, so the list
+    never scrolls a heading above the highlighted row out of view and the
+    frame keeps its height.
     """
     if max_rows <= 0:
         return PickerFrame([], None, 1)
@@ -208,9 +219,9 @@ def picker_frame(
     body = max_rows - 2 - len(above) - len(below)
     start = min(max(index - body + 1, 0), max(count - body, 0))
     end = min(start + body, count)
-    if heading is not None and start < index and end < count and heading(end - 1):
-        start, end = start + 1, end + 1
     rows = [current(number) for number in range(start, end)] if count else [current(0)]
+    if heading is not None and end < count and end - 1 != index and heading(end - 1):
+        rows[-1] = ()
     lines = [header, *above, *rows, *below, filter_line(query, width, theme)]
     return PickerFrame(lines, (len(lines) - 1, caret), body)
 

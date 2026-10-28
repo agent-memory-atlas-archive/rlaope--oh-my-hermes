@@ -179,16 +179,25 @@ class LinesTests(unittest.TestCase):
                   (midnight - timedelta(days=20)).timestamp(), (midnight - timedelta(days=30)).timestamp()]
         rows = [SessionRow(f"s{n}", f"t{n}", "", at, 1) for n, at in enumerate(starts)]
         headings = {"Current", *DAY_GROUPS}
-        for max_rows in range(3, 13):
-            chooser = SessionPicker(rows, current="s1")
-            for step in range(len(rows)):
-                with self.subTest(max_rows=max_rows, step=step):
-                    texts = [line_text(line).strip() for line in chooser.lines(24, DEFAULT_THEME, max_rows, NOW)]
-                    listed = [text for text in texts[1:-1] if not text.startswith(RULE)]
-                    if listed[-1] in headings:  # only the list's very end may stop on one, with nothing below
-                        self.fail(f"orphan heading {listed[-1]!r}: {texts}")
-                    self.assertTrue(any(text.startswith("❯") for text in listed), texts)  # the highlight stays
-                chooser.handle_key(Key(DOWN))
+        # The review's case too: six sessions, the current one first, at 60 columns, where opening the picker
+        # scrolled `Current` out of view at heights 5, 6, 7 and 10.
+        six = [SessionRow(f"c{n}", "" if n == 0 else f"t{n}", "", at, 1) for n, at in enumerate(starts[:6])]
+        for current, cases, width in (("s1", rows, 24), ("c0", six, 60)):
+            for max_rows in range(3, 13):
+                chooser = SessionPicker(cases, current=current)
+                for step in range(len(cases)):
+                    with self.subTest(width=width, max_rows=max_rows, step=step):
+                        texts = [line_text(line).strip() for line in chooser.lines(width, DEFAULT_THEME, max_rows, NOW)]
+                        listed = [text for text in texts[1:-1] if not text.startswith(RULE)]
+                        if listed[-1] in headings:  # only the list's very end may stop on one, with nothing below
+                            self.fail(f"orphan heading {listed[-1]!r}: {texts}")
+                        at = next(number for number, text in enumerate(listed) if text.startswith("❯"))
+                        shown = chooser.visible()
+                        group = chooser._group(shown[chooser.index])
+                        first = chooser.index == 0 or chooser._group(shown[chooser.index - 1]) != group
+                        if first and max_rows > 3:  # a list of two rows or more shows the heading over its first row
+                            self.assertEqual(listed[at - 1] if at else "", group, texts)
+                    chooser.handle_key(Key(DOWN))
 
     def test_the_current_session_heads_the_list_and_is_this_session_while_untitled(self) -> None:
         rows = [SessionRow("today-1", "Today's work", "", NOW - 60, 3),
@@ -206,11 +215,19 @@ class LinesTests(unittest.TestCase):
     def test_a_start_in_milliseconds_or_past_any_calendar_does_not_break_the_render(self) -> None:
         listed = {"sessions": [{"id": "ms", "title": "in ms", "started_at": (NOW - 300) * 1000},
                                {"id": "far", "title": "far off", "started_at": 1e300},
-                               {"id": "soon", "title": "an hour ahead", "started_at": NOW + 3600}]}
+                               {"id": "soon", "title": "an hour ahead", "started_at": NOW + 3600},
+                               {"id": "later", "title": "three days ahead", "started_at": NOW + 3 * 86400},
+                               {"id": "inf", "title": "infinite", "started_at": float("inf")},
+                               {"id": "nan", "title": "not a number", "started_at": float("nan")}]}
         rows = session_rows(listed)
         self.assertAlmostEqual(rows[0].started_at, NOW - 300)
         self.assertEqual(age_text(rows[0].started_at, NOW), "5m ago")
-        self.assertEqual([DAY_GROUPS[day_group(row.started_at, NOW)] for row in rows], ["Today", "Earlier", "Today"])
+        self.assertEqual([row.started_at for row in rows[-3:]] + [rows[1].started_at], [NOW + 3 * 86400, 0.0, 0.0, 0.0])
+        self.assertEqual([DAY_GROUPS[day_group(row.started_at, NOW)] for row in rows],
+                         ["Today", "Earlier", "Today", "Today", "Earlier", "Earlier"])  # a future day is still today's
+        for value in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(value=value):
+                self.assertEqual(age_text(value, NOW), "")
         texts = [line_text(line) for line in SessionPicker(rows, current="").lines(60, DEFAULT_THEME, 12, NOW)]
         self.assertIn("in ms", "".join(texts))
 
