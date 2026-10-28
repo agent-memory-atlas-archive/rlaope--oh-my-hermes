@@ -42,12 +42,14 @@ joined to a prompt: `_recall_queue`). A turn the person interrupts does not
 start the next queued prompt: the queue comes back into the composer the
 same way, and what stays queued waits for the person (`_hold_queue`).
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
-turn (`session.steer`); the TUI steers nothing on its own. Text Hermes does
-not take as a steer joins the TUI's queue while the turn runs, whatever the
-busy mode, and goes as a prompt once it ends; sent at once, it would
-interrupt or redirect the turn it was meant to steer. A steer answered after
-its session was left goes back to the composer instead: the session now live
-never receives it.
+turn (`session.steer`); on an empty composer Ctrl+Enter, or Ctrl+J, sends the
+oldest queued prompt instead, the person's own choice (`_send_queued_now`),
+and the TUI steers nothing on its own. Text Hermes does not take as a steer
+joins the TUI's queue while the turn runs, whatever the busy mode, and goes
+as a prompt once it ends; sent at once, it would interrupt or redirect the
+turn it was meant to steer.
+A steer answered after its session was left goes back to the composer
+instead: the session now live never receives it.
 
 When the gateway child exits on its own with a failure, the loop spawns it
 again from the environment the launcher handed the TUI (`gateway_spawn`) and
@@ -119,7 +121,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import INFO_INSET, MODE_NORMAL, MODE_SHELL, Frame, badge_line, build_frame, sticky_line
+from .frame import INFO_INSET, MODE_NORMAL, MODE_SHELL, Frame, badge_forms, branch_forms, build_frame, sticky_line
 from .git_status import GitWatcher
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
@@ -356,6 +358,11 @@ CHAINS_CLOSED_NOTICE = "Hermes asked you something, so /omh-model closed:"
 # What the info line says while the draft spans lines on a terminal that has sent no key report, where Shift+Enter
 # arrives as Enter and sends; longest first.
 NEWLINE_KEYS = ("⏎ sends · \\⏎, alt+⏎ or ctrl+j adds a line", "\\⏎ or alt+⏎ adds a line", "alt+⏎ adds a line")
+# Ctrl+J: a line feed from every terminal in raw mode, where Enter is a carriage return, so the send-now key no
+# terminal folds into Enter: on an empty composer with a prompt queued during a turn it is `SEND_NOW_KEY`; anywhere
+# else it adds a line.
+STEER_FALLBACK_KEY = Key(CHAR, "j", ctrl=True)
+SEND_NOW_KEY = Key(ENTER, ctrl=True)
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
 SHELL_PREFIX = "!"
 SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its output is not sent to the model."
@@ -495,7 +502,7 @@ TERMINATE_GRACE_SECONDS = 2.0
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
-NATIVE_WORD = "Native"  # the badge under the info line's last word, in the launch look's colours
+NATIVE_WORD = "Native"  # the last word of the badge that starts the info line, in the launch look's colours
 # The block logo goes above the banner from this many rows (and as many columns as it is wide): its six rows and
 # the blank under it leave the composer region its room there.
 LOGO_MIN_ROWS = 24
@@ -551,6 +558,10 @@ QUEUE_ROWS = 3
 QUEUE_EDIT_HINT = "↑ edit"
 QUEUE_HELD_HINT = "held · ↑ edit"
 QUEUE_HINT_GAP = 2
+# While a turn runs, the row under the queued prompts says the key that sends the oldest into the turn now, as a
+# steer, the way Claude Code says it: Ctrl+Enter where the terminal tells it from Enter, else Ctrl+J.
+SEND_NOW_HINT = "{key} to send now · ↑ to edit"
+SEND_NOW_KEYS = ("ctrl+j", "ctrl+enter")  # by `App.keyboard_protocol`
 # After the person interrupts a turn the queue does not go on by itself: what Up would take back goes back into the
 # composer, and what it would not (a queued `!` line and what follows it) stays queued, held, until the next prompt
 # the person sends starts a turn, or Up takes it back.
@@ -591,6 +602,12 @@ INTERRUPTING = "interrupting…"
 STEER_REFUSED_OUTCOME = "{fallback} — Hermes refused the steer ({reason})"
 STEER_FALLBACK_QUEUED = "queued"  # a turn still runs: the text waits in the TUI's queue for it to end
 STEER_FALLBACK_SENT = "sent as a prompt"
+STEER_FALLBACK_HEAD = "back at the head of the queue"  # a sent-now steer: the line it was, in its place
+# A sent-now steer Hermes took but had not read when the turn stopped: Hermes dropped it, so its line is queued again.
+SENT_NOW_DROPPED_OUTCOME = "back in the queue — the turn stopped before Hermes read it"
+SENT_NOW_DROPPED_NOTICE = "The turn stopped before Hermes read {count} prompt{s} you sent now; back in the queue."
+# Events of a further step of the turn: after a tool finished, one of these means Hermes read the steers it held.
+SENT_NOW_READ_EVENTS = frozenset({"tool.start", "message.delta", "thinking.delta", "reasoning.delta"})
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
 # A steer with no answer is no refusal: Hermes may have taken it, so its text is never sent again but given back.
 STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the steer in {seconds:g} s"
@@ -788,12 +805,22 @@ class _Pending:
     # The command it was made for (its handler, or the answer to one of its calls, was running): what its answer
     # says lands under that command's echo, which stays open until every call made for it is answered.
     command: CommandBlock | None = None
-    on_expiry: Callable[[], None] | None = None  # what an answer that never came settles; None: a notice says so
+    # What an answer that never came settles, given the seconds it was waited for; None: a notice says so.
+    on_expiry: Callable[[float], None] | None = None
     steer: SteerBlock | None = None  # the steer row it settles, given back at once if the gateway exits first
     seconds: float = CALL_ANSWER_SECONDS  # how long it is waited for, as its expiry notice says
     # A `/compress` call: Hermes' shared gateway serves this connection's calls one at a time, so every call sent
     # while it is out waits until the compression ends.
     compressing: bool = False
+
+
+@dataclass
+class SentNow:
+    """A queued prompt the send-now key steered into the turn and Hermes took, until the turn reads it."""
+
+    line: QueuedLine
+    block: SteerBlock
+    batch_done: bool = False  # a tool finished since Hermes took it: the turn's next step reads it
 
 
 class QueuedLine(NamedTuple):
@@ -1045,15 +1072,20 @@ def first_line(text: str) -> str:
 
 
 def queue_lines(
-    prompts: Sequence[str], width: int, max_rows: int, theme: Theme, hint: str = QUEUE_EDIT_HINT
+    prompts: Sequence[str], width: int, max_rows: int, theme: Theme, hint: str = QUEUE_EDIT_HINT, below: str = "",
 ) -> list[Line]:
     """The queued prompts, next to be sent first: `⧗ <first line>` each, never more than `max_rows` rows.
 
     At most `QUEUE_ROWS` prompts are named and `+N more` counts the rest;
-    `hint` (`↑ edit`, the key that takes them back into the composer) ends the last row.
+    `hint` (`↑ edit`, the key that takes them back into the composer) ends the last row. `below`, when given and
+    there are two rows or more, is a row of its own under them instead, under the prompts' text (while a turn runs:
+    the send-now key and Up, `SEND_NOW_HINT`).
     """
     if not prompts or max_rows <= 0:
         return []
+    if below and max_rows > 1:
+        rows = queue_lines(prompts, width, max_rows - 1, theme, "")
+        return [*rows, truncate_line((Span(" " * cell_width(QUEUE_GLYPH)), Span(below, theme.hint)), width)]
     named = min(len(prompts), QUEUE_ROWS, max_rows)
     if named < len(prompts):
         named = min(named, max_rows - 1)  # the last row counts the rest
@@ -1062,9 +1094,10 @@ def queue_lines(
     ]
     if named < len(prompts):
         rows.append((Span(f"+{len(prompts) - named} more", theme.muted),))
-    said: Line = (Span(hint, theme.hint),)
-    last = truncate_line(rows[-1], max(width - line_width(said) - QUEUE_HINT_GAP, 0))
-    rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(said))), *said)
+    if hint:
+        said: Line = (Span(hint, theme.hint),)
+        last = truncate_line(rows[-1], max(width - line_width(said) - QUEUE_HINT_GAP, 0))
+        rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(said))), *said)
     return [truncate_line(row, width) for row in rows]
 
 
@@ -1490,6 +1523,7 @@ class App(ModesMixin, AgentViewMixin):
         self.tell_turn_runs = False  # the turn whose approval the open tell field denied has not ended (`_tell`)
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
+        self.sent_now: list[SentNow] = []  # sent-now steers Hermes took and the turn has not read yet
         self.queue_held = False  # the queue waits for the person after an interrupt (`_hold_queue`)
         self.interrupting = False  # the person interrupted the running turn and Hermes has not ended it yet
         self.sticky = ""
@@ -1518,7 +1552,7 @@ class App(ModesMixin, AgentViewMixin):
         self.plan_folded = False  # Ctrl+P: the plan is its header alone, for the rest of the session
         self.plan_room_collapsed = False  # the plan the slot drew last was its header alone for want of rows
         self.tail_spacer = False  # `_tail` put a blank row above the working row, the first row to give way
-        self.badge_cache: tuple[object, Line] = (None, ())  # `_badge_line`'s last row and what it was drawn from
+        self.badge_cache: tuple[object, tuple[Line, ...]] = (None, ())  # `_badge_forms`' last forms and their key
         self.pager: Pager | None = None
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         # What reads the bot board (Ctrl+S, `/bots`) off this thread: made when it first opens, kept for the session
@@ -1831,6 +1865,7 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
         self.interrupting = self.queue_held = False  # both were about the session being left
+        self.sent_now = []  # steers into the session being left: theirs to settle
         self.turn_unknown = None  # the drift watch was for a turn of the session being left
         self.busy_since = self.clock()
         self.turn_waited = 0.0
@@ -2170,7 +2205,7 @@ class App(ModesMixin, AgentViewMixin):
         params: dict[str, Any],
         on_result: Callable[[dict[str, Any]], None],
         on_error: Callable[[dict[str, Any]], bool] | None = None,
-        on_expiry: Callable[[], None] | None = None,
+        on_expiry: Callable[[float], None] | None = None,
         steer: SteerBlock | None = None,
         seconds: float | None = None,
         compressing: bool = False,
@@ -2198,14 +2233,16 @@ class App(ModesMixin, AgentViewMixin):
         Neither of its handlers runs: an answer that never came is not a
         refusal, and state that waits on one (a yolo call still unanswered)
         stays as it was. A call with an `on_expiry` (a steer, whose row and
-        text wait on the answer) is settled by it instead, and says so itself.
+        text wait on the answer) is settled by it instead, given the seconds the
+        call was waited for (more than its own budget when it was held behind a
+        `/compress`), and says so itself.
         """
         now = self.clock()
         for request_id, call in [(rid, call) for rid, call in self.pending.items() if now >= call.expires_at]:
             del self.pending[request_id]
             self.client.forget(request_id)
             if call.on_expiry is not None:
-                call.on_expiry()
+                call.on_expiry(call.seconds)
             elif call.method not in QUIET_EXPIRY_METHODS:
                 notice = CALL_EXPIRED_NOTICE.format(method=call.method, seconds=call.seconds)
                 if call.command is None:
@@ -2527,6 +2564,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.tail_misses.pop(as_text(payload.get("subagent_id")), None)
         else:
             self.transcript.apply(event)
+            self._track_sent_now(event.type)
             self._count_streamed(event.type, payload)
             if event.type == "tool.complete" and isinstance(payload, Mapping):
                 self._dag_moment(payload)
@@ -2972,6 +3010,14 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is None and isinstance(event, Key) and (self._menu_moves(event) or self._menu_enter(event)):
             return
         if self.slot is None and self._recall_queue(event):
+            return
+        # The send-now key, as Claude Code's: while a turn runs, on an empty composer with a prompt queued that can be
+        # sent, Ctrl+Enter (or Ctrl+J, where Ctrl+Enter may arrive as Enter) sends the oldest queued prompt into the
+        # turn. Anywhere else Ctrl+J adds a line, and Ctrl+Enter with text typed steers that text.
+        if event in (SEND_NOW_KEY, STEER_FALLBACK_KEY) and not self.composer.text and self._steer_keys_live() and (
+            self._queue_head_steers()
+        ):
+            self._send_queued_now()
             return
         before = self.composer.text
         action = self.composer.handle(event)
@@ -3651,7 +3697,7 @@ class App(ModesMixin, AgentViewMixin):
             {"session_id": sid},
             lambda result: self._redraw_from_history(sid, result, after),
             lambda history_error: self._history_unread(sid, history_error),
-            lambda: self._history_unread(sid, {"message": f"no answer in {CALL_ANSWER_SECONDS:g} s"}),
+            lambda seconds: self._history_unread(sid, {"message": f"no answer in {seconds:g} s"}),
         )
         return True
 
@@ -3936,6 +3982,7 @@ class App(ModesMixin, AgentViewMixin):
             self.interrupting = False
             self._hold_queue(INTERRUPTED_WHY)
         else:
+            self.sent_now = []  # the turn ended on its own: Hermes passes a steer it held on as the next turn
             self._drain_queue()
         self._check_default()
 
@@ -3951,6 +3998,7 @@ class App(ModesMixin, AgentViewMixin):
         starts a turn (`_submit_prompt`) or Up takes it back. A notice says
         which.
         """
+        self._requeue_unread_steers()
         if not self.queued:
             return
         draft = self._draft()
@@ -4086,6 +4134,34 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── steering ──
 
+    def _steer_keys_live(self) -> bool:
+        """Whether the send-now key can act now: a turn runs, and no question, picked agent steer or rewind, or tell
+        row takes what is sent."""
+        return self._busy() and self.slot is None and (
+            self.agent_steer is None and self.rewind is None and self.tell_draft is None
+        )
+
+    def _queue_head_steers(self) -> bool:
+        """Whether the oldest queued line is a prompt the person typed as it is, which the send-now key can steer with.
+
+        A queued `!` line, a prompt a command built (a skill's) and one plan
+        mode wrapped (a plan request must not land in a turn that can edit)
+        wait for the turn's end, and the lines behind them too, so the queue
+        keeps its order: each of those has a `typed` form or is a shell line.
+        """
+        head = self.queued[0] if self.queued else None
+        return head is not None and not head.shell and not head.typed
+
+    def _send_queued_now(self) -> None:
+        """The send-now key: the oldest queued prompt leaves the queue and goes into the running turn as a steer.
+
+        A steer Hermes does not take goes back to the head of the queue as
+        it was (`_steer_refused`); one it took but had not read when the turn
+        stopped goes back there too (`_requeue_unread_steers`).
+        """
+        line = self.queued.popleft()
+        self._steer(line.text, line)
+
     def _steer_or_submit(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command or a `!` line, it is Enter.
 
@@ -4109,8 +4185,9 @@ class App(ModesMixin, AgentViewMixin):
         else:
             self._send_typed(arg)
 
-    def _steer(self, text: str) -> None:
-        """Send `text` into the running turn. Its only callers pass what the person typed and sent."""
+    def _steer(self, text: str, queued: QueuedLine | None = None) -> None:
+        """Send `text` into the running turn. Its only callers pass what the person typed and sent; `queued` is the
+        queue's line the send-now key took it from."""
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
@@ -4119,58 +4196,99 @@ class App(ModesMixin, AgentViewMixin):
         self._request(
             "session.steer",
             {"session_id": sid, "text": text},
-            lambda result: self._on_steered(sid, block, result),
-            lambda error: self._on_steer_refused(sid, block, error),
-            lambda: self._on_steer_unanswered(sid, block),
+            lambda result: self._on_steered(sid, block, result, queued),
+            lambda error: self._on_steer_refused(sid, block, error, queued),
+            lambda seconds: self._on_steer_unanswered(sid, block, seconds),
             steer=block,
         )
 
-    def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any]) -> None:
+    def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any], queued: QueuedLine | None = None) -> None:
         if sid != self.sid:
             self._steer_back(block.text)
         elif as_text(result.get("status")) == contract.STEER_REJECTED:
-            self._steer_refused(block, STEER_REJECTED_REASON)
+            self._steer_refused(block, STEER_REJECTED_REASON, queued)
         else:
             self.transcript.steer_answered(block, STEER_QUEUED)
+            if queued is not None:  # Hermes holds it until the turn's next step reads it (`_track_sent_now`)
+                self.sent_now.append(SentNow(queued, block))
 
-    def _on_steer_refused(self, sid: str, block: SteerBlock, error: dict[str, Any]) -> bool:
+    def _on_steer_refused(
+        self, sid: str, block: SteerBlock, error: dict[str, Any], queued: QueuedLine | None = None
+    ) -> bool:
         """Hermes could not steer (an agent still starting, or one that takes no steer): the text is the next prompt."""
         if sid != self.sid:
             self._steer_back(block.text)
             return True
-        self._steer_refused(block, as_text(error.get("message")) or "refused")  # Hermes' words, not its code
+        self._steer_refused(block, as_text(error.get("message")) or "refused", queued)  # Hermes' words, not its code
         return True
 
-    def _on_steer_unanswered(self, sid: str, block: SteerBlock) -> None:
-        """No answer within `CALL_ANSWER_SECONDS`: the text comes back to the person and the row leaves.
+    def _track_sent_now(self, event_type: str) -> None:
+        """Forget a sent-now steer once the turn has read it.
+
+        Hermes holds a steer until the tool batch running when it came ends
+        (it joins those results) or the next model request starts, and drops
+        it if the turn is stopped first. So one is read once a tool finished
+        after Hermes took it and the turn has taken a further step (a tool
+        starts, or the model writes again).
+        """
+        if event_type == "tool.complete":
+            for sent in self.sent_now:
+                sent.batch_done = True
+        elif event_type in SENT_NOW_READ_EVENTS:
+            self.sent_now = [sent for sent in self.sent_now if not sent.batch_done]
+
+    def _requeue_unread_steers(self) -> None:
+        """The turn stopped: a sent-now steer Hermes took but had not read was dropped with it, so its line goes back
+        to the head of the queue, in order, its row says so, and a notice names how many."""
+        unread, self.sent_now = self.sent_now, []
+        for sent in reversed(unread):
+            self.queued.appendleft(sent.line)
+            self.transcript.steer_answered(sent.block, STEER_REFUSED, SENT_NOW_DROPPED_OUTCOME)
+        if unread:
+            count = len(unread)
+            self.transcript.add_notice(SENT_NOW_DROPPED_NOTICE.format(count=count, s="" if count == 1 else "s"),
+                                       NOTICE_WARN)
+
+    def _on_steer_unanswered(self, sid: str, block: SteerBlock, seconds: float) -> None:
+        """No answer in the `seconds` the call was waited for: the text comes back to the person and the row leaves.
 
         Hermes may have taken the steer, so its text is never sent or queued again.
         """
         if sid != self.sid:
-            self._steer_back(block.text, STEER_LEFT_UNANSWERED_NOTICE.format(seconds=CALL_ANSWER_SECONDS))
+            self._steer_back(block.text, STEER_LEFT_UNANSWERED_NOTICE.format(seconds=seconds))
         else:
-            self._steer_unanswered(block)
+            self._steer_unanswered(block, seconds)
 
-    def _on_agent_steer_unanswered(self, sid: str, session: str, block: SteerBlock) -> None:
-        """An agent steer with no answer within `CALL_ANSWER_SECONDS`: as the main steer's, and if `sid`, the session
-        it went to, was left, a notice names the agent and `session`."""
+    def _on_agent_steer_unanswered(self, sid: str, session: str, block: SteerBlock, seconds: float) -> None:
+        """An agent steer with no answer in `seconds`: as the main steer's, and if `sid`, the session it went to, was
+        left, a notice names the agent and `session`."""
         if sid != self.sid:
-            said = AGENT_STEER_LEFT_UNANSWERED_NOTICE.format(name=block.agent, seconds=CALL_ANSWER_SECONDS, session=session)
+            said = AGENT_STEER_LEFT_UNANSWERED_NOTICE.format(name=block.agent, seconds=seconds, session=session)
             self._steer_back(block.text, said)
         else:
-            self._steer_unanswered(block)
+            self._steer_unanswered(block, seconds)
 
-    def _steer_unanswered(self, block: SteerBlock) -> None:
-        """A steer, the main turn's or an agent's, whose call expired: its row says so and its text is given back."""
-        self.transcript.steer_answered(block, STEER_REFUSED, STEER_UNANSWERED_OUTCOME.format(seconds=CALL_ANSWER_SECONDS))
+    def _steer_unanswered(self, block: SteerBlock, seconds: float) -> None:
+        """A steer, the main turn's or an agent's, unanswered in the `seconds` its call was waited for: its row says
+        so and its text is given back."""
+        self.transcript.steer_answered(block, STEER_REFUSED, STEER_UNANSWERED_OUTCOME.format(seconds=seconds))
         self._give_back(block.text)
 
-    def _steer_refused(self, block: SteerBlock, reason: str) -> None:
+    def _steer_refused(self, block: SteerBlock, reason: str, queued: QueuedLine | None = None) -> None:
         """The steer says what became of its text (with Hermes' `reason`), which goes as the next prompt.
 
         While a turn runs it waits in the TUI's queue, whatever the busy mode;
-        only an idle session gets it as a prompt at once.
+        only an idle session gets it as a prompt at once. A sent-now steer
+        (`queued`) goes back to the head of the queue as the line it was, its
+        wrapper and chips kept, never wrapped again by the mode now on.
         """
+        if queued is not None:
+            self.queued.appendleft(queued)
+            fallback = STEER_FALLBACK_HEAD if self._busy() or self.queue_held else STEER_FALLBACK_SENT
+            self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
+            if not self._busy():
+                self._drain_queue()
+            return
         fallback = STEER_FALLBACK_QUEUED if self._busy() else STEER_FALLBACK_SENT
         self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
         self._send_typed(block.text, hold=True)
@@ -4255,7 +4373,7 @@ class App(ModesMixin, AgentViewMixin):
                 {"command": invocation.text, "session_id": self.sid},
                 lambda result: self._on_slash_result(invocation, result, depth),
                 lambda error: self._on_slash_refused(invocation, error, depth),
-                (lambda: self._compress_unanswered(echo)) if compressing else None,
+                (lambda seconds: self._compress_unanswered(echo, seconds)) if compressing else None,
                 seconds=COMPRESS_ANSWER_SECONDS if compressing else None,
                 compressing=compressing and not preview,
             )
@@ -4272,10 +4390,11 @@ class App(ModesMixin, AgentViewMixin):
         ends = [call.expires_at for call in self.pending.values() if call.compressing]
         return float(math.ceil(max(0.0, max(ends) - self.clock()))) if ends else None
 
-    def _compress_unanswered(self, echo: CommandBlock | None) -> None:
-        """A `/compress` unanswered in its budget: said under its echo, and nothing is sent again."""
+    def _compress_unanswered(self, echo: CommandBlock | None, seconds: float) -> None:
+        """A `/compress` unanswered in the `seconds` it was waited for (more than `COMPRESS_ANSWER_SECONDS` when it
+        was sent behind another one): said under its echo, and nothing is sent again."""
         with self._for_command(echo):
-            self.transcript.add_notice(COMPRESS_UNANSWERED_NOTICE.format(seconds=COMPRESS_ANSWER_SECONDS), NOTICE_WARN)
+            self.transcript.add_notice(COMPRESS_UNANSWERED_NOTICE.format(seconds=seconds), NOTICE_WARN)
 
     def _on_slash_refused(self, invocation: SlashInvocation, error: dict[str, Any], depth: int) -> bool:
         """`slash.exec` refusing a command `command.dispatch` owns (4018) falls back to it, as Ink does.
@@ -4903,13 +5022,13 @@ class App(ModesMixin, AgentViewMixin):
         """The launch look drawn now: the /theme picker's highlight while it is open, else the one in use."""
         return self.launch_picker.highlighted if self.launch_picker is not None else self.launch_look
 
-    def _badge_line(self, cols: int) -> Line:
-        """The row under the info line (`frame.badge_line`): the branch, and `[ ⚚ OMH Native ]` in the shown look;
-        built again only when the width, the look, the theme or the branch changed."""
-        if is_tiny(self.size[1], cols):
+    def _badge_forms(self) -> tuple[Line, ...]:
+        """`[ ⚚ OMH Native ]` in the shown look and its shorter forms (`frame.badge_forms`), for the info line's left
+        end; none on a tiny terminal, which keeps its one line for what the keys do. Built again only when the look or
+        the theme changed."""
+        if is_tiny(self.size[1], self.size[0]):
             return ()
-        state = self.git.state if self.git is not None else None
-        key = (cols, self._shown_look(), self.theme, state)
+        key = (self._shown_look(), self.theme, self.color_depth)
         if self.badge_cache[0] == key:
             return self.badge_cache[1]
         background = self._surface()
@@ -4922,9 +5041,9 @@ class App(ModesMixin, AgentViewMixin):
             native = (Span(NATIVE_WORD, Style(fg=lifted_colour(palette.spark, surface, TEXT_CONTRAST, ink), bold=True)),)
         if self.color_depth == NO_COLOR:
             native = tuple(Span(span.text, replace(span.style, depth=NO_COLOR)) for span in native)
-        line = badge_line(cols, self.theme, self._launch_paint().look.brand, native, state)
-        self.badge_cache = (key, line)
-        return line
+        forms = badge_forms(self.theme, self._launch_paint().look.brand, native)
+        self.badge_cache = (key, forms)
+        return forms
 
     def _launch_paint(self) -> LaunchPaint:
         """The shown look's card colours against the theme's background, painted at this terminal's depth."""
@@ -5373,7 +5492,6 @@ class App(ModesMixin, AgentViewMixin):
             tail=self._tail(cols),
             tail_spacer=self.tail_spacer,  # read after `_tail` made it
             slot=self._slot_lines(cols, rows),
-            badge=self._badge_line(cols),
             # The plan breathes: a blank row over it (where the tail does not end blank) and one between it and the rule.
             gaps=(self.panel_shown, self.panel_shown),
             gap_reserve=1 + int(rows >= TIP_MIN_ROWS),  # the working row and its tip, kept free as the turn ends
@@ -5538,6 +5656,8 @@ class App(ModesMixin, AgentViewMixin):
             say = ESCAPE_AGAIN.format(armed[0])
         elif self._newline_keys_due():
             say = NEWLINE_KEYS
+        badge = self._badge_forms()
+        # The count is sized on the whole line: the badge and the branch give way before the count does (`info_line`).
         room = cols - inset - chip_column(self._display_mode(), self.theme)
         if isinstance(say, tuple):
             room -= cell_width(LABEL_SEPARATOR + say[max(len(say) - 2, 0)])
@@ -5545,9 +5665,6 @@ class App(ModesMixin, AgentViewMixin):
         chip = self._agent_chip(room) if not listing or self.slot is not None else ()
         line = info_line(
             mode=self._display_mode(),
-            busy=self._busy(),
-            queued=len(self.queued),
-            keyboard_protocol=self.keyboard_protocol,
             width=cols - inset,
             theme=self.theme,
             right=self._info_right(),
@@ -5556,7 +5673,8 @@ class App(ModesMixin, AgentViewMixin):
             say_style=say_style,
             # While Hermes has approvals off on its own, Shift+Tab turns plan on and off and nothing else.
             cycle=HERMES_OWN_CYCLE.get(self._display_mode(), "") if self.approvals_off_by_hermes else "",
-            drafting=bool(self.composer.text),  # `?` types itself then, so `? for shortcuts` would be untrue
+            badge=badge,
+            branch=branch_forms(self.git.state, self.theme) if self.git is not None and badge else (),
         )
         return (Span(" " * inset), *line) if inset and line else line
 
@@ -5620,12 +5738,14 @@ class App(ModesMixin, AgentViewMixin):
 
     @property
     def keyboard_protocol(self) -> bool:
-        """Whether Ctrl+Enter reaches the TUI apart from Enter: a key has arrived as a CSI u or modifyOtherKeys report.
+        """Whether Ctrl+Enter reaches the TUI apart from Enter: the terminal answered the kitty keyboard query with
+        the flag pushed on, or a key has arrived as a CSI u or modifyOtherKeys report.
 
         Asking the terminal for those reports is not enough, since a terminal
         on the list can ignore the request and send Ctrl+Enter as Enter. So
-        the info line names `/steer` until the first such key, and Ctrl+Enter
-        from then on.
+        the row under the queued prompts names Ctrl+J, which every terminal
+        sends apart from Enter, until one of those, and Ctrl+Enter from then
+        on: from the first frame on a terminal that answers the query.
         """
         return self.decoder.protocol_reported
 
@@ -5756,7 +5876,9 @@ class App(ModesMixin, AgentViewMixin):
         # Hermes' notification the row above them, Hermes' standing goal the row above that, and the menu or the
         # plan gets the rows left. A question or the picker hides them, since Up then does not edit the queue.
         hint = QUEUE_HELD_HINT if self.queue_held else QUEUE_EDIT_HINT
-        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint)
+        send_now = self._steer_keys_live() and self._queue_head_steers()
+        below = SEND_NOW_HINT.format(key=SEND_NOW_KEYS[self.keyboard_protocol]) if send_now else ""
+        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme, hint, below)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
         shown = goal_line(self.goal, cols, self.theme)
         goal = [shown] if shown is not None and cap > len(queue) + len(notice) else []

@@ -11,7 +11,7 @@ from __future__ import annotations
 import unittest
 
 from test_tui_command_output import last, send
-from test_tui_modes import SID, answer, make_app, notices
+from test_tui_modes import SID, answer, make_app, notices, type_text
 from omh.tui.app import (
     BRANCHED_NOTICE,
     CALL_EXPIRED_NOTICE,
@@ -23,9 +23,11 @@ from omh.tui.app import (
     HELD_ANSWER_SECONDS,
     REFUSAL_SENTENCES,
     SIDE_ANSWERS_LEFT_NOTICE,
+    STEER_UNANSWERED_OUTCOME,
 )
 from omh.tui import gateway_contract as contract
 from omh.tui.gateway import Event, Response
+from omh.tui.keys import ENTER, Key
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, CommandBlock
 
 BUSY = {"code": 4001, "message": "session_busy", "data": {"reason": "session_busy"}}
@@ -152,6 +154,38 @@ class CompressTests(unittest.TestCase):
         now[0] += 1.0
         send(app, "/usage")
         self.assertEqual(app.pending[3].expires_at, 401.0 + HELD_ANSWER_SECONDS)  # behind the later of the two
+
+    def test_a_second_compress_that_goes_unanswered_names_the_seconds_it_was_waited_for(self) -> None:
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        app.shared_gateway = True
+        send(app, "/compress")
+        now[0] += 300.0
+        send(app, "/compress")
+        app._on_response(Response(1, {"type": "exec", "output": "✓ Compressed"}, None))  # the first one lands
+        now[0] += HELD_ANSWER_SECONDS
+        app._expire_calls()
+        said = notices(app, NOTICE_WARN)
+        self.assertIn(COMPRESS_UNANSWERED_NOTICE.format(seconds=HELD_ANSWER_SECONDS), said)  # 780 s, not 660 s
+        self.assertNotIn(COMPRESS_UNANSWERED_NOTICE.format(seconds=COMPRESS_ANSWER_SECONDS), said)
+
+    def test_a_steer_held_behind_a_compress_names_the_seconds_it_was_waited_for(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app.shared_gateway = True
+        send(app, "/compress")
+        now[0] += 60.0
+        type_text(app, "use the other file")
+        app._on_input(Key(ENTER, ctrl=True))
+        self.assertEqual(client.calls[-1][0], "session.steer")
+        [steer] = [call for call in app.pending.values() if call.steer is not None]
+        waited = COMPRESS_ANSWER_SECONDS - 60.0 + 120.0  # the compression's time left, then its own 120 s
+        self.assertEqual(steer.seconds, waited)
+        now[0] += waited
+        app._expire_calls()
+        outcome = STEER_UNANSWERED_OUTCOME.format(seconds=waited)
+        self.assertEqual(steer.steer.outcome, outcome)
+        self.assertNotIn("120 s", outcome)
 
     def test_a_command_refused_while_hermes_compresses_says_so(self) -> None:
         for line, name in (("/undo", "undo"), ("/retry", "retry"), ("/compress", "compress")):

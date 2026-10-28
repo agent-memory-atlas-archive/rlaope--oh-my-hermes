@@ -19,8 +19,11 @@ from .width import cell_width, wrap_line
 SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Enter", "Sends the composer"),
     ("\\ then Enter, Alt+Enter, Shift+Enter, Ctrl+J", "Adds a line"),
-    ("Ctrl+Enter", "Steers a running turn with the composer's text, on a terminal that tells it from Enter "
-                   "(/steer <text> steers on any terminal); idle, sends it as Enter does"),
+    ("Ctrl+Enter", "While a turn runs, sends the composer's text into it now as a steer (/steer <text> too); idle, "
+                   "sends as Enter does"),
+    ("Ctrl+Enter, Ctrl+J", "While a turn runs, on an empty composer, send the oldest queued prompt into it now as a "
+                           "steer; the row under the queue names the key (Ctrl+J where the terminal has not shown it "
+                           "tells Ctrl+Enter from Enter). A queued ! line, skill prompt or plan prompt waits its turn"),
     ("Tab", "Completes a slash command, or the @ reference being typed; on an open menu, Enter takes the "
              "highlighted row too, and sends a command already typed in full"),
     ("Shift+Tab", "Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan "

@@ -187,9 +187,6 @@ class Session:
     def info_row(self) -> Line:
         return info_line(
             mode=self.mode,
-            busy=self.sticky is not None,
-            queued=0,
-            keyboard_protocol=False,
             width=self.cols,
             theme=DEFAULT_THEME,
             right=INFO_RIGHT,
@@ -987,12 +984,10 @@ class AgentViewBelowTests(unittest.TestCase):
                         shown = view_rows(app)
                         self.assertEqual(shown, min(cap, running + done + 1))
                         top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
-                        badge = app.frame_budget.badge  # the branch and OMH Native row, the region's last
-                        # The top rule, one input row, its bottom rule, the info line, then the view and the badge.
-                        self.assertEqual(top, rows - 1 - shown - 3 - badge)
-                        self.assertGreaterEqual(top, rows - 1 - cap - 3 - badge)
-                        self.assertGreaterEqual(
-                            top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3 - badge)
+                        # The top rule, one input row, its bottom rule, the info line, then the view.
+                        self.assertEqual(top, rows - 1 - shown - 3)
+                        self.assertGreaterEqual(top, rows - 1 - cap - 3)
+                        self.assertGreaterEqual(top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3)
                         self.assertTrue(screen[top + 3].startswith("  "), screen)  # the info line, under the composer
                         self.assertTrue(screen[rows - 1], "the region ends on the screen's last row")
 

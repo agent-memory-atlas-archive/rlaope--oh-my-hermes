@@ -45,12 +45,13 @@ from _tui_gateway_replay import (
     replay_env,
     spans,
 )
-from _tui_lines import info_row_index, is_badge_row, composer_text, INFO_INSET, line_text, RULE_ROW, rule_rows
+from _tui_lines import info_row_index, without_badge, composer_text, INFO_INSET, line_text, RULE_ROW, rule_rows
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
 from omh.tui.app import (
     EXIT_HINT,
+    SEND_NOW_HINT,
     SLOT_ARM_SECONDS,
     App,
     banner_logo,
@@ -59,11 +60,10 @@ from omh.tui.app import (
     picker_key,
     run_model_chain_picker,
 )
-from omh.tui.layout import BADGE_MIN_ROWS
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import CLOSED_EXIT, FALLBACK_EXIT, FALLBACK_SENTINEL_ENV, SESSION_FILE_ENV
-from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_COMMAND_HINT, STEER_KEY_HINT, info_line
+from omh.tui.modes import ACCEPT_LABEL, PLAN_LABEL, info_line
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME, theme_named
@@ -79,6 +79,9 @@ RULE_MARK = "────"  # in both of the composer's rules
 BOX_MARK = RULE_ROW  # one of the composer's rules: two per frame, above and under it
 # The working row's clock, `(12s · …` or `(1m 4s)`: on screen while a turn runs or waits on the person.
 WORKING_CLOCK = re.compile(r"\(\d+(?:m \d+)?s(?: · |\))")
+# Between turns in the normal mode: the info line's left side is the badge alone, or with the agent count after it.
+IDLE_LEFT = re.compile(r"\d+ agents?(?: · ↓ agents)?")
+EMPTY_COMPOSER = "❯ Ask Hermes anything"  # the composer's placeholder: nothing typed
 # Between the composer and the info line on these 24-row terminals: the bottom rule.
 UNDER_COMPOSER = 1
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
@@ -236,28 +239,32 @@ class ScriptedTerminal:
     # -- reading the screen --
 
     def info_row(self) -> str:
-        """The info line: the screen's last row that is not blank and not the badge row under it ("" on a blank
-        screen)."""
-        rows = [line for line in self.screen.lines() if line and not is_badge_row(line)]
-        return rows[-1] if rows else ""
+        """The info line, its badge taken out: the last row that starts with the badge, else the screen's last row that
+        is not blank (an agent view's rows stand under the line; "" on a blank screen)."""
+        rows = [line for line in self.screen.lines() if line]
+        badged = [line for line in rows if without_badge(line) != line]
+        return without_badge((badged or rows)[-1]) if rows else ""
 
     def history(self) -> str:
         return "\n".join(self.screen.history())
 
     def idle(self) -> bool:
-        """No turn runs and nothing asks (agents may still run): the info line offers `? for shortcuts`, or, in accept
-        or plan, whose line is the same either way, it names the mode and no working row is on the screen."""
-        row = self.info_row()
-        if IDLE_HINT in row:
+        """No turn runs and nothing asks (agents may still run): no working row is on the screen, and the info line
+        names the mode in accept or plan, or, in the normal mode, says nothing after the badge but the agent count
+        while the composer is empty (a draft, Esc's or Ctrl+C's second press, a picker or a question each say or
+        hide something)."""
+        lines = self.screen.lines()
+        if any(WORKING_CLOCK.search(line) for line in lines):
+            return False
+        body = self.info_row().removeprefix(INFO_INSET)
+        if body.startswith((ACCEPT_LABEL, PLAN_LABEL)):
             return True
-        return row.removeprefix(INFO_INSET).startswith((ACCEPT_LABEL, PLAN_LABEL)) and not any(
-            WORKING_CLOCK.search(line) for line in self.screen.lines()
-        )
+        left = re.split(r" {3,}", body)[0].strip()
+        return (not left or IDLE_LEFT.fullmatch(left) is not None) and any(line.startswith(EMPTY_COMPOSER) for line in lines)
 
     def running(self) -> bool:
-        """The info line offers a steer: a turn runs, nothing asks, normal mode."""
-        row = self.info_row()
-        return STEER_COMMAND_HINT in row or STEER_KEY_HINT in row
+        """A turn runs and nothing asks: the working row counts its seconds."""
+        return any(WORKING_CLOCK.search(line) for line in self.screen.lines()) and not self.idle()
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
@@ -579,8 +586,8 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run, CLOSED_EXIT)  # `omh` launched it: Hermes prints no epilogue, `omh` its card
         screen = run.terminal.captures["ready"]
         info = info_index(screen)
-        self.assertTrue(screen[info].startswith(INFO_INSET + IDLE_HINT), screen)
-        self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast · ", screen[info])
+        self.assertTrue(screen[info].startswith(INFO_INSET + "[ ⚚ OMH Native ]   "), screen)  # the badge alone on the left
+        self.assertIn("v4.1-flash-ultrafast · ", screen[info])  # its short name beside the badge at 80 columns
         composer = info - 1 - UNDER_COMPOSER
         self.assertEqual(composer_text(screen[composer]), "❯ Ask Hermes anything", screen)
         self.assertTrue(screen[composer - 1].startswith(BOX_MARK), screen)
@@ -917,14 +924,13 @@ class SessionTests(AppTestCase):
                 self.assertEqual(sum(line.startswith(RULE_MARK) for line in screen), 2, screen)
                 # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
                 # fits the redraw) and the region (the launch card, refitted, then top edge, composer, bottom edge,
-                # info line, the badge row), nothing else: one card, its boxes all closed.
+                # info line), nothing else: one card, its boxes all closed.
                 logo = LOGO[:-1] if cols >= 100 else []
                 card = [line for line in drawn if line[:1] in ("╭", "│", "╰")]
                 self.assertEqual(sum(line.startswith("╭─ session") for line in screen), 1 if card else 0, screen)
                 self.assertEqual(sum(line.count("╭") for line in card), sum(line.count("╰") for line in card), screen)
                 self.assertEqual(drawn[: len(logo)], logo, screen)
-                badge = int(rows >= BADGE_MIN_ROWS)  # the badge row under the info line, from BADGE_MIN_ROWS rows
-                self.assertEqual(len(drawn), 5 + badge + len(logo) + len(card), screen)
+                self.assertEqual(len(drawn), 5 + len(logo) + len(card), screen)
                 self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -1317,34 +1323,33 @@ class InfoLineRightTests(unittest.TestCase):
         return app
 
     def right(self, app: App, width: int) -> str:
-        row = line_text(app._info_line(width))
-        self.assertTrue(row.startswith(INFO_INSET + IDLE_HINT), row)
+        row = without_badge(line_text(app._info_line(width)))
         self.assertLessEqual(line_width(app._info_line(width)), width)
-        return row[len(INFO_INSET + IDLE_HINT) :].strip()
+        return row.strip()
 
     def test_the_right_side_is_model_context_and_effort_with_no_brand_and_no_state(self) -> None:
         app = self.app()
-        row = line_text(app._info_line(100))
+        row = without_badge(line_text(app._info_line(100)))  # the badge is the left side's, at its end
         self.assertTrue(row.endswith(f"{self.MODEL} · ctx 5% · effort high"), row)
         self.assertEqual(line_width(app._info_line(100)), 100)  # the right side ends on the last cell
         for gone in ("⚚", "OMH", "idle", "running", "│"):
             self.assertNotIn(gone, row)
 
     def test_the_model_shortens_first_then_goes_then_the_effort_then_the_context(self) -> None:
-        # The inset, `? for shortcuts` and the 3-cell gap take 20 cells; the right side takes the longest form that
-        # fits beside.
+        # The inset, the badge and the 3-cell gap take 21 cells; the right side takes the longest form that fits
+        # beside, and goes whole before the badge shortens.
         app = self.app()
         expected = {
-            81: f"{self.MODEL} · ctx 5% · effort high",
-            80: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            72: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
-            71: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            63: "v4.1-flash-ultrafast · ctx 5% · effort high",
-            62: "ctx 5% · effort high",
-            40: "ctx 5% · effort high",
-            39: "ctx 5%",
-            26: "ctx 5%",
-            25: "",
+            82: f"{self.MODEL} · ctx 5% · effort high",
+            81: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            73: "deepseek-v4.1-flash-ultrafast · ctx 5% · effort high",
+            72: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            64: "v4.1-flash-ultrafast · ctx 5% · effort high",
+            63: "ctx 5% · effort high",
+            41: "ctx 5% · effort high",
+            40: "ctx 5%",
+            27: "ctx 5%",
+            26: "",
         }
         self.assertEqual({width: self.right(app, width) for width in expected}, expected)
 
@@ -1418,36 +1423,30 @@ class InfoLineRightTests(unittest.TestCase):
         self.assertTrue(running.endswith(f"repeat x4 cycle-of-2 approval · 2 tools · 12s · {self.MODEL} · ctx 5% · effort high"),
                         running)
         app.turn_pending = False
-        self.assertEqual(self.right(app, 50), "repeat x4 cycle-of-2 approval")
+        self.assertEqual(self.right(app, 55), "repeat x4 cycle-of-2 approval")
 
 
 class InfoLineLeftTests(unittest.TestCase):
     def row(self, width: int = 80, **facts: object) -> str:
-        defaults: dict[str, object] = {"mode": "normal", "busy": False, "queued": 0, "keyboard_protocol": False}
+        defaults: dict[str, object] = {"mode": "normal"}
         return line_text(info_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
 
-    def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
-        self.assertEqual(self.row(), "? for shortcuts")
-        self.assertEqual(self.row(busy=True), "/steer <text> steers")  # the working row offers the interrupt
-        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "ctrl+enter steer")
-        self.assertEqual(self.row(busy=True, queued=2), "/steer <text> steers · ↑ edit queued")
-
-    def test_ctrl_enter_is_named_only_where_the_terminal_tells_it_from_enter(self) -> None:
-        for busy in (False, True):
-            with self.subTest(busy=busy):
-                self.assertNotIn("ctrl+enter", self.row(busy=busy, keyboard_protocol=False))
+    def test_normal_mode_says_nothing_of_its_own(self) -> None:
+        # Between turns the launch card names `?`, which still opens the list; during a turn the working row offers
+        # the interrupt and the queue's own row the send-now key.
+        self.assertEqual(self.row(), "")
 
     def test_accept_and_plan_say_so_in_their_own_colour(self) -> None:
-        accept = info_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, width=80, theme=DEFAULT_THEME)
+        accept = info_line(mode="accept", width=80, theme=DEFAULT_THEME)
         self.assertEqual(line_text(accept), "⏵⏵ accept all on (⇧⇥ to cycle)")
         self.assertEqual(accept[0].style, replace(DEFAULT_THEME.mode_accept, bold=True))
-        plan = info_line(mode="plan", busy=True, queued=1, keyboard_protocol=True, width=80, theme=DEFAULT_THEME)
+        plan = info_line(mode="plan", width=80, theme=DEFAULT_THEME)
         self.assertEqual(line_text(plan), "⏸ plan mode on (⇧⇥ to cycle)")
         self.assertEqual(plan[0].style, replace(DEFAULT_THEME.mode_plan, bold=True))
-        hermes_own = info_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, width=80,
+        hermes_own = info_line(mode="accept", width=80,
                                theme=DEFAULT_THEME, cycle="plan")
         self.assertEqual(line_text(hermes_own), "⏵⏵ accept all on (⇧⇥ plan)")
-        both = info_line(mode="accept+plan", busy=False, queued=0, keyboard_protocol=False, width=80,
+        both = info_line(mode="accept+plan", width=80,
                          theme=DEFAULT_THEME, cycle="plan off")
         self.assertEqual(line_text(both), "⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ plan off)")
 
@@ -1699,7 +1698,7 @@ class OpeningTests(AppTestCase):
                 status = info_index(screen)
                 rule = status - 2 - UNDER_COMPOSER
                 self.assertIn(RULE_MARK, screen[rule], screen)
-                self.assertEqual(status, 32, screen)  # the info line over the badge row on the last row, the composer above
+                self.assertEqual(status, 33, screen)  # the info line on the last row, the composer above
         start = run.terminal.captures["start"]
         rule = info_index(start) - 2 - UNDER_COMPOSER
         self.assertTrue(start[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · ~/project"), start)
@@ -1766,7 +1765,7 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(history[: LOGO_ROWS - 1], LOGO[:-1])  # scrolling up stops at the logo
                 self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
                 self.assertEqual(rows["after"], rows["before"])
-                self.assertEqual(rows["before"], 33 - 2 - UNDER_COMPOSER)  # the bottom rows: composer, rule, info, badge
+                self.assertEqual(rows["before"], 34 - 2 - UNDER_COMPOSER)  # the bottom rows: composer, rule, info
                 writes = "".join(run.terminal.writes)
                 # The startup query, the push, ED 3 once, then the first frame. No ED 2: the push leaves only the
                 # cursor's own row on the screen, the top row, which the first frame paints over.
@@ -2244,7 +2243,8 @@ def info_index(screen: list[str]) -> int:
 
 
 def info_row_of(screen: list[str]) -> str:
-    return screen[info_index(screen)]
+    """The info line, its badge taken out (`without_badge`)."""
+    return without_badge(screen[info_index(screen)])
 
 
 def composer_row(screen: list[str]) -> str:
@@ -2492,6 +2492,30 @@ class KeyTests(AppTestCase):
         self.assertIn("esc again to", info_row_of(after))  # and the info line says what a second Esc does
         activity = [line for line in terminal.captures["running"] if INTERRUPT_ROW.search(line)]
         self.assertEqual(len(activity), 1, terminal.captures["running"])
+
+    def test_a_terminal_that_answers_the_kitty_query_names_ctrl_enter_under_the_first_queued_prompt(self) -> None:
+        prompt = "Write the numbers from 1 to 300, one per line, nothing else."
+        for answer, key in ((b"\x1b[?1u", "ctrl+enter"), (b"", "ctrl+j")):
+            with self.subTest(answer=answer):
+                run = self.interrupted_run()
+                terminal = run.terminal
+                terminal.typed_during_query = answer  # what `Terminal.query_background` hands back
+                said = SEND_NOW_HINT.format(key=key)
+                terminal.script(
+                    self.submit(run, prompt),  # legacy bytes only: no key arrives as a report
+                    Step(b"then stop\r", when=self.running(run), label="running"),
+                    Step(b"\x03", when=terminal.shows(said), capture="queued", label="queued"),
+                    # The interrupt brings the queued prompt back into the composer: clear it, then leave.
+                    Step(b"\x15\x04", when=lambda: "Interrupted." in terminal.history(), label="end"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                queued = terminal.captures["queued"]
+                row = next(index for index, line in enumerate(queued) if said in line)
+                self.assertEqual(queued[row - 1].rstrip(), "⧗ then stop")  # under the queued prompt, its own row
+                self.assertNotIn("steer", info_row_of(queued))  # the info line names no steer key
+                (submit,) = run.calls("prompt.submit")
+                self.assertEqual(submit["params"]["text"], prompt)  # the answer typed nothing
 
     def test_the_activity_row_counts_the_seconds_since_the_prompt(self) -> None:
         run = self.interrupted_run()

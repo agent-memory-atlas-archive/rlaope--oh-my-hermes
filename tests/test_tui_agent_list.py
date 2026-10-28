@@ -16,7 +16,7 @@ import re
 import unittest
 
 from _tui_gateway_replay import Scenario, recorded_answer, spans
-from _tui_lines import INFO_INSET, lines_text, RULE_ROW
+from _tui_lines import INFO_INSET, lines_text, RULE_ROW, without_badge
 from test_tui_agent_view import STARTS, VIEW, agent_app, agent_event, relay, screen_info_index, view_rows
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, info_index
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
@@ -33,7 +33,6 @@ from omh.tui.layout import AGENT_VIEW_ROWS, agent_view_cap
 from omh.tui.frame import BROWSING_HINT, INFO_INSET as INFO_INSET_CELLS, MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
-from omh.tui.modes import IDLE_HINT
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
@@ -58,7 +57,8 @@ def under_the_frame(app: App) -> list[str]:
 
 def info_left(row: str) -> str:
     """The info line's left side, after the inset it starts with under the composer: its right side (model, context,
-    effort) stands 3 cells or more away."""
+    effort) stands 3 cells or more away; the badge at its left end taken out."""
+    row = without_badge(row)
     if not row.startswith(INFO_INSET):
         raise AssertionError(f"the info line does not start {INFO_INSET_CELLS} cells in: {row!r}")
     return re.split(r" {3,}", row[INFO_INSET_CELLS:])[0]
@@ -1243,7 +1243,7 @@ class AgentReplayTests(AppTestCase):
             Step(b"\x1b", when=listed, capture="back", label="the list again"),
             Step(b"\x1b", when=lambda: not listed() and terminal.shows("  ● main")(), label="the view again"),
             # The agent view stays under the info line after the turn: `idle` reads the screen's last row.
-            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.shows(IDLE_HINT)(),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(),
                  label="the end"),
         )
         self.run_main(run)
@@ -1251,7 +1251,7 @@ class AgentReplayTests(AppTestCase):
         captures = terminal.captures
         view = captures["view"]
         status = info_index(view) - 3  # the agent view's three rows are the screen's last ones
-        self.assertTrue(view[status].startswith(INFO_INSET + "2 agents · ↓ agents"), view)
+        self.assertTrue(without_badge(view[status]).startswith(INFO_INSET + "2 agents · ↓ agents"), view)
         self.assertEqual(view[status + 1], "  ● main")
         self.assertIn("find usages of", view[status + 2])
         self.assertIn("read the diff", view[status + 3])
@@ -1259,9 +1259,9 @@ class AgentReplayTests(AppTestCase):
         self.assertEqual(info_index(rows) - 3, status, "the list opens on the view's rows")
         self.assertEqual(rows[status + 1], "  ● main")
         self.assertTrue(rows[status + 2].startswith("❯ ") and "find usages of old_api" in rows[status + 2], rows)
-        # The list's keys, and on the right the effort the replayed config leaves unset (`default`).
+        # The list's keys, whole: at 80 columns the right side (the effort) gives way to them and to the badge.
         self.assertEqual(info_left(rows[status]), AGENT_LIST_HINT)
-        self.assertTrue(rows[status].endswith("effort default"), rows[status])
+        self.assertTrue(rows[status].startswith(INFO_INSET + "[ ⚚ OMH Native ]  "), rows[status])
         # While the list has the keys the composer's rules stay and its row says how to browse: no prompt to type in.
         self.assertEqual([row for row in rows if row.startswith("❯ ") and "old_api" not in row], [], rows)
         self.assertEqual([row.strip() for row in rows if BROWSING_HINT in row], [BROWSING_HINT])
