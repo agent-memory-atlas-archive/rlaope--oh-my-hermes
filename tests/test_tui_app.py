@@ -311,8 +311,9 @@ class FakePoller:
     def take(self) -> None:
         return None
 
-    def refresh(self) -> None:
+    def refresh(self) -> int:
         self.refreshes = getattr(self, "refreshes", 0) + 1
+        return self.refreshes
 
     def watch_tokens(self, session_ids: Sequence[str]) -> None:
         self.watched = tuple(session_ids)
