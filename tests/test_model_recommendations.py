@@ -101,11 +101,11 @@ class RecommendationCatalogTests(unittest.TestCase):
         for name, chain in categories.items():
             assert isinstance(chain, list)
             expected_labels = [MODEL_DISPLAY_LABELS[str(candidate["model_alias"])] for candidate in chain]
-            # These surfaces print one effort per row, which is only honest
-            # while every entry of the chain declares the same one.
-            efforts = {str(candidate["reasoning_effort"]) for candidate in chain}
-            self.assertEqual(len(efforts), 1, f"{name} mixes efforts; the public rows print one per row")
-            (effort,) = efforts
+            # A row whose entries share one effort prints it once; a row
+            # whose entries differ (synthesize, since 2026-10-28) prints one
+            # badge per entry, in chain order, so no entry's effort is hidden.
+            chain_efforts = [str(candidate["reasoning_effort"]) for candidate in chain]
+            expected_badges = chain_efforts[:1] if len(set(chain_efforts)) == 1 else chain_efforts
             for surface, text in docs.items():
                 with self.subTest(category=name, surface=surface):
                     if surface in html_surfaces:
@@ -124,7 +124,7 @@ class RecommendationCatalogTests(unittest.TestCase):
                         continue
                     else:
                         shown = re.findall(r"\((\w+)\) \|\s*$", row)
-                    self.assertEqual(shown, [effort], row)
+                    self.assertEqual(shown, expected_badges, row)
 
     def test_last_resort_prose_names_the_shipped_final_order(self) -> None:
         """The shared-final-order sentences name `last_resort.any` by label.
@@ -263,11 +263,13 @@ class RecommendationCatalogTests(unittest.TestCase):
         # Order is part of the contract, not just membership: canonical order
         # breaks head and chain-position ties in `mixture_category_for`, so a
         # name that moves takes an existing model's category label with it.
-        # The three 2026-09-11 additions are appended, never inserted.
+        # The three 2026-09-11 additions and the six 2026-10-28 additions are
+        # appended, never inserted.
         self.assertEqual(MODEL_CATEGORIES, (
             "ultrabrain", "deep", "architect", "unspecified-high", "unspecified-low",
             "quick", "writing", "visual-engineering", "artistry",
             "capable", "simple-work", "deep-work",
+            "google-search", "x-search", "review", "swarm", "forensics", "synthesize",
         ))
         self.assertEqual(MODEL_ROLES, (
             "brain", "implementation", "design_visual", "review", "docs", "research",
@@ -331,12 +333,23 @@ class RecommendationCatalogTests(unittest.TestCase):
             "simple-work": (["gpt-6-luna", "claude-haiku-5-5", "deepseek-flash"], "low"),
             # `max` keeps deep-work's head distinct from deep's (owner choice).
             "deep-work": (["claude-opus-5-5", "gpt-6.1-sol"], "max"),
+            # The routing-recipe categories (owner recipe, 2026-10-28): the
+            # heads are the owner's, each tail crosses provider ecosystems.
+            "google-search": (["gemini-3.1-pro", "gpt-6.1-sol", "claude-opus-5-5"], "medium"),
+            "x-search": (["grok-4.7", "kimi-k3.1-pro", "gemini-3.1-pro"], "high"),
+            "review": (["gpt-6.1-sol", "claude-opus-5-5", "kimi-k3.1-pro"], "xhigh"),
+            "swarm": (["deepseek-flash", "glm-5.3-flash", "gpt-6-luna"], "low"),
+            "forensics": (["gpt-6-astra", "claude-opus-5-5", "kimi-k3.1-pro"], "xhigh"),
+            # The one chain whose entries declare different efforts: Gemini
+            # closes it at `high`, the rung it carries at depth elsewhere.
+            "synthesize": (["claude-opus-5-5", "gpt-6.1-sol", "gemini-3.1-pro"], ["xhigh", "xhigh", "high"]),
         }
         self.assertEqual(set(expected), set(catalog["categories"]))
         for name, (chain, effort) in expected.items():
             with self.subTest(category=name):
                 self.assertEqual(aliases("categories", name), chain)
-                self.assertEqual(efforts("categories", name), [effort] * len(chain))
+                expected_efforts = effort if isinstance(effort, list) else [effort] * len(chain)
+                self.assertEqual(efforts("categories", name), expected_efforts)
         self.assertEqual(aliases("domain_affinities", "x_platform_data"), [
             "grok-build-0.1", "kimi-k3.1-pro", "gemini-3.1-pro",
         ])

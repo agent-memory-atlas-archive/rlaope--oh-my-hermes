@@ -21,6 +21,7 @@ from typing import Any, Callable
 from .pi_family_names import canonical_progress_record
 from .approval_bypass import effective_approval_bypass
 from .awareness_delivery import _awareness_delivery_lock
+from .catch_log import read_catches
 from .delegation_graph import GRAPH_LINGER_SECONDS, build_delegation_graph, inactive_graph
 from .delegation_ledger import LEDGER_MAX_AGE_SECONDS, newest_ledger_session
 from .hermes_delegation import _CHILD_SELECT_LIMIT, read_hermes_native_subagents
@@ -150,6 +151,11 @@ TODO_STALL_CLAIM_BOUNDARY = (
 # own per-source bound (`hermes_delegation._ROW_LIMIT`); the TUI widget
 # applies its viewport clamp on top and names anything hidden with `+N more`.
 ACTIVITY_ROW_LIMIT = 8
+# The reading session's newest catches the HUD carries (`catch_log`). The OMH
+# TUI prints each one once, as it first sees it, and polls every two to eight
+# seconds; each kind is latched per streak, window or turn, so more than this
+# landing between two polls is not a shape a session produces.
+HUD_CATCH_LIMIT = 4
 # The native reader is asked for every child row its query read (`hermes_delegation._CHILD_SELECT_LIMIT`), and the
 # HUD applies `ACTIVITY_ROW_LIMIT` itself, so it knows which rows it did not list.
 NATIVE_ROW_SCAN_LIMIT = _CHILD_SELECT_LIMIT
@@ -1016,6 +1022,11 @@ def read_omh_hud(
         # arguments. The stage is the one the gate RECORDED for this session,
         # so a surface cannot show an escalation the gate is withholding.
         "repeat": tool_calls["repeat"],
+        # The moments OMH caught a model mistake in the reading session, newest
+        # last: a kind and small integers, each with the file-wide `seq` the
+        # OMH TUI prints it by once. Scoped like the repeat block above, and
+        # empty without a reading session, never a list across sessions.
+        "catches": read_catches(home, reading[0], limit=HUD_CATCH_LIMIT),
         # Effective approval-bypass (yolo) state, read from the host's own
         # persisted surfaces (session row's /yolo flag, approvals.mode) so a
         # toggle between turns shows on the next widget poll; the hook

@@ -22,12 +22,14 @@ one before it, so a block is flushed only after every block above it.
 Assistant text opens with a bold `● ` in the text colour on its first row, and
 every later row of that reply, however many flushes it arrives in, is indented
 to match, so a reply reads as one block beside the dim `❯ ` of the prompt above
-it. Three kinds of block hang on a rail in the left gutter (`RAIL`, `┃` and a
-space, which a terminal draws to the full cell height, so a block's rail is one
-line): your prompt's in dim grey, each tool call's in its state's colour, and a
-reply's in the skin's accent, the banner's colour (`Theme.brand`). Nothing has a band behind it.
+it. Three kinds of block hang on a rail in the left gutter (`RAIL`: one cell
+painted in the block's colour and a space; a painted cell meets the ones above
+and below it, so a block's rail is one line, and each cell holds a space, so a
+terminal's selection copies no bar with the text): your prompt's in dim grey,
+each tool call's in its state's colour, and a reply's in the skin's accent, the
+banner's colour (`Theme.brand`). Nothing has a band behind it.
 
-A slash command the person runs is a block of its own: `┃ ❯ /name arg` on the prompt's dim
+A slash command the person runs is a block of its own: `❯ /name arg` on the prompt's dim
 rail, in the hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
 command may still print (`close_command` ends that); what it says meanwhile
@@ -103,7 +105,7 @@ from .gateway import Event
 from . import gateway_contract as contract
 from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
-from .style import Line, Span, Style, fill
+from .style import NO_COLOR, Line, Span, Style, fill
 from .slash import slash_spans, slash_token_ranges
 from .theme import TOOL_FAMILIES, Theme, kind_style, on_band
 from .width import cell_width, line_width, truncate, truncate_left, truncate_line
@@ -172,7 +174,8 @@ TOOL_MARKS = {
     TOOL_RUNNING: "○", TOOL_OK: "●", TOOL_ERROR: "✗", TOOL_DENIED: "✗", TOOL_INTERRUPTED: "▪", TOOL_RECORDED: "●",
     TOOL_GENERATING: "◌",
 }
-RAIL = "┃ "  # the left rail of a prompt, a tool call or a reply, in the block's colour, and a space
+RAIL = "  "  # the left rail of a prompt, a tool call or a reply: a cell painted in the block's colour, and a space
+GUTTER = Style(gutter=True)  # a rail's or a reply margin's cells, which the pager's copy leaves out
 # A running tool's mark alternates the running blue and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
@@ -218,6 +221,7 @@ class NoticeBlock:
     level: str = NOTICE_INFO
     done: bool = True
     one_line: bool = False  # a background notice (`review_line`): one dim row, cut with `…`, never wrapped
+    mark: str = ""  # a catch row's `✦ OMH`, drawn before `text` in the launch look's colours (`Theme.catch_mark`)
 
 
 @dataclass
@@ -767,7 +771,7 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
         tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
         if line_width(rows[0]) + line_width(tag) <= inner:
             rows[0] = (*rows[0], *tag)
-    rows = [_within((*_rail(theme.dim), *row), width) for row in rows]
+    rows = [_within((*_rail(theme.dim, faint=True), *row), width) for row in rows]
     return _banded(rows, band) if band.bg is not None else rows
 
 
@@ -817,8 +821,23 @@ def _outcome_band(level: str, theme: Theme) -> Style | None:
     return band if band is not None and band.bg is not None else None
 
 
+def _catch_mark(mark: str, theme: Theme) -> tuple[Span, ...]:
+    """A catch row's mark and the space after it: each cell in turn through `theme.catch_mark` (the logo's colours),
+    or all in `brand` for a theme that carries none."""
+    steps = theme.catch_mark or (theme.brand,)
+    return tuple(Span(cell, steps[min(index, len(steps) - 1)]) for index, cell in enumerate(f"{mark} "))
+
+
+def _catch_words(theme: Theme) -> Style:
+    """What a catch row says: the launch look's label colour, or `muted` for a theme that carries none."""
+    return theme.catch_words if theme.catch_mark else theme.muted
+
+
 def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
     if block.one_line:
+        if block.mark:
+            words = Span(" ".join(block.text.split()), _catch_words(theme))
+            return [truncate_line((*_catch_mark(block.mark, theme), words), width)]
         return [truncate_line((Span(" ".join(block.text.split()), theme.faint),), width)]
     band = _outcome_band(block.level, theme)
     roles = on_band(theme, band) if band is not None else theme
@@ -898,7 +917,7 @@ def _output_leads(theme: Theme) -> tuple[Line, Line]:
 
 
 def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
-    """`┃ ❯ /name arg` on the prompt's dim rail (a bare `❯` on the left edge is only ever the composer), then each part
+    """`❯ /name arg` on the prompt's dim rail (a bare `❯` on the left edge is only ever the composer), then each part
     of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
     full, width = width, max(width - len(RAIL), 1)
     rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
@@ -915,7 +934,7 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
         hidden = len(output) - OUTPUT_PREVIEW_ROWS
         more = OUTPUT_MORE.format(count=hidden, noun="row" if hidden == 1 else "rows")  # rows at this width
         output = [*output[:OUTPUT_PREVIEW_ROWS], truncate_line((*rest, Span(more, theme.muted)), width)]
-    return [_within((*_rail(theme.dim), *row), full) for row in rows + output]
+    return [_within((*_rail(theme.dim, faint=True), *row), full) for row in rows + output]
 
 
 def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model: str | None = "") -> list[Line]:
@@ -923,7 +942,7 @@ def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model
     a blank row, so a reply's rail is one line; none wider than `width`. A block opens with who wrote it: the header
     `⚚ Hermes · <model>` (bold in the rail's hue, the model muted, its last path segment), or with
     ASSISTANT_HEADER False a `⚚ ` on its first row."""
-    rest: Line = (Span(ASSISTANT_INDENT),)
+    rest: Line = (Span(ASSISTANT_INDENT, GUTTER),)
     rail = _rail(theme.brand)
     name = replace(theme.brand, bold=True)
     first, head = rest, []
@@ -1006,8 +1025,18 @@ def _glinted(text: str, style: Style, band: int, theme: Theme) -> list[Span]:
     return spans
 
 
-def _rail(style: Style) -> Line:
-    return (Span(RAIL[0], style), Span(RAIL[1:]))
+def rail_cell(style: Style, faint: bool = False) -> Span:
+    """A rail's painted cell: a space in `style`'s colour, reversed so it shows without colour too. It holds no bar
+    glyph, so a terminal's selection copies none. Without colour a `faint` one (your prompt's, which its `❯` marks
+    anyway) is left unpainted, so a reply's bar still differs from it: dim on a reversed space showed no difference
+    in Terminal.app (measured for #2371)."""
+    plain = faint and style.depth == NO_COLOR
+    return Span(RAIL[0], Style(fg=style.fg, reverse=not plain, depth=style.depth, gutter=True))
+
+
+def _rail(style: Style, faint: bool = False) -> Line:
+    """The rail's cells: the painted one (`rail_cell`) and the space before the text."""
+    return (rail_cell(style, faint), Span(RAIL[1:], GUTTER))
 
 
 def _within(row: Line, width: int) -> Line:

@@ -20,7 +20,7 @@ import time
 import unittest
 from unittest import mock
 
-from _tui_lines import info_row_index, composer_text, INFO_INSET, line_text, RULE_ROW
+from _tui_lines import info_row_index, composer_text, INFO_INSET, line_text, RULE_ROW, without_badge
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
@@ -97,7 +97,7 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertFalse([row for row in during if row.startswith("❯ ")], during)
         info = info_row(during)
         self.assertEqual(during[info - 4 : info],
-                         ["▌ ❯ deny", "▌   allow once", "▌   allow this session", "▌   no, and tell Hermes what to do instead"])
+                         ["▌ ❯ ✗ deny", "▌   ✓ allow once", "▌   ✓ allow this session", "▌   ✎ no, and tell Hermes what to do instead"])
         self.assertIn("↑↓ pick · enter confirms · d or esc denies and stops", during[info])
         armed(app)
         press(app, Key(DOWN), Key(ENTER))
@@ -141,7 +141,7 @@ class HiddenComposerTests(unittest.TestCase):
             press(app, Key(CHAR, digit))
         self.assertEqual(client.answers, [])
         self.assertEqual(app.slot.selected, 0)  # type: ignore[union-attr]
-        self.assertIn("▌ ❯ deny", drawn(app))
+        self.assertIn("▌ ❯ ✗ deny", drawn(app))
 
     def test_a_waiting_request_opens_with_the_composer_still_hidden_and_it_returns_after_the_last(self) -> None:
         app, client = make_app(busy=True)
@@ -222,7 +222,7 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertIsNone(app.pager)
         screen = drawn(app)
         self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
-        self.assertIn("▌ ❯ deny", screen)
+        self.assertIn("▌ ❯ ✗ deny", screen)
 
     def test_two_text_questions_back_to_back_give_the_draft_back_unmasked(self) -> None:
         # The draft is back before the waiting question opens, so the second one sets the draft aside, not the first's field.
@@ -315,7 +315,7 @@ class ModeShownTests(unittest.TestCase):
                         opener(app)
                         screen = drawn(app)
                         self.assertEqual(rule_rows(screen), [])
-                        self.assertTrue(screen[info_row(screen)].startswith(INFO_INSET + label), screen)
+                        self.assertTrue(without_badge(screen[info_row(screen)]).startswith(INFO_INSET + label), screen)
 
 
 class ClarifyFieldTests(unittest.TestCase):
@@ -428,7 +428,7 @@ class PickerTests(unittest.TestCase):
                 self.assertEqual(held(app), draft)
 
     def test_the_info_line_says_the_pickers_keys_not_the_composers(self) -> None:
-        # The composer's hint (`? for shortcuts`) does nothing while a picker has the keys.
+        # The picker's keys stand in for the composer's line while it has them, and leave with it.
         keys = {"sessions": "↑↓ move · enter switches · esc closes", "rewind": "↑↓ move · enter edits it · esc closes",
                 "model": "↑↓ move · enter switches this session · esc closes"}
         for name, opener in self.openers():
@@ -443,7 +443,7 @@ class PickerTests(unittest.TestCase):
                 narrow = line_text(app._info_line(40))
                 self.assertTrue(narrow.rstrip().endswith("esc closes"), narrow)
                 press(app, Key(ESCAPE))
-                self.assertIn("shortcuts", drawn(app)[info_row(drawn(app))])
+                self.assertNotIn("esc closes", drawn(app)[info_row(drawn(app))])
 
     def test_the_caret_shows_at_the_end_of_the_filter_row_where_typing_goes(self) -> None:
         # An IME pre-edit (Hangul, kana) is drawn at the cursor: it must be where the filter's text is typed.
@@ -676,7 +676,7 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
                 screen = drawn(app)
                 self.assertEqual(rule_rows(screen), [], screen)
                 self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
-                self.assertIn("▌ ❯ deny", screen)
+                self.assertIn("▌ ❯ ✗ deny", screen)
                 self.assertTrue(all(len(row) <= cols for row in screen))
         armed(app)
         press(app, Key(ESCAPE))
@@ -691,7 +691,7 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
                 app.effort = "high"
                 app._on_server_request(APPROVAL)
                 screen = drawn(app)
-                self.assertTrue(any(row.startswith("▌ ❯ deny") for row in screen), screen)
+                self.assertTrue(any(row.startswith("▌ ❯ ✗ deny") for row in screen), screen)
                 self.assertTrue(all(len(row) <= cols for row in screen))
                 self.assertEqual(rule_rows(screen), [], screen)
                 self.assertIn("esc", screen[info_row(screen)])  # the info line keeps a way to deny at every height
@@ -701,9 +701,10 @@ class ResizeAndShortTerminalTests(unittest.TestCase):
         app._on_server_request(ServerRequest("srq-1", "approval", {**APPROVAL.params, "choices": ["once", "deny"]}))
         screen = drawn(app)
         info = info_row(screen)
-        self.assertTrue(screen[info].startswith(INFO_INSET + "↑↓ pick · enter confirms · d or esc denies and stops"), screen)
+        self.assertTrue(without_badge(screen[info]).startswith(INFO_INSET + "↑↓ pick · enter confirms · d or esc denies and stops"),
+                        screen)
         self.assertEqual(screen[info - 3 : info],
-                         ["▌ ❯ deny", "▌   allow once", "▌   no, and tell Hermes what to do instead"])
+                         ["▌ ❯ ✗ deny", "▌   ✓ allow once", "▌   ✎ no, and tell Hermes what to do instead"])
         self.assertFalse([row for row in screen if row.startswith("▌") and "esc" in row], screen)  # no slot row for keys
 
 

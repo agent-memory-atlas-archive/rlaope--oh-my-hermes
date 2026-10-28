@@ -116,6 +116,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from . import runtime_paths
+from .catch_log import UNARMED_WAIT, record_catch
 from .hooks.nudge_budget import (
     MAX_TRACKED_SESSIONS,
     engagement_count,
@@ -477,6 +478,7 @@ def annotate_remote_wait(
     session_id: str = "",
     turn_id: str = "",
     hermes_home: str = "",
+    omh_home: str = "",
 ) -> str | None:
     """Return *result* carrying the directive, or ``None`` to pass it through.
 
@@ -492,6 +494,7 @@ def annotate_remote_wait(
             session_id=session_id,
             turn_id=turn_id,
             hermes_home=hermes_home,
+            omh_home=omh_home,
         )
     except Exception as exc:  # noqa: BLE001 - see module docstring: the host
         # swallows and debug-logs anything this raises, so a raise here is a
@@ -509,6 +512,7 @@ def _annotate(
     session_id: str,
     turn_id: str,
     hermes_home: str,
+    omh_home: str = "",
 ) -> str | None:
     if str(tool_name or "") != TERMINAL_TOOL:
         _declines["tool_not_terminal"] += 1
@@ -566,6 +570,11 @@ def _annotate(
         return None
     for cause, _text in pending:
         record_turn_cause(session_id=session, turn_id=turn, cause=cause)
+        # The turn's latch makes this once per turn, and only the unarmed wait
+        # is a catch the person sees: the approval-gate sentence is about a
+        # command the person is already being asked to approve.
+        if cause == UNARMED_WAIT_CAUSE:
+            record_catch(omh_home, session, UNARMED_WAIT)
     return carried
 
 

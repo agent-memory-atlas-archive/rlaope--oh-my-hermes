@@ -203,6 +203,18 @@ _GROK = _candidate(
     ("xai", "openrouter"),
     reasoning="Editorial X-platform domain affinity; not a benchmark claim.",
 )
+# Grok 4.7 heads `x-search` (owner recipe, 2026-10-28): live search on X is
+# the one category whose head is chosen for a platform rather than a tier.
+# It is a separate candidate from `_GROK` above: the `x_platform_data`
+# domain affinity keeps Grok Build 0.1 and is not touched by this category.
+# Families match the provider-families row hermes_delegation.py already
+# carried for this id. Editorial and unmeasured.
+_GROK_47 = _candidate(
+    "grok-4.7",
+    "grok",
+    ("xai", "openrouter"),
+    reasoning="Editorial live-X-search recommendation; not a benchmark claim.",
+)
 # Gemini 3.1 Pro stays the Gemini entry: Google's model list names no newer
 # Pro tier (ai.google.dev models and changelog, read 2026-10-13; the served
 # id is still the `gemini-3.1-pro-preview` Preview).
@@ -260,9 +272,10 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
     # no matching record is labelled by projection.
     # Non-head entries move the same way: (claude-opus-5-5, medium) projects
     # to writing, which covers unspecified-high's second entry and the
-    # last_resort head; (kimi-k3.1-pro, high) projects to deep from
-    # visual-engineering and artistry; (gpt-6-luna, low) and
-    # (claude-haiku-5-5, low) reached through quick project to simple-work.
+    # last_resort head; (kimi-k3.1-pro, high) from visual-engineering and
+    # artistry projects to x-search since 2026-10-28 (to deep before), where
+    # it sits second; (gpt-6-luna, low) and (claude-haiku-5-5, low) reached
+    # through quick project to simple-work.
     "categories": {
         "ultrabrain": [deepcopy(_ASTRA)],
         # The strong tier across three provider ecosystems. DeepSeek V4.1
@@ -370,6 +383,65 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
         # order deep-work would be a label nothing could ever carry. `max` is
         # a documented rung of both entries' ladders.
         "deep-work": [_with_effort(_OPUS_55, "max"), _with_effort(_SOL, "max")],
+        # The six routing-recipe categories (owner recipe, 2026-10-28) are
+        # appended after deep-work by the same rule. Each head is the owner's
+        # pick; each tail is a candidate from another provider ecosystem, so
+        # the 2026-08-19 owner rule holds. Editorial and unmeasured. They are
+        # opt-in: no role or scale names them.
+        #
+        # Two of the six heads repeat an earlier category's head, and since a
+        # head match resolves in canonical order the earlier one keeps the
+        # projection label (accepted collisions, 2026-10-28):
+        #   (gpt-6-astra, xhigh)     heads ultrabrain and forensics  -> "ultrabrain"
+        #   (claude-opus-5-5, xhigh) heads architect and synthesize  -> "architect"
+        # A forensics or synthesize lane routed through `omh_delegate_route`
+        # keeps its own label through its route-provenance record; only an
+        # unrecorded child is labelled by projection. Six other projections
+        # move with these chains; hermes_delegation.py lists them.
+        #
+        # google-search: research grounded in Google Search.
+        "google-search": [
+            _with_effort(_GEMINI, "medium"),
+            _with_effort(_SOL, "medium"),
+            _with_effort(_OPUS_55, "medium"),
+        ],
+        # x-search: live search on X. Grok 4.7 leads; Kimi K3.1 Pro and
+        # Gemini 3.1 Pro close it from two other ecosystems.
+        "x-search": [
+            _with_effort(_GROK_47, "high"),
+            _with_effort(_KIMI_K31_PRO, "high"),
+            _with_effort(_GEMINI, "high"),
+        ],
+        # review: a different model tries to break the diff. The category is
+        # named like the `review` ROLE but is a separate vocabulary: the role
+        # still resolves through unspecified-high/unspecified-low and never
+        # reaches this chain.
+        "review": [
+            _with_effort(_SOL, "xhigh"),
+            _with_effort(_OPUS_55, "xhigh"),
+            _with_effort(_KIMI_K31_PRO, "xhigh"),
+        ],
+        # swarm: many parallel workers on separate slices, so cost leads.
+        "swarm": [
+            _with_effort(_DEEPSEEK_FLASH, "low"),
+            _with_effort(_GLM_53_FLASH, "low"),
+            _with_effort(_LUNA, "low"),
+        ],
+        # forensics: root-causing a live symptom or a captured trace.
+        # Labelled "ultrabrain" by projection (collision above).
+        "forensics": [
+            _with_effort(_ASTRA, "xhigh"),
+            _with_effort(_OPUS_55, "xhigh"),
+            _with_effort(_KIMI_K31_PRO, "xhigh"),
+        ],
+        # synthesize: merging many results into one answer. Gemini closes it
+        # at `high`, the rung it carries in every other chain that names it
+        # at depth. Labelled "architect" by projection (collision above).
+        "synthesize": [
+            _with_effort(_OPUS_55, "xhigh"),
+            _with_effort(_SOL, "xhigh"),
+            _with_effort(_GEMINI, "high"),
+        ],
     },
     "role_suggestions": {
         "main": [

@@ -267,6 +267,44 @@ class ExternalDirRegistrationTests(unittest.TestCase):
             finally:
                 os.chdir(cwd)
 
+    def test_with_the_home_a_relative_entry_is_read_under_it(self) -> None:
+        # Hermes reads `../m/current/skills` in `<root>/.hermes` as the
+        # pointer, whatever directory this command runs from: it registers
+        # the home, and registration does not add the pointer beside it.
+        with TemporaryDirectory() as tmp, TemporaryDirectory() as unrelated:
+            root = Path(tmp)
+            home = root / ".hermes"
+            pointer = root / "m" / "current" / "skills"
+            for directory in (home, pointer):
+                directory.mkdir(parents=True)
+            text = "skills:\n  external_dirs:\n    - ../m/current/skills\n"
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                self.assertTrue(external_dir_registered(["../m/current/skills"], pointer, hermes_home=home))
+                self.assertFalse(external_dir_registered(["m/current/skills"], pointer, hermes_home=home))
+                self.assertEqual(ensure_external_dir(text, pointer, hermes_home=home).text, text)
+                with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": (root / "m").as_posix()}):
+                    spelled = "skills:\n  external_dirs:\n    - ${OMH_TEST_MANAGED_ROOT}/current/skills/\n"
+                    self.assertFalse(ensure_external_dir(spelled, pointer, hermes_home=home).changed)
+                # Without the home the text compare is the whole contract.
+                self.assertTrue(ensure_external_dir(text, pointer).changed)
+            finally:
+                os.chdir(cwd)
+
+    def test_registration_never_takes_a_generation_s_pack_for_the_pointer(self) -> None:
+        # The pointer resolves to the generation it points at; a real-path
+        # match would read that generation's pack as the pointer, and the
+        # migration that retires the pack would leave the home with neither.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generation = root / "generations" / "g1"
+            (generation / "skills").mkdir(parents=True)
+            os.symlink(generation, root / "current", target_is_directory=True)
+            text = f"skills:\n  external_dirs:\n    - {(generation / 'skills').as_posix()}\n"
+            change = ensure_external_dir(text, root / "current" / "skills", hermes_home=root / ".hermes")
+            self.assertEqual(external_dirs(change.text), [(generation / "skills").as_posix(), (root / "current" / "skills").as_posix()])
+
     def test_an_entry_is_anchored_at_the_home_the_way_hermes_anchors_it(self) -> None:
         home = Path("/hermes-home")
         with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": "/managed"}):

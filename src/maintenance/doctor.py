@@ -300,7 +300,7 @@ def run_doctor(paths: OmhPaths, *, state_write: bool = True) -> list[Check]:
     checks.append(Check("hermes_config", hermes_config_present, f"{paths.hermes_config_path}"))
     # By text or by real path: the installer registers the `current` pointer,
     # the running command knows its generation, and both name this directory.
-    external_registered = external_dir_registered(dirs, paths.skills_dir)
+    external_registered = external_dir_registered(dirs, paths.skills_dir, hermes_home=paths.hermes_home)
     checks.append(Check("external_dir", external_registered, f"{paths.skills_dir} in skills.external_dirs"))
     # Both named with the `external_dir` prefix so the summary groups them
     # under Hermes registration beside the check above.
@@ -1184,7 +1184,10 @@ def _external_dir_ambiguity_checks(paths: OmhPaths, config_text: str) -> list[Ch
     """
     current = managed_current_workflow_pack_dir()
     entries = registered_managed_entries(
-        config_text, managed_skill_dir_candidates(paths, current=current), current=current
+        config_text,
+        managed_skill_dir_candidates(paths, current=current),
+        hermes_home=paths.hermes_home,
+        current=current,
     )
     checks = [_ambiguity_check("external_dir_ambiguity", registration_home_label(paths.hermes_config_path), entries)]
     for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
@@ -1192,6 +1195,7 @@ def _external_dir_ambiguity_checks(paths: OmhPaths, config_text: str) -> list[Ch
         profile_entries = registered_managed_entries(
             read_config(profile_paths.hermes_config_path),
             managed_skill_dir_candidates(profile_paths, current=current),
+            hermes_home=profile_paths.hermes_home,
             current=current,
         )
         if len(profile_entries) > 1:
@@ -1243,11 +1247,12 @@ def _external_dir_unregistered_copy_check(paths: OmhPaths, config_text: str) -> 
     if not copy.is_dir():
         return Check("external_dir_unregistered_copy", True, f"no pre-pointer skills copy at {copy}")
     registered_by: list[str] = []
-    if external_dir_registered(external_dirs(config_text), copy):
+    if external_dir_registered(external_dirs(config_text), copy, hermes_home=paths.hermes_home):
         registered_by.append(registration_home_label(paths.hermes_config_path))
     for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
         profile_paths = _profile_paths(paths, profile_dir)
-        if external_dir_registered(external_dirs(read_config(profile_paths.hermes_config_path)), copy):
+        profile_dirs = external_dirs(read_config(profile_paths.hermes_config_path))
+        if external_dir_registered(profile_dirs, copy, hermes_home=profile_paths.hermes_home):
             registered_by.append(registration_home_label(profile_paths.hermes_config_path, profile=name))
     if registered_by:
         return Check(

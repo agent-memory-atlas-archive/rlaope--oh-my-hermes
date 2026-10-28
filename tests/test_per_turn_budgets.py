@@ -673,13 +673,28 @@ class PluginToolSchemaProducerTests(unittest.TestCase):
         self.assertEqual(properties.pop("wake_at")["type"], ["string", "number"])
         self.assertEqual(properties["outcome"]["enum"].count("parked"), 1)
         properties["outcome"]["enum"].remove("parked")
+        # The node `category` enum is the routable vocabulary, which grew by
+        # the six routing-recipe categories on 2026-10-28 (+75, funded by its
+        # own PLUGIN_TOOL_SCHEMA_CHAR_LIMIT entry). Strip exactly those so the
+        # approved schema below is still compared intact.
+        category_enum = properties["nodes"]["items"]["properties"]["category"]["enum"]
+        recipe = ["google-search", "x-search", "review", "swarm", "forensics", "synthesize"]
+        self.assertEqual(category_enum[-len(recipe):], recipe)
+        del category_enum[-len(recipe):]
         encoded = json.dumps(legacy, sort_keys=True, ensure_ascii=False)
         self.assertEqual(len(encoded), 2479)
         self.assertEqual(
             hashlib.sha256(encoded.encode()).hexdigest(),
             "39be91ffc4db311ad1222cd4f57ded619ceb643063fdaa7bb2f0605fe654d3c5",
         )
-        delta = per_turn_context.plugin_tool_schema_chars_by_tool()["omh_dag"] - len(encoded)
+        # The parked cap is measured against the live schema without the six
+        # category values, so category growth cannot spend the parked cap.
+        live = copy.deepcopy(schema)
+        del live["parameters"]["properties"]["nodes"]["items"]["properties"]["category"]["enum"][-len(recipe):]
+        delta = len(json.dumps(live, sort_keys=True, ensure_ascii=False)) - len(encoded)
+        self.assertEqual(
+            per_turn_context.plugin_tool_schema_chars_by_tool()["omh_dag"] - len(encoded) - delta, 75
+        )
         self.assertGreater(delta, 0)
         self.assertLessEqual(delta, 429)  # Measured feature cap, not general headroom.
 

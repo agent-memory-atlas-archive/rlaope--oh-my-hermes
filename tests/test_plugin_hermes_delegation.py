@@ -351,12 +351,21 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
 
     def test_every_head_labels_its_own_category_except_the_accepted_collisions(self):
         # A head shared by two categories labels only the earlier one in
-        # canonical order. The owner accepted exactly two such collisions on
+        # canonical order. The owner accepted two such collisions on
         # 2026-10-13 -- (claude-opus-5-5, high) heads deep and
         # visual-engineering, (claude-opus-5-5, medium) heads writing and
         # capable -- and chose `max` for deep-work so its label survives.
-        # Routing is unaffected; a third collision fails here by name.
-        accepted = {"visual-engineering": "deep", "capable": "writing"}
+        # Two more were accepted with the routing-recipe heads on 2026-10-28:
+        # (gpt-6-astra, xhigh) heads ultrabrain and forensics, and
+        # (claude-opus-5-5, xhigh) heads architect and synthesize, so those
+        # two labels reach a child only through a route-provenance record.
+        # Routing is unaffected; a fifth collision fails here by name.
+        accepted = {
+            "visual-engineering": "deep",
+            "capable": "writing",
+            "forensics": "ultrabrain",
+            "synthesize": "architect",
+        }
         for category, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
             alias, effort = chain[0]
             with self.subTest(category=category):
@@ -435,8 +444,10 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         self.assertIs(provider_serves_alias("kimi-k3.1-pro", "anthropic"), False)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "kimi-coding"), True)
         self.assertIs(provider_serves_alias("kimi-k3.1-pro-highspeed", "zai"), False)
-        # The shipped slots label K3.1 Pro at the efforts K3 carried.
-        for effort, category in (("xhigh", "architect"), ("medium", "unspecified-high"), ("low", "quick")):
+        # The shipped slots label K3.1 Pro at the efforts K3 carried. Since
+        # 2026-10-28 xhigh projects to review, where K3.1 Pro sits third
+        # against fourth in architect (the shallower slot wins).
+        for effort, category in (("xhigh", "review"), ("medium", "unspecified-high"), ("low", "quick")):
             with self.subTest(effort=effort):
                 self.assertEqual(
                     mixture_category_for("moonshotai/kimi-k3.1-pro", effort, parent_model="gpt-6.1-sol"), category
@@ -472,6 +483,109 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         self.assertEqual(
             mixture_category_for("gpt-6.1-terra", "medium", parent_model="gpt-6.1-sol", chains=chains), "writing"
         )
+
+    # Catalog sync, 2026-10-28: (input, output, cached input) per MTok as the
+    # vendor's own page lists it. Every id is recognition-only except Grok
+    # 4.7, which the 2026-10-28 routing recipe placed at the x-search head.
+    _CATALOG_SYNC_RATES = {
+        "grok-4.7": (2.0, 6.0, 0.50),
+        "grok-4.6": (2.0, 6.0, 0.50),
+        "grok-4.5": (2.0, 6.0, 0.30),
+        "grok-4.3": (1.25, 2.50, 0.20),
+        "deepseek-v4-pro": (1.32, 3.96, 0.044),
+        "gemini-3.8-flash": (0.75, 3.75, 0.075),
+        "gemini-3.6-flash": (0.75, 3.75, 0.075),
+        "gemini-3.5-flash-lite": (0.30, 2.50, 0.03),
+        "glm-5.3-flashx": (0.37, 1.25, 0.075),
+        # Alibaba publishes no per-model cache-hit rate: the default tenth.
+        "qwen3.8-max": (2.0, 6.0, 0.20),
+        "qwen3.8-flash": (0.15, 0.47, 0.015),
+        "solar-pro4": (0.30, 1.20, 0.06),
+        "minimax-m3": (0.30, 1.20, 0.06),
+        "minimax-m3.1-flash": (0.15, 0.60, 0.015),
+        # Corrected the same day (the old figures were GLM-4.x rates and a
+        # halved ballpark of them); the tier carries its base's rate.
+        "glm-5.2": (1.4, 4.4, 0.26),
+        "glm-5.2-ultrafast": (1.4, 4.4, 0.26),
+    }
+
+    def test_catalog_sync_rows_cost_out_at_the_vendor_list_price(self):
+        cost = hermes_delegation_module._approximate_cost_usd
+        for model_id, (input_rate, output_rate, cached_rate) in self._CATALOG_SYNC_RATES.items():
+            with self.subTest(model_id=model_id):
+                self.assertEqual(
+                    hermes_delegation_module.APPROX_PRICE_PER_MTOK[model_id], (input_rate, output_rate)
+                )
+                self.assertAlmostEqual(cost(model_id, 1_000_000, 1_000_000, 0), input_rate + output_rate)
+                # Cached input lands on the vendor's cached rate to within the
+                # table's three-significant-figure ratio (relative, so the
+                # smallest cached rates are held as tightly as the largest).
+                # One output token keeps the call non-empty (an empty call
+                # returns no cost); its price is subtracted again.
+                cached_cost = cost(model_id, 0, 1, 1_000_000) - output_rate / 1_000_000
+                self.assertLessEqual(abs(cached_cost - cached_rate) / cached_rate, 0.005)
+                # A provider-qualified spelling prices the same.
+                self.assertEqual(
+                    cost(f"vendor/{model_id}", 1_000, 1_000, 1_000), cost(model_id, 1_000, 1_000, 1_000)
+                )
+                # None of them borrows a category label from a chain, except
+                # Grok 4.7, which heads x-search since 2026-10-28.
+                self.assertEqual(
+                    mixture_category_for(model_id, "high", parent_model="gpt-6.1-sol"),
+                    "x-search" if model_id == "grok-4.7" else "",
+                )
+
+    def test_mixed_case_served_ids_meet_the_lower_case_price_rows(self):
+        # MiniMax serves `MiniMax-M3` and `MiniMax-M3.1-Flash`; cost lookup
+        # casefolds the id (and drops a provider segment) before it reads the
+        # table, so the lower-case keys price the vendor's own spelling.
+        cost = hermes_delegation_module._approximate_cost_usd
+        for served, key in (
+            ("MiniMax-M3", "minimax-m3"),
+            ("minimax/MiniMax-M3", "minimax-m3"),
+            ("MiniMax-M3.1-Flash", "minimax-m3.1-flash"),
+        ):
+            with self.subTest(served=served):
+                self.assertNotIn(served, hermes_delegation_module.APPROX_PRICE_PER_MTOK)
+                self.assertIsNotNone(cost(served, 1_000, 1_000, 1_000))
+                self.assertEqual(cost(served, 1_000, 1_000, 1_000), cost(key, 1_000, 1_000, 1_000))
+
+    def test_catalog_sync_provider_rows_answer_for_their_own_families_only(self):
+        mapped = {
+            "grok-4.7": "xai",
+            "grok-4.6": "xai",
+            "grok-4.5": "xai",
+            "grok-4.3": "xai",
+            "deepseek-v4-pro": "deepseek",
+            "gemini-3.8-flash": "google",
+            "gemini-3.6-flash": "gemini",
+            "gemini-3.5-flash-lite": "google",
+            "glm-5.3-flashx": "zai",
+        }
+        for model_id, family in mapped.items():
+            with self.subTest(model_id=model_id):
+                self.assertIs(provider_serves_alias(model_id, family), True)
+                self.assertIs(provider_serves_alias(model_id, "anthropic"), False)
+                # A multi-vendor relay serves everything, so its verdict stays
+                # unknown rather than a claim either way.
+                self.assertIsNone(provider_serves_alias(model_id, "openrouter"))
+        # No OpenCode serving was observed for these two, so OpenCode is not
+        # claimed in their rows (it is a relay, so its own verdict is unknown).
+        for model_id in ("deepseek-v4-pro", "glm-5.3-flashx"):
+            with self.subTest(model_id=model_id):
+                self.assertNotIn(
+                    "opencode", hermes_delegation_module.HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES[model_id]
+                )
+        # Qwen 3.8, Solar Pro 4, and MiniMax have no first-party family in the
+        # vocabulary that was observed serving them. OpenRouter lists some of
+        # these ids, but a relay-only row would turn every first-party
+        # provider's verdict into False, so there is no row and the verdict
+        # stays unknown.
+        for model_id in ("qwen3.8-max", "qwen3.8-flash", "solar-pro4", "minimax-m3", "minimax-m3.1-flash"):
+            with self.subTest(model_id=model_id):
+                self.assertNotIn(model_id, hermes_delegation_module.HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES)
+                self.assertIsNone(provider_serves_alias(model_id, "qwen-oauth"))
+                self.assertIsNone(provider_serves_alias(model_id, "anthropic"))
 
     def test_the_served_ultrafast_tiers_are_priced_without_a_provider_claim(self):
         # Observed 2026-09-24 on the OpenGateway route: the V4.1 Flash and GLM
@@ -559,7 +673,7 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         contracts = {
             "gpt-6-astra": ("openai", "xhigh", "ultrabrain", "openai", "anthropic"),
             "gpt-6.1-sol": ("openai", "high", "deep", "openai", "anthropic"),
-            "deepseek-v4.1-flash": ("deepseek", "low", "unspecified-low", "deepseek", "anthropic"),
+            "deepseek-v4.1-flash": ("deepseek", "low", "swarm", "deepseek", "anthropic"),
             "claude-opus-5-5": ("anthropic", "medium", "writing", "anthropic", "openai"),
             "claude-sonnet-5-5": ("anthropic", "medium", "writing", "anthropic", "openai"),
             "claude-haiku-5-5": ("anthropic", "low", "simple-work", "anthropic", "openai"),
@@ -598,10 +712,11 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         unknown = "openai/gpt-6-astra-pro-turbo"
         self.assertEqual(mixture_category_for(unknown, "xhigh", parent_model="kimi-k3"), "")
         self.assertIsNone(provider_serves_alias(unknown, "openai"))
-        # Both DeepSeek spellings label both DeepSeek slots at their efforts;
-        # the vendor-routed legacy id is not a declared alias and stays bare.
+        # Both DeepSeek spellings label the DeepSeek slots at their effort --
+        # swarm since 2026-10-28, whose head it is; the vendor-routed legacy
+        # id is not a declared alias and stays bare.
         for spelling in ("deepseek-flash", "deepseek/deepseek-v4.1-flash"):
-            self.assertEqual(mixture_category_for(spelling, "low", parent_model="kimi-k3"), "unspecified-low")
+            self.assertEqual(mixture_category_for(spelling, "low", parent_model="kimi-k3"), "swarm")
         self.assertEqual(mixture_category_for("deepseek/deepseek-v4-flash", "high", parent_model="kimi-k3"), "")
 
     def test_reverse_projection_is_limited_to_pointer_aliases(self):
@@ -680,10 +795,11 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 )
                 self.assertIs(provider_serves_alias(spelling, "openai"), True)
                 self.assertIs(provider_serves_alias(spelling, "anthropic"), False)
-        # A snapshot of the exact id reaches the served pointer the chain names.
+        # A snapshot of the exact id reaches the served pointer the chain names
+        # (the swarm head since 2026-10-28).
         self.assertEqual(
             mixture_category_for("deepseek/deepseek-v4.1-flash-2026-09-01", "low", parent_model="kimi-k3"),
-            "unspecified-low",
+            "swarm",
         )
         # The exact-contract label follows the snapshot too.
         self.assertEqual(

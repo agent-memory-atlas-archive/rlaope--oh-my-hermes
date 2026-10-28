@@ -67,7 +67,10 @@ its words do on every background, so a highlight is a pointer (`❯`) and the
 highlighted row's name bold in the skill hue (`menu_current`, the `slash`
 colour, so a command reads the same in the menu and in the composer), with
 every other row in the terminal's foreground (`menu`) and its details on
-`muted`. The
+`muted`. An
+approval's choices are the exception: the highlighted one is bold in its tone
+on a band of that tone (`pick_error`, `pick_ok`, `pick_warn`, `pick_muted`),
+since allowing and denying must not look alike at a glance. The
 info line under the composer and the sticky prompt over a running turn have
 no bar: their words and marks are measured against the terminal's background
 like any transcript row.
@@ -103,6 +106,10 @@ LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
+# An approval's highlighted choice: its tone moved this far toward the background for the band behind it (on a dark
+# background, on a light one), so the band is the tone's tint and the tone itself, lifted, still reads on it. On a
+# light background 0.85 left an amber band at 1.08:1, too close to the background to see.
+PICK_BAND_SHARE = (0.72, 0.78)
 # The delegation view's edge gradient, top to bottom, for a palette that names none of these tokens.
 DAG_EDGE_STOPS = {"dag_edge_start": "#8B5CF6", "dag_edge_mid": "#6366F1", "dag_edge_end": "#3B82F6"}
 DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
@@ -111,7 +118,7 @@ DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
 TEXT_ROLES = (
     "running", "label", "ok", "warn", "error", "thinking", "heading", "code", "link", "quote",
     "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment", "hint", "muted", "faint", "mode_accept",
-    "mode_plan", "brand", "slash",
+    "mode_plan", "brand", "slash", "background_word",
 )
 # The roles drawn only as a glyph or an edge: each reaches EDGE_CONTRAST.
 GLYPH_ROLES = ("dim", "rule", "prompt")
@@ -208,6 +215,9 @@ LAUNCH_PALETTES: dict[str, tuple[LogoPalette, LogoPalette]] = {
 # A sent prompt's band: the launch look's card-edge colour moved this far toward the background (on a dark one, on a
 # light one), so the band is that look's tint at about 1.2-1.5:1 against the background.
 PROMPT_BAND_SHARE = (0.6, 0.8)
+# How far the background-process row's `background` word moves from `label` toward the background (owner, 2026-10-28:
+# a little darker than the label); it is lifted back to TEXT_CONTRAST where that takes it below.
+BACKGROUND_WORD_SHARE = 0.18
 LOGO_BLOCK = "█"
 # How far a drop-shadow glyph (the logo's box-drawing characters) is pulled from its face colour toward the background.
 LOGO_SHADOW_SHARE = 0.55
@@ -257,9 +267,20 @@ class Theme:
     brand: Style  # the banner's title, bold: the palette's accent, which no other role uses
     kinds: tuple[Style, ...]  # a call's name, bold, in its tool family's hue, in `KIND_FAMILIES` order
     slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
+    background_word: Style  # the background-process row's `background` and spinner: bold, `label` a step dimmer
     aura: tuple[Style, ...] = ()  # a `dag-ulw` in the composer and the rules around it, bold, `AURA_STOPS` stepped
     aura_glint: tuple[Style, ...] = ()  # the same steps toward `AURA_GLINT`: the band that sweeps through them
     prompt_band: Style = Style()  # behind a prompt you sent, edge to edge (`with_prompt_band`); none until set
+    catch_mark: tuple[Style, ...] = ()  # a catch row's `✦ OMH`, cell by cell, bold, through the launch look's logo
+    catch_words: Style = Style()  # what a catch row says: the launch look's label colour (`with_catch_colours`);
+    # `build_theme` sets both from the default launch look, so no built theme leaves them unpainted
+    # An approval's highlighted choice, bold in its tone (deny `error`, an allow `ok`, always `warn`, the tell row
+    # `muted`) on a band of that tone mixed into the background (`PICK_BAND_SHARE`); no band when no background was
+    # reported. `build_theme` paints all four.
+    pick_error: Style = Style()
+    pick_ok: Style = Style()
+    pick_warn: Style = Style()
+    pick_muted: Style = Style()
 
 
 def aura_moves(theme: Theme) -> bool:
@@ -386,6 +407,12 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
         return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
 
+    def pick(colour: str, toward: str) -> Style:
+        if not reported:
+            return Style(fg=_lifted(colour, toward, surface, TEXT_CONTRAST), bold=True)
+        band = _mix(colour, surface, PICK_BAND_SHARE[side])
+        return Style(fg=_lifted(colour, toward, band, TEXT_CONTRAST), bg=band, bold=True)
+
     if not reported:
         ok_band = error_band = Style()
     elif light:
@@ -403,7 +430,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         diff_add_word = Style(fg=c["diff_added_word"], bg=c["diff_added"])
         diff_remove = Style(fg=c["banner_text"], bg=c["diff_removed"])
         diff_remove_word = Style(fg=c["diff_removed_word"], bg=c["diff_removed"])
-    return Theme(
+    theme = Theme(
         name=skin.short_name,
         text=Style(),
         dim=Style(fg=grey("glyph", EDGE_CONTRAST)),
@@ -450,9 +477,17 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         brand=Style(fg=read("ui_accent"), bold=True),
         kinds=tuple(Style(fg=hue(family), bold=True) for family in KIND_FAMILIES),
         slash=Style(fg=hue("skill"), bold=True),
+        background_word=Style(fg=_lifted(_mix(read("ui_label"), surface, BACKGROUND_WORD_SHARE), ink, surface,
+                                         TEXT_CONTRAST), bold=True),
         aura=tuple(Style(fg=colour, bold=True) for colour in aura_steps) if moving else (Style(bold=True),),
         aura_glint=tuple(Style(fg=colour, bold=True) for colour in glint_steps) if moving else (Style(bold=True),),
+        pick_error=pick(c["ui_error"], ink),
+        pick_ok=pick(c["ui_ok"], ink),
+        pick_warn=pick(c["ui_warn"], ink),
+        pick_muted=pick(NEUTRAL_GREYS["muted"][side], BLACK if light else WHITE),
     )
+    # A catch row's colours from the default launch look; `with_catch_colours` repaints them for the shown one.
+    return with_catch_colours(theme, skin, background, DEFAULT_LAUNCH)
 
 
 def launch_palette(name: str, surface: str) -> LogoPalette:
@@ -460,6 +495,32 @@ def launch_palette(name: str, surface: str) -> LogoPalette:
     unknown name."""
     dark, light = LAUNCH_PALETTES.get(name, LAUNCH_PALETTES[DEFAULT_LAUNCH])
     return light if is_light(surface) else dark
+
+
+# The mark a catch row opens with, drawn through the launch look's logo colours by the transcript (`Theme.catch_mark`).
+# It lives here, not in `panels`, so the approval slot (`prompts`) can draw it without importing `panels`.
+CATCH_MARK = "✦ OMH"
+# The cells of a catch row's mark (`CATCH_MARK`) the logo's colours are stepped across.
+CATCH_MARK_CELLS = 5
+
+
+def _logo_stops(palette: LogoPalette) -> list[str]:
+    """The colours a launch look's logo runs through, first to last: its sweep, its row faces, or graphite's white
+    HERMES into its coloured hyphens."""
+    if len(palette.sweep) > 1:
+        return list(palette.sweep)
+    if len(palette.faces) > 1:
+        return list(palette.faces)
+    return [palette.whites[0] if palette.whites else palette.label, palette.spark or palette.brand]
+
+
+def with_catch_colours(theme: Theme, skin: SkinTheme, background: str | None, look: str) -> Theme:
+    """`theme` with a catch row's colours from launch look `look` (owner's pick of 2026-10-28): the `✦ OMH` mark
+    stepped through the logo's colours (`CATCH_MARK_CELLS`), the words in the look's label colour, so the row reads
+    as OMH's own and changes with `/theme`."""
+    palette = launch_palette(look, surface_for(skin, background))
+    mark = tuple(Style(fg=colour, bold=True) for colour in _gradient(_logo_stops(palette), CATCH_MARK_CELLS))
+    return replace(theme, catch_mark=mark, catch_words=Style(fg=palette.label))
 
 
 def with_prompt_band(theme: Theme, skin: SkinTheme, background: str | None, look: str) -> Theme:

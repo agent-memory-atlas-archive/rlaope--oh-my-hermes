@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import INFO_INSET, line_text, lines_text
+from _tui_lines import INFO_INSET, line_text, lines_text, without_badge
 from test_tui_agent_view import agent_app
 from test_tui_modes import answer, make_app
 from omh.tui.app import App, banner_lines
@@ -29,7 +29,7 @@ SECRET = ServerRequest("srq-3", "secret", {"env_var": "TOKEN"})
 
 
 def mode_row(app: App) -> str:
-    return line_text(app._info_line(100))
+    return without_badge(line_text(app._info_line(100)))
 
 
 class QuestionKeyTests(unittest.TestCase):
@@ -246,11 +246,14 @@ class NarrowApprovalTests(unittest.TestCase):
                 row = line_text(app._info_line(width))
                 self.assertIn("esc denies", row)
                 self.assertLessEqual(len(row), width)
-                self.assertIn("▌ ❯ deny", self.rows(width))
+                self.assertIn("▌ ❯ ✗ deny", self.rows(width))
 
     def test_a_wrapped_command_keeps_its_indent(self) -> None:
-        rows = self.rows(50)
-        command_rows = rows[1 : rows.index("▌ ❯ deny")]
+        # One command, so it is listed whole, wrapped under the indent (two would each fit on a row of their own).
+        slot = open_request("srq", "approval", {"command": self.COMMAND.replace(" && ", " -o -exec "),
+                                                "description": "delete in root path"})
+        rows = lines_text(slot.lines(50, DEFAULT_THEME, 20))
+        command_rows = [row for row in rows[1 : rows.index("▌ ❯ ✗ deny")] if row.strip("▌ ─")]  # past the spacing
         self.assertGreater(len(command_rows), 1)
         for row in command_rows:
             self.assertTrue(row.startswith("▌   "), rows)

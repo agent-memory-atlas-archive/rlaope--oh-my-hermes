@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import unittest
 
-from _tui_lines import info_row_index, INFO_INSET, composer_text, line_text
+from _tui_lines import info_row_index, INFO_INSET, composer_text, line_text, without_badge
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -26,7 +26,9 @@ from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.app import BELL, App
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
 from omh.tui.style import Span
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock, block_rows
+from omh.tui.transcript import (
+    NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock, block_rows, rail_cell,
+)
 
 LONG_COMMAND = "\n".join(f"echo line {n}" for n in range(1, 21))
 LONG_APPROVAL = ServerRequest(
@@ -58,13 +60,13 @@ class QuestionViewTests(unittest.TestCase):
         self.assertIs(app.pager, app.question_view)
         text = paged(app)
         self.assertEqual([row for row in text if "echo line" in row], [f"▌   echo line {n}" for n in range(1, 21)])
-        self.assertIn("▌ ❯ allow once", text)
+        self.assertIn("▌ ❯ ✓ allow once", text)
         self.assertEqual(client.answers, [])
         press(app, Key(CHAR, "q"))
         self.assertIsNone(app.pager)
         self.assertIs(app.slot.request_id, "srq-1")  # type: ignore[union-attr]
         self.assertEqual(app.slot.selected, 1)  # type: ignore[union-attr]
-        self.assertIn("▌ ❯ allow once", drawn(app))
+        self.assertIn("▌ ❯ ✓ allow once", drawn(app))
         self.assertEqual(client.answers, [])
 
     def test_esc_in_the_pager_leaves_it_and_denies_nothing(self) -> None:
@@ -201,7 +203,7 @@ class QuestionOutcomeTests(unittest.TestCase):
     def test_a_question_that_went_unanswered_leaves_its_tool_row_a_red_mark_too(self) -> None:
         # Hermes' clarify result says how the wait ended (`outcome`); only `submitted` was an answer.
         def mark(app) -> tuple[Span, Span]:
-            """The call row's rail and its mark: the first and third spans of `┃ ✗ clarify(…)`."""
+            """The call row's rail and its mark: the first and third spans of `  ✗ clarify(…)` (the rail's painted cell)."""
             (group,) = [block for block in app.transcript.blocks if isinstance(block, ToolGroup)]
             row = block_rows(group, 80, app.theme)[0]
             return row[0], row[2]
@@ -220,14 +222,14 @@ class QuestionOutcomeTests(unittest.TestCase):
                 press(app, Key(ESCAPE))
                 screen = complete(app, outcome)
                 (row,) = [line for line in screen if "clarify" in line and "Which colour?" in line and "·" not in line]
-                self.assertTrue(row.startswith("┃ ✗ clarify("), row)
-                self.assertEqual(mark(app), (Span("┃", app.theme.error), Span("✗", app.theme.error)))
+                self.assertTrue(row.startswith("  ✗ clarify("), row)
+                self.assertEqual(mark(app), (rail_cell(app.theme.error), Span("✗", app.theme.error)))
                 self.assertIn(f"⎿  {words}", "\n".join(screen))
         app, _client = opened(COLOUR)
         press(app, Key(ENTER))
         (row,) = [line for line in complete(app, "submitted") if "clarify" in line and "·" not in line]
-        self.assertTrue(row.startswith("┃ ● clarify("), row)
-        self.assertEqual(mark(app), (Span("┃", app.theme.ok), Span("●", app.theme.ok)))
+        self.assertTrue(row.startswith("  ● clarify("), row)
+        self.assertEqual(mark(app), (rail_cell(app.theme.ok), Span("●", app.theme.ok)))
 
     def test_hermes_notice_says_why_under_the_cross_when_it_gives_one(self) -> None:
         app, _client = make_app(busy=True)
@@ -279,7 +281,7 @@ class QuestionOutcomeTests(unittest.TestCase):
         app, client = opened(ServerRequest("srq-1", "approval", {
             "command": "rm -rf ./x", "description": "recursive delete", "choices": ["once", "session", "always", "deny"],
         }))
-        self.assertIn("▌   always allow recursive delete (Hermes saves it)", drawn(app))
+        self.assertIn("▌   ★ always allow recursive delete (Hermes saves it)", drawn(app))
         press(app, Key(DOWN), Key(DOWN), Key(DOWN), Key(ENTER))
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "always"}})])
         # The TUI sent the choice; that Hermes saved it is not something it saw.
@@ -303,9 +305,9 @@ SID = "live-1"  # make_app's session
 
 
 class WaitingTimeTests(unittest.TestCase):
-    def clocked(self):
+    def clocked(self, cols: int = 80):
         now = [100.0]
-        app, client = make_app(busy=True, clock=lambda: now[0])
+        app, client = make_app(busy=True, clock=lambda: now[0], cols=cols)
         app.busy_since = 90.0
         return app, client, now
 
@@ -334,9 +336,9 @@ class WaitingTimeTests(unittest.TestCase):
 
         def status() -> str:
             screen = drawn(app)
-            return screen[info_row_index(screen)]  # the info line, the region's last row but the badge row
+            return screen[info_row_index(screen)]  # the info line, the region's last row
 
-        app, _client, now = self.clocked()
+        app, _client, now = self.clocked(cols=100)  # room for the badge, a question's keys and the chip
         app.stored_id = "stored"
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=1, oldest_open_elapsed_seconds=9)
@@ -353,7 +355,7 @@ class WaitingTimeTests(unittest.TestCase):
         self.assertIn("1 tool · 9s", status())
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertNotIn("tool", status())  # the snapshot still says live; the turn is over
-        self.assertTrue(status().startswith(INFO_INSET + "? for shortcuts"), status())
+        self.assertTrue(status().startswith(INFO_INSET + "[ ⚚ OMH Native ]   "), status())  # the badge alone on the left
 
     def test_back_to_back_questions_are_one_wait(self) -> None:
         app, _client, now = self.clocked()
@@ -529,7 +531,7 @@ TELL_APPROVAL = ServerRequest("srq-1", "approval", {
 
 
 def mode_row(app) -> str:
-    return line_text(app._info_line(100))
+    return without_badge(line_text(app._info_line(100)))
 
 
 class TellRowTests(unittest.TestCase):
@@ -847,7 +849,8 @@ class DocumentedBoundaryTests(unittest.TestCase):
                       "only on the person's arrows and then Enter", agents)
         self.assertIn("A steer (Ctrl+Enter, `/steer`, or what the person sends from the composer the tell row opened) "
                       "sends into the running turn only text the person typed and sent that way", agents)
-        self.assertIn("the TUI never steers on its own, and a queued prompt is never turned into a steer", agents)
+        self.assertIn("the TUI never steers on its own, and a queued prompt becomes a steer only when the person presses "
+                      "the send-now key", agents)
 
     def test_the_glossary_says_what_the_two_rows_send(self) -> None:
         context = self.prose("CONTEXT.md")

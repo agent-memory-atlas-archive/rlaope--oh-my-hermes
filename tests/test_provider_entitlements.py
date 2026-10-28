@@ -93,6 +93,18 @@ class ParityTests(unittest.TestCase):
         # Qwen3-Coder with no Qwen successor.
         "claude-haiku-4-5": ("ccapi", "anthropic", "openrouter"),
         "qwen3-coder": ("qwen-oauth", "openrouter", "opencode"),
+        # Catalog sync 2026-10-28: recognized, priced, and provider-mapped
+        # ahead of any chain placement.
+        "deepseek-v4-pro": ("deepseek", "openrouter"),
+        "glm-5.3-flashx": ("zai", "openrouter"),
+        # grok-4.7 left this table on 2026-10-28, when the routing recipe
+        # placed it at the x-search head.
+        "grok-4.6": ("xai", "openrouter"),
+        "grok-4.5": ("xai", "openrouter"),
+        "grok-4.3": ("xai", "openrouter"),
+        "gemini-3.8-flash": ("google", "gemini", "openrouter"),
+        "gemini-3.6-flash": ("google", "gemini", "openrouter"),
+        "gemini-3.5-flash-lite": ("google", "gemini", "openrouter"),
     }
     # Provider families whose last catalog member retired, kept in the
     # vocabulary by name. The entitlement parser is strict and atomic, so

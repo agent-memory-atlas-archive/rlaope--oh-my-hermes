@@ -447,7 +447,8 @@ OMH_DELEGATE_ROUTE_SCHEMA = {
     "description": (
         "Route the NEXT Hermes-native delegate_task dispatch onto a mixture model "
         "category (ultrabrain, deep, deep-work, architect, capable, unspecified-high, "
-        "unspecified-low, quick, simple-work, writing, visual-engineering, artistry) by "
+        "unspecified-low, quick, simple-work, writing, visual-engineering, artistry, "
+        "google-search, x-search, review, swarm, forensics, synthesize) by "
         "writing the delegation.model / "
         "delegation.reasoning_effort keys Hermes reads per dispatch. Sequence per lane: "
         "set the route, call delegate_task for that lane, then set the next lane's route. "

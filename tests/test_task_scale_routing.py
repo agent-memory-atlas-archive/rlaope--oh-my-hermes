@@ -195,6 +195,39 @@ class OneRoutingRuleTests(unittest.TestCase):
             with self.subTest(profile=profile):
                 self.assertEqual(set(category_models), set(MODEL_CATEGORIES))
 
+    def test_the_routing_recipe_categories_are_opt_in(self) -> None:
+        # The six 2026-10-28 categories are reached only by declaring one: no
+        # role or scale names them, so no existing role or scale chain moved.
+        recipe = {"google-search", "x-search", "review", "swarm", "forensics", "synthesize"}
+        self.assertTrue(recipe <= set(MODEL_CATEGORIES))
+        named = {
+            category
+            for categories in (*CATEGORY_ROLE_SOURCES.values(), *CATEGORY_SCALE_SOURCES.values())
+            for category in categories
+        }
+        self.assertEqual(named & recipe, set())
+
+    def test_the_review_category_does_not_reroute_the_review_role(self) -> None:
+        # `review` is both a role (MODEL_ROLES) and, since 2026-10-28, a
+        # category. The two vocabularies stay separate: the role resolves
+        # through its own sources, and only a declared category reaches the
+        # category chain.
+        self.assertIn("review", MODEL_ROLES)
+        self.assertEqual(CATEGORY_ROLE_SOURCES["review"], ("unspecified-high", "unspecified-low"))
+        for profile in BUILTIN_CATEGORY_MODELS:
+            with self.subTest(profile=profile):
+                by_role = resolve_model_route(profile, role="review")
+                self.assertEqual(by_role["provenance"], "role_chain_head")
+                self.assertEqual(
+                    by_role["selected_model"],
+                    merged_category_chain(BUILTIN_CATEGORY_MODELS[profile], ("unspecified-high",))[0]["model_id"],
+                )
+                by_category = resolve_model_route(profile, requested_category="review")
+                self.assertEqual(by_category["provenance"], "category_chain_head")
+                self.assertEqual(
+                    by_category["selected_model"], BUILTIN_CATEGORY_MODELS[profile]["review"][0]["model_id"]
+                )
+
     def test_a_chain_never_names_the_same_model_twice(self) -> None:
         # Next-candidate advice is only useful when it names a DIFFERENT model.
         for profile, roles in ROLE_MODEL_CHAINS.items():

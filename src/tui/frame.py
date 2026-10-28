@@ -33,8 +33,9 @@ last row, and from then on the screen scrolls instead; when something above
 it shrinks, the composer moves up by as many rows. Once the region's last row
 is the screen's last row, the app passes the region's height as
 `min_height`, so what shrinks there becomes pad rows under the live block,
-above the working row and its tip, and the composer does not move up: when the
-agent view under it shrinks, it moves down by as many rows.
+above the working row and its tip, and the composer does not move up (but for
+the rows a turn's end leaves nothing to take, `layout`): when the agent view
+under it shrinks, it moves down by as many rows.
 
 An empty composer shows `placeholder` after the prompt glyph in the hint
 colour while the app asks for it (no slot open). It is drawn, never typed:
@@ -68,7 +69,7 @@ from .width import cell_width, line_width, truncate, truncate_line
 RULE = "─"  # the composer's rules, above and under it, full width
 INFO_INSET = 2  # cells before the info line's text, under the rule
 BRANCH_LABEL = "branch:"
-BRANCH_MIN_CELLS = 6  # a branch name cut shorter than this, its `…` included, says nothing
+BRANCH_CUTS = (24, 12)  # the cells a long branch name is cut to on a narrow info line, its `…` included
 STICKY_PREFIX = "↳ you: "
 STICKY_CUT = "…"  # where the reminder's prompt is cut
 BROWSING_HINT = "↑↓ browsing · esc to type"  # in the composer's place while the agent list or the dag tree has the keys
@@ -114,7 +115,6 @@ def build_frame(
     aura_depth: str = TRUECOLOR,
     gaps: tuple[bool, bool] = (False, False),
     gap_reserve: int = 0,
-    badge: Line = (),
     tail_spacer: bool = False,
 ) -> Frame:
     """The region for one repaint; `min_height` rows at least, pad rows under the live block making up the rest.
@@ -145,9 +145,6 @@ def build_frame(
     it (`layout.allocate` gives each only from spare rows, past `gap_reserve`).
     `tail_spacer` says the tail's row right above its `tail_floor` rows is the
     blank one over the working row: it goes when the tail does not fit whole.
-    `badge` is the region's last row, under the info line and the agent view
-    (the branch and the OMH Native badge); none when it is empty, and the
-    first part to give way.
     """
     cap = composer_cap(rows)
     composer_lines: list[Line] = []
@@ -187,7 +184,6 @@ def build_frame(
             gaps=(gaps[0] and bool(tail) and bool(tail[-1]), gaps[1]),  # a tail that ends blank is its own gap
             sticky_gap=sticky is not None,
             gap_reserve=gap_reserve,
-            badge_rows=int(bool(badge)),
         )
 
     budget = fit(tail)
@@ -210,7 +206,6 @@ def build_frame(
         info=truncate_line(info, cols),
         below=below,
         agents=agents,
-        badge=truncate_line(badge, cols),
     )
     if composer is not None and not composer_blank:
         cursor: tuple[int, int] | None = (caret_row(budget, caret_line), caret_col)
@@ -226,36 +221,33 @@ def build_frame(
     )
 
 
-def badge_line(width: int, theme: Theme, accent: Style, native: Line, git: GitState | None) -> Line:
-    """The row under the info line: the session's git branch on the left (`BRANCH_LABEL`, the branch, then `!N`
-    tracked files changed and `?N` untracked, each only when not zero) and `[ ⚚ OMH Native ]` on the right edge.
+def badge_forms(theme: Theme, accent: Style, native: Line) -> tuple[Line, ...]:
+    """`[ ⚚ OMH Native ]` and its shorter forms, longest first, for the left end of the info line: `[ ⚚ OMH ]`, then
+    the caduceus alone. `accent` paints the caduceus and `native` is `Native` in the launch look's colours."""
+    return (
+        (Span("[ ", theme.dim), Span("⚚", accent), Span(" OMH ", theme.faint), *native, Span(" ]", theme.dim)),
+        (Span("[ ", theme.dim), Span("⚚", accent), Span(" OMH ]", theme.faint)),
+        (Span("⚚", accent),),
+    )
 
-    `accent` paints the caduceus and `native` is `Native` in the launch look's colours. Nothing wraps: as the row
-    narrows the branch name is cut to `…` first, then the badge goes, then the counts, then the branch. () when
-    nothing fits.
+
+def branch_forms(git: GitState | None, theme: Theme) -> tuple[Line, ...]:
+    """The session's git branch for the info line's right side, longest first; () outside a repository.
+
+    `BRANCH_LABEL`, the branch, then `!N` tracked files changed and `?N`
+    untracked, each only when not zero; the shorter forms cut the name to
+    each of `BRANCH_CUTS` cells (its `…` included) where it is longer.
     """
-    badge: Line = (Span("[ ", theme.dim), Span("⚚", accent), Span(" OMH ", theme.faint), *native, Span(" ]", theme.dim))
-    tries: list[tuple[Line, Line]] = [(badge, ())]
-    if git is not None:
-        counts: list[Span] = []
-        if git.changed:
-            counts.append(Span(f"!{git.changed}", theme.warn))  # a dirty tree is no error
-        if git.untracked:
-            counts += [Span(" ")] * bool(counts) + [Span(f"?{git.untracked}", theme.faint)]
-        tail: Line = (Span(" | ", theme.dim), *counts) if counts else ()
-        tries = [(badge, tail), ((), tail), ((), ())]
-    for right, kept in tries:
-        room = width - INFO_INSET - (line_width(right) + 2 if right else 0)
-        if git is None:  # the badge alone
-            if room + 2 >= 0:
-                return (Span(" " * (width - line_width(right))), *right)
-            continue
-        name_room = room - cell_width(BRANCH_LABEL) - line_width(kept)
-        if name_room >= min(BRANCH_MIN_CELLS, cell_width(git.branch)):
-            branch = (Span(BRANCH_LABEL, theme.faint), Span(truncate(git.branch, name_room), theme.label), *kept)
-            gap = width - INFO_INSET - line_width(branch) - line_width(right)
-            return (Span(" " * INFO_INSET), *branch, *((Span(" " * gap), *right) if right else ()))
-    return ()
+    if git is None:
+        return ()
+    counts: list[Span] = []
+    if git.changed:
+        counts.append(Span(f"!{git.changed}", theme.warn))  # a dirty tree is no error
+    if git.untracked:
+        counts += [Span(" ")] * bool(counts) + [Span(f"?{git.untracked}", theme.faint)]
+    tail: Line = (Span(" | ", theme.dim), *counts) if counts else ()
+    names = [git.branch, *(truncate(git.branch, cells) for cells in BRANCH_CUTS if cell_width(git.branch) > cells)]
+    return tuple((Span(BRANCH_LABEL, theme.faint), Span(name, theme.label), *tail) for name in names)
 
 
 def _browsing_rows(count: int, cols: int, theme: Theme) -> list[Line]:

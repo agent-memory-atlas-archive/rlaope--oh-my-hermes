@@ -419,18 +419,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   sent runs on the same band), the tail of the reply that is still streaming, one slot for the
   OMH plan (or a question Hermes asked, or the slash-command
   menu when it does not open under the composer), the prompts queued behind
-  the running turn (`⧗`, up to three named and the rest counted), the
+  the running turn (`⧗`, up to three named and the rest counted; while the
+  turn runs, a muted row under them names the key that sends the oldest one
+  into the turn now, as Claude Code does: `ctrl+enter to send now · ↑ to
+  edit`, below), the
   composer between two full-width rules as Claude Code draws it (`───`,
   then `❯ …` rows, then `───`, with no side edges or corners),
   one dim info line under it, and, while there are subagents, the agent view
-  under that, always expanded (below). The region's last row, from 30 rows,
-  holds the session directory's git branch on the left (`branch:<name> | !3
-  ?128`: tracked files changed, then untracked, each only when not zero; a
-  detached HEAD by its short sha; nothing outside a repository), read by
-  `git status` off the screen's thread after each tool, each turn and every
-  15 seconds, and `[ ⚚ OMH Native ]` on the right edge in the launch look's
-  colours. As the row narrows the branch name is cut to `…` first, then the
-  badge goes, then the counts. A blank row stands between the reply and
+  under that, always expanded (below). A blank row stands between the reply and
   the working row, between the working row's tip and the plan, and between
   the plan and the composer's top rule, wherever the terminal has a row to
   spare for it. Your sent prompt runs on a band to the right edge, a quiet
@@ -458,7 +454,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in
-  their place, right above the info line. While the agent list or the dag
+  their place, right above the info line. A `/sessions`, `/rewind` or
+  `/model` picker sets its list off from its header and its filter row with
+  a muted rule, set in by one cell (the header's first, then the filter
+  row's), while the list keeps at least three rows. While the agent list or the dag
   tree has the keys the composer keeps its rules and its row says
   `↑↓ browsing · esc to type` instead of the prompt, so nothing moves. A question and the agent list show
   no caret; a picker shows it at the end of its filter row and the search at
@@ -476,22 +475,35 @@ run and approval decision stays Hermes'; the screen is OMH's.
   prompt the start fills the screen: the logo and the banner on top, the
   composer and the info line on the bottom rows, the rows between them empty.
 - The info line under the composer, two cells in so it starts under the
-  composer's text (on the edge on a terminal too small for the rules), says, on
-  the left, the input mode or the keys that matter right now, and on the right the session's title once
-  Hermes names it, the model, how full the context is and the reasoning effort, as `Fix the login bug ·
+  composer's text (on the edge on a terminal too small for the rules), is the
+  one line under it. On the left it starts with `[ ⚚ OMH Native ]` in the
+  launch look's colours, then the session directory's git branch
+  (`branch:<name> | !3 ?128`: tracked files changed, then untracked, each
+  only when not zero; a detached HEAD by its short sha; nothing outside a
+  repository, or on a terminal too small for the rules), read by `git status`
+  off the screen's thread after each tool, each turn and every 15 seconds,
+  then the input mode or the keys that matter right now; on the right it says
+  the session's title once Hermes names it, the model, how full the context
+  is and the reasoning effort, as `Fix the login bug ·
   deepseek/deepseek-v4.1-flash · ctx 5% · effort medium` (the context in the warning colour from 80 % full
   and the error colour from 95 %; `ctrl+t effort` while no level is
-  known). Between turns the left reads `? for shortcuts` (the `?` list names
-  every key) while the composer is empty; once you type, or open the `/`
-  menu, `?` is a character and the hint leaves, as in Claude Code. In accept all it reads `⏵⏵ accept all on (⇧⇥ to cycle)` in
+  known). As the line narrows, the right side's fields shorten and then go
+  first; then the branch's name is cut to `…` (24, then 12 cells); then the
+  badge shortens to `[ ⚚ OMH ]`, then `⚚`, then goes, and then the branch;
+  the mode's label, the agent count and what the next key does (a question's
+  or a picker's way out) keep their words until all of those are gone. Room
+  the left side leaves goes to the right side's shortest fitting form, so a
+  filling context still shows. Between turns in
+  the normal mode the left side is the badge and the branch: the launch card names
+  `? every shortcut`, and `?` on an empty composer still opens the list that
+  names every key. In accept all it reads `⏵⏵ accept all on (⇧⇥ to cycle)` in
   accept's colour and in plan `⏸ plan mode on (⇧⇥ to cycle)` in plan's;
   while Hermes has approvals off on its own it reads `⏵⏵ accept all on (⇧⇥
   plan)`, since Shift+Tab then turns only plan on and off. The composer's rules
-  keep their colour in every mode. While a turn runs in the normal mode the
-  left offers `ctrl+enter steer` (`/steer <text> steers` where the terminal
-  does not tell Ctrl+Enter from Enter), and `↑ edit queued` once prompts are
-  queued (in accept all and plan it keeps the label and where Shift+Tab
-  goes); while Hermes asks something it names that question's keys (`↑↓
+  keep their colour in every mode. While a turn runs the line names no key
+  for it: the working row offers the interrupt, and the row under the queued
+  prompts the send-now key (in accept all and plan the line keeps the label
+  and where Shift+Tab goes); while Hermes asks something it names that question's keys (`↑↓
   pick · enter confirms · d or esc denies and stops`), and while a picker or
   the Ctrl+R search is open, its keys (`↑↓ move · enter switches · esc
   closes`). After a first Ctrl+C on an empty composer it says `ctrl+c again
@@ -541,7 +553,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   there moves nothing. Once the composer has reached the bottom
   rows it stays there: what grows above it scrolls the transcript up, and a
   list or question closing there does not pull it up, its rows staying blank
-  above the composer until more is printed into them. The agent view under
+  above the composer until more is printed into them. A turn's end is the one
+  exception: the `↳ you:` reminder, the blank row over it and the blank row
+  over the plan go with the turn, so the composer rises by those rows (at most
+  three, left blank under the footer) and the done line stays one blank row
+  above it or the plan; the next turn's output takes it back down. The agent view under
   it takes at most a quarter of the screen, seven rows on a terminal of 28
   rows or more (so a one-row composer's input row is row 16 of 24 or 31 of
   40), raised only to show every running agent and never past a third of the
@@ -709,9 +725,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   most terminals and the wheel does not scroll. To select anyway, hold Fn
   while dragging in Terminal.app (or turn off View → Allow Mouse Reporting),
   Option in iTerm2, Shift in most other terminals. Selection and the wheel
-  come back as soon as the list closes, and while a question is open, while a
-  view such as an agent's log has the screen, and while the window is being
-  resized. While click reports are on, and for 0.5 s after they go off, an Esc pressed on
+  come back as soon as the list closes, while a question is open, and while
+  the window is being resized. While click reports are on, and for 0.5 s after they go off, an Esc pressed on
   its own acts after 0.3 s, the time a click report split by a slow
   connection has to arrive whole. Another key typed within that time ends
   the wait, and both keys act, except `[`, which is read as the rest of a
@@ -730,6 +745,29 @@ run and approval decision stays Hermes'; the screen is OMH's.
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal, and the keys still
   open the list and the logs.
+- A view on the alternate screen (Ctrl+O, `/history`, `/logs`, `/dag`, an
+  agent's log, the bot board, `/keys`) takes the mouse for itself, since that
+  screen has no scrollback for the terminal to scroll: the wheel scrolls the
+  page three lines a notch (on the bot board too, where the highlight stays
+  on its row), a drag selects text (shown reversed) and copies it when you
+  let go, without the rail a block hangs on or a reply's margin, a double
+  click copies a word and a triple click a row, and a key or the wheel drops
+  the selection; the wheel does nothing while you drag. A second click
+  counts toward a double click only after a plain click on the same cell, so
+  dragging again from where the last drag started selects again. The footer then says `✓ copied 694 chars to clipboard` for
+  2 s. The copy goes out as OSC 52 to kitty, Ghostty, WezTerm and Alacritty,
+  which honour it as they ship; on a Mac the OMH TUI runs on locally (no SSH),
+  any other terminal gets it through `pbcopy`, and so does tmux once `tmux
+  show-environment SSH_CONNECTION` says its last client did not attach over
+  SSH. Elsewhere it
+  goes out as OSC 52 with nothing to confirm it, and the footer says `⚠ copy
+  sent (terminal may not support OSC 52)` (under tmux, that tmux passes it on
+  only with `set-clipboard on`). On the main screen the terminal's own
+  selection is the only one: the transcript is in its scrollback, and taking
+  the mouse there would take the wheel and that scrollback away. Each rail is
+  a painted cell holding a space, so what it copies there has no bar in it,
+  only two leading spaces on each row (four on a reply's rows, with its
+  margin), and the terminal shows no copy notice of its own.
 - The composer takes a paste whole when the terminal brackets it, as most
   terminals do. A paste of more than 3 lines or 800 characters shows as one
   chip, `[Pasted text #1 +60 lines]` (or `· 1,204 chars` for one long line):
@@ -823,11 +861,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
   window); `OMH_TUI_BELL=0` keeps all of it quiet.
-- Each tool call is a block of its own on a `┃` rail in its state's
+- Each tool call is a block of its own on a rail in its state's
   colour, with a blank row between two calls and no header over a turn's
   calls: its state's mark (below), its name, and what it ran on (a path, a
   command, a query) in parentheses, cut with `…` where the row is too narrow
-  (`┃ ● terminal(rm -rf ./tmp-cache)  1.9s`). Under it (`  ⎿  `) it shows the first three lines of what the tool
+  (`● terminal(rm -rf ./tmp-cache)  1.9s`). Under it (`  ⎿  `) it shows the first three lines of what the tool
   printed and counts the rest (`… +5 lines · ctrl+o shows all`). A read says
   in one line what it read instead: `Read 715 lines` for
   `read_file`, `12 matches` for
@@ -901,7 +939,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   on you; on exit the title you had comes back where the terminal keeps a
   title stack.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
-  - Each block hangs on a continuous `┃` rail with no fill behind it: grey
+  - Each block hangs on a continuous rail with no fill behind it, one cell
+    painted in the rail's colour that holds a space, so selecting the text
+    in the terminal copies no bar with it (only the two leading spaces;
+    with `NO_COLOR` set only a reply's and a call's rail is painted, so your
+    prompt is told apart by its `❯` and no bar): grey
     for your prompt, the theme's accent for what Hermes said (which opens
     with a header row, `⚚ Hermes · <model>`, bold in the rail's colour and
     the model the reply was written under muted), and a tool call's state colour for
@@ -934,7 +976,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
     across its verb, beside the elapsed time and the tokens written.
   - Your prompt reads as in Claude Code, the composer's dim `❯` and dim text with no
     band behind it, on a grey rail; a prompt the queue sent says `⧗ from queue`. A command
-    you run is echoed the same way, on the same rail (`┃ ❯ /model`), so a
+    you run is echoed the same way, on the same rail (`❯ /model`), so a
     bare `❯` on the left edge is only ever the composer.
   - A steer shows as `↪ steer · <text>` under what is running until Hermes
     answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
@@ -998,7 +1040,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   one, its `❯` mark turns the shell family's amber and the info line says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
-  and its redaction of what the command printed) and shows `┃ ❯ !command`
+  and its redaction of what the command printed) and shows `❯ !command` on the rail
   with what it printed (its stdout, then its stderr, in the same colour) and
   its exit code when that is not 0 (`exit 0` when it printed nothing; a
   failure's lines are red on the red band with that exit line), or
@@ -1031,11 +1073,24 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Esc twice with text clears it, keeping it in this session's input history
   (not in Hermes' history file, since it was never sent).
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
-  sessions in the slot, newest first, with the current one marked; type to
-  filter (what you type shows on the list's last row, where the composer
-  was, with the caret), Up/Down or PageUp/PageDown to move, Enter to switch,
-  Esc to close.
-  `/sessions <id or exact title>` switches directly. The screen is redrawn as
+  sessions in the slot, most recently active first: the one you are in
+  heads the list under `Current` (`this session` until it has a title),
+  and the rest sit under a heading for the day each started (Today,
+  Yesterday, Previous 7 days, Earlier), each session's age and message
+  count in columns of their own. Type to filter (what you type shows on
+  the list's last row, where the composer was, with the caret, and only the
+  headings with a match stay), Up/Down or PageUp/PageDown to move from
+  session to session, Enter to switch, Esc to close. Each alias runs
+  exactly as `/sessions` does, and the `/` menu offers `/resume` under its
+  own name once what you type starts it: `/res` and `/resu` complete to
+  `/resume`.
+  `/sessions <id or exact title>` (or `/resume <id or exact title>`)
+  switches directly. A title Hermes' shared gateway does not resolve as an
+  id is looked up by its exact title over all your sessions, then among
+  the listed ones ignoring case: one session with that title is opened,
+  and when several (titles that differ only in case) or none have it the
+  picker opens filtered by what you typed and says how many matched. The
+  screen is redrawn as
   the session you picked, with its earlier turns; the one you left closes only
   after the new one opened, so a session that cannot be opened (for example
   one another process holds) leaves you where you were.
@@ -1047,7 +1102,8 @@ Esc closes it):
 | --- | --- |
 | Enter | Sends the composer |
 | `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
-| Ctrl+Enter | Steers a running turn with the composer's text, on a terminal that tells it from Enter (`/steer <text>` steers on any terminal); idle, sends it as Enter does |
+| Ctrl+Enter | While a turn runs, sends the composer's text into it now as a steer (`/steer <text>` too); idle, sends as Enter does |
+| Ctrl+Enter, Ctrl+J | While a turn runs, on an empty composer, send the oldest queued prompt into it now as a steer; the row under the queue names the key (Ctrl+J where the terminal has not shown it tells Ctrl+Enter from Enter). A queued `!` line, skill prompt or plan prompt waits its turn |
 | Tab | Completes a slash command, or the `@` reference being typed; on an open menu, Enter takes the highlighted row too, and sends a command already typed in full |
 | Shift+Tab | Cycles the input mode: normal, accept all (Hermes asks no approvals in this session), plan (prompts go as /plan); while Hermes itself has approvals off, turns plan on and off |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max; the info line shows it as effort medium |
@@ -1089,22 +1145,34 @@ Esc closes it):
 | Tab / n, Shift+Tab / p, Space / Enter, d | In `/dag`, highlight the next or the previous box, fold or unfold the highlighted one, or show or hide Node details; ↑ / ↓, PageUp / PageDown and g / G scroll, q or Esc leaves |
 | ↑ / ↓, Enter or →, ← or Esc or q, r | On the bot board, move, open a profile's sessions or a session's last messages, go back (on the profiles, close the board), or read it again now; it reads again every 5 s by itself |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
+| Drag, double click, triple click, wheel | In a pager (`/dag` and the bot board too), select text and copy it when you let go (without the rails), copy a word, copy a row, or scroll three lines; the footer says what the copy did |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
 Code's terminal and Windows Terminal (under WSL) for the kitty keyboard
 protocol and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only: the
 terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
-`TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. Both are
-switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
-Terminal.app among them, both keys send what Enter sends, so there
-`/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line;
-while a draft spans lines there (typed, or pasted), the info line says so
-(`⏎ sends · \⏎, alt+⏎ or ctrl+j adds a line`).
-A terminal on the list can ignore the request too (tmux with
-`extended-keys off`), so the info line names `/steer <text>` until a key has
-arrived in one of those reports, and `ctrl+enter steer` from then on.
-`OMH_TUI_KEYBOARD=legacy` stops the request on any terminal.
+`TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. The
+start-up query then asks every terminal which kitty flags are on (`CSI ? u`).
+A terminal it did not ask that answers speaks the protocol, so it is asked
+then (Otty with its `kitty-keyboard` setting on is one; never Ghostty); an
+answer that says the request took names Ctrl+Enter from the first frame. A
+terminal the environment does not name (over SSH, where `TERM_PROGRAM`
+rarely arrives) is also asked its name (XTVERSION) and is asked only when
+that names kitty, WezTerm, foot, Alacritty, Rio or Otty, since an unnamed
+answer may be Ghostty's. Both reports are switched off on exit, a crash,
+SIGTERM and SIGHUP included (a `kill -9` leaves them on, as it leaves raw
+mode), and asked for again after Ctrl+Z and `fg`. Elsewhere, Terminal.app
+among them, both keys send what Enter sends, so there Ctrl+J is the send-now
+key (every terminal sends it as a line feed, apart from Enter's carriage
+return); anywhere else, `\` then Enter, Alt+Enter or Ctrl+J adds a
+line; while a draft spans lines there (typed, or pasted), the info line
+says so (`⏎ sends · \⏎, alt+⏎ or ctrl+j adds a line`). A terminal on the
+list can ignore the request too (tmux with `extended-keys off`), so the row
+under the queued prompts names `ctrl+j` until the terminal shows it took the
+request (its answer to the query, or a first key in one of those reports),
+and `ctrl+enter` from then on. `OMH_TUI_KEYBOARD=legacy` stops the request
+and the query on any terminal.
 
 Shift+Tab cycles three input modes, and the info line shows the one that is
 on. Accept all turns off Hermes' approval prompts for that
@@ -1167,7 +1235,7 @@ says so; for an agent's steer it names the agent and the session you left. The O
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 
-A slash command you run is echoed in the transcript as `┃ ❯ /name arg` (but
+A slash command you run is echoed in the transcript as `❯ /name arg` on the prompt's rail (but
 `/steer`, whose own row is its echo, and a bare `/sessions`, `/rewind`,
 `/model`, `/keys`, `/history`, `/logs`, `/dag`, `/bots` or `/redraw`, which only open a picker
 or a pager, or repaint, and print nothing to attribute), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
@@ -1876,6 +1944,12 @@ The shipped catalog is editorial policy, not benchmark output:
 | `capable` | Strong general work | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`), Claude Fable 5.1 (`medium`), Kimi K3.1 Pro (`medium`) |
 | `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), DeepSeek V4.1 Flash (`low`) |
 | `deep-work` | Long tasks at frontier depth | Claude Opus 5.5 (`max`), GPT-6.1 Sol (`max`) |
+| `google-search` | Research grounded in Google Search | Gemini 3.1 Pro (`medium`), GPT-6.1 Sol (`medium`), Claude Opus 5.5 (`medium`) |
+| `x-search` | Live search on X | Grok 4.7 (`high`), Kimi K3.1 Pro (`high`), Gemini 3.1 Pro (`high`) |
+| `review` | A different model tries to break the diff | GPT-6.1 Sol (`xhigh`), Claude Opus 5.5 (`xhigh`), Kimi K3.1 Pro (`xhigh`) |
+| `swarm` | Many parallel workers on separate slices | DeepSeek V4.1 Flash (`low`), GLM 5.3 Flash (`low`), GPT-6 Luna (`low`) |
+| `forensics` | Root-causing a live symptom or a captured trace | GPT-6 Astra (`xhigh`), Claude Opus 5.5 (`xhigh`), Kimi K3.1 Pro (`xhigh`) |
+| `synthesize` | Merging many results into one answer | Claude Opus 5.5 (`xhigh`), GPT-6.1 Sol (`xhigh`), Gemini 3.1 Pro (`high`) |
 | `x_platform_data` affinity | X-platform data affinity | Grok Build 0.1, Kimi K3.1 Pro, Gemini 3.1 Pro |
 | Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`) |
 <!-- omh:model-chain-table:end -->
@@ -2871,7 +2945,9 @@ the same config write that registers the pointer: the older OMH-managed
 entry is retired, matched by real path the way Hermes resolves entries (a
 spelling through `${VAR}`, `~`, a trailing slash or a symlink is the same
 directory; an unset variable stays as written, as it does in Hermes, and a
-relative entry, which Hermes reads under its own home, never matches),
+relative entry is read under the home that names it, as Hermes reads it,
+so `../.omh/skills` in `~/.hermes` is the older entry and the directory
+the command runs from never matters),
 the home ends up naming exactly one managed directory, and the update
 prints the move (`Bot profile <name>: registration migrated from <old> to
 <new>.`; `Hermes registration migrated ...` for the primary home). Only
@@ -2889,12 +2965,15 @@ Hermes lists no OMH skill at all. The installer-managed command's setup and
 update retire every such entry, from the primary home and every bot
 profile, whether the generation is still on disk or already collected, and
 a home naming only one is migrated to the pointer rather than read as the
-opt-out; `omh uninstall --registration-only` removes them too. Only
-absolute entries under the pointer's own managed root match: a `skills`
-directory under some other `generations/` directory, and any relative
-entry (Hermes anchors those at its own home), stay. On Windows an entry
-rooted without a drive, such as `\omh\...`, is not relative: Hermes loads it
-from its home's drive, and it matches. Entries are expanded in the running
+opt-out; `omh uninstall --registration-only` removes them too, along with
+every spelling of an older managed directory the migration retires
+(`${VAR}`, `~`, relative to the home, or through a symlink). Only
+entries that name a directory under the pointer's own managed root, read
+from the home that names them, match: a `skills` directory under some
+other `generations/` directory stays, and a relative entry matches only
+when it reaches the managed root from that home. On Windows an entry
+rooted without a drive, such as `\omh\...`, is read on the home's drive,
+whichever drive the command runs from. Entries are expanded in the running
 command's environment, which a Hermes service may not share.
 `omh doctor` reports a home that still names two managed directories on
 disk, an older generation's pack beside the pointer included, as

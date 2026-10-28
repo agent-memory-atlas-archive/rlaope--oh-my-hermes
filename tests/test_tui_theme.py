@@ -207,6 +207,7 @@ class InfoLineContrastTests(unittest.TestCase):
 
         theme = build_theme(skin, background)  # type: ignore[arg-type]
         app, _client = make_app(theme=theme, busy=True, rows=24, cols=200)
+        app.background = background  # the badge's look is painted against it, as the theme is
         payload = hud_payload()
         payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": stage}
         payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12)

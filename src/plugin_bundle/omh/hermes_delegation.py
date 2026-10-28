@@ -74,9 +74,10 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # projection.
     # Non-head entries move the same way: (claude-opus-5-5, medium) projects
     # to writing, which covers unspecified-high's second entry and the
-    # last_resort head; (kimi-k3.1-pro, high) projects to deep from
-    # visual-engineering and artistry; (gpt-6-luna, low) and
-    # (claude-haiku-5-5, low) reached through quick project to simple-work.
+    # last_resort head; (kimi-k3.1-pro, high) from visual-engineering and
+    # artistry projects to x-search since 2026-10-28 (to deep before), where
+    # it sits second; (gpt-6-luna, low) and (claude-haiku-5-5, low) reached
+    # through quick project to simple-work.
     "ultrabrain": (("gpt-6-astra", "xhigh"),),
     # DeepSeek V4.1 Flash left `deep`: a Flash budget model does not fit the
     # strong tier, and Opus 5.5 and Kimi K3.1 Pro now carry its cross-ecosystem
@@ -176,6 +177,63 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # would be a label nothing could ever carry. `max` is a documented rung of
     # both entries' ladders.
     "deep-work": (("claude-opus-5-5", "max"), ("gpt-6.1-sol", "max")),
+    # The six routing-recipe categories (owner recipe, 2026-10-28), appended
+    # after deep-work for the same tie-break reason. Heads are the owner's;
+    # each tail crosses into another provider ecosystem (owner rule above).
+    # They are opt-in: no role or scale names them.
+    #
+    # Two heads collide with an earlier category's head. The owner kept
+    # both heads (2026-10-28), so the earlier category keeps the label:
+    #   (gpt-6-astra, xhigh)     heads ultrabrain and forensics  -> "ultrabrain"
+    #   (claude-opus-5-5, xhigh) heads architect and synthesize  -> "architect"
+    # Routing is unaffected, and a lane routed through `omh_delegate_route`
+    # keeps its own category through the route-provenance record; only a
+    # child with no matching record is labelled by projection, so forensics
+    # and synthesize are labels only a routed lane carries.
+    # Six projections move (diffed over every shipped (model, effort) pair):
+    # (deepseek-flash, low) unspecified-low -> swarm and (gemini-3.1-pro,
+    # medium) writing -> google-search, because each now heads a chain;
+    # (gpt-6.1-sol, xhigh) and (grok-4.7, high) had no label and now head
+    # review and x-search; (kimi-k3.1-pro, high) deep -> x-search and
+    # (kimi-k3.1-pro, xhigh) architect -> review, because the shallower
+    # chain position wins (second in x-search against third in deep; third
+    # in review against fourth in architect).
+    "google-search": (
+        ("gemini-3.1-pro", "medium"),
+        ("gpt-6.1-sol", "medium"),
+        ("claude-opus-5-5", "medium"),
+    ),
+    # Grok 4.7 is a separate entry from the x_platform_data affinity, which
+    # keeps Grok Build 0.1.
+    "x-search": (
+        ("grok-4.7", "high"),
+        ("kimi-k3.1-pro", "high"),
+        ("gemini-3.1-pro", "high"),
+    ),
+    # A category, not the `review` role: the role still resolves through
+    # unspecified-high/unspecified-low and never reaches this chain.
+    "review": (
+        ("gpt-6.1-sol", "xhigh"),
+        ("claude-opus-5-5", "xhigh"),
+        ("kimi-k3.1-pro", "xhigh"),
+    ),
+    "swarm": (
+        ("deepseek-flash", "low"),
+        ("glm-5.3-flash", "low"),
+        ("gpt-6-luna", "low"),
+    ),
+    # Labelled "ultrabrain" by projection: its head is ultrabrain's.
+    "forensics": (
+        ("gpt-6-astra", "xhigh"),
+        ("claude-opus-5-5", "xhigh"),
+        ("kimi-k3.1-pro", "xhigh"),
+    ),
+    # Labelled "architect" by projection: its head is architect's.
+    "synthesize": (
+        ("claude-opus-5-5", "xhigh"),
+        ("gpt-6.1-sol", "xhigh"),
+        ("gemini-3.1-pro", "high"),
+    ),
 }
 
 # User-editable chain overrides. The document replaces only the chains of the
@@ -399,6 +457,10 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     # Recognition-only: the versioned spelling of the Flash pointer above
     # (the gateway id `deepseek/deepseek-v4.1-flash` arrives this way).
     "deepseek-v4.1-flash": ("deepseek", "openrouter", "opencode"),
+    # Recognition-only, in no shipped chain (catalog sync, 2026-10-28):
+    # DeepSeek's pricing page lists the served id and OpenRouter lists
+    # `deepseek/deepseek-v4-pro`; no OpenCode serving was observed.
+    "deepseek-v4-pro": ("deepseek", "openrouter"),
     # Recognition-only, retired generations (left the shipped chains on
     # 2026-09-11): a machine-level chain override may still name them, and
     # that operator deserves "which of my providers serves this" answered.
@@ -415,12 +477,30 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     "gpt-5.6-terra": ("openai-codex", "openai"),
     "glm-5.3": ("zai", "openrouter", "opencode"),
     "glm-5.3-flash": ("zai", "openrouter", "opencode"),
+    # Recognition-only, in no shipped chain (catalog sync, 2026-10-28): Z.ai's
+    # pricing page lists it and OpenRouter lists `z-ai/glm-5.3-flashx`; no
+    # OpenCode serving was observed.
+    "glm-5.3-flashx": ("zai", "openrouter"),
     "grok-build-0.1": ("xai", "openrouter"),
     # Retired on 2026-10-01: xAI lists it as an alias of grok-build-0.1.
     "grok-code-fast": ("xai", "openrouter"),
+    # Each has its own docs.x.ai model page and an OpenRouter `x-ai/<id>`
+    # listing (catalog sync, 2026-10-28). Grok 4.7 heads x-search since the
+    # routing recipe of the same day; the older three stay recognition-only.
+    "grok-4.7": ("xai", "openrouter"),
+    "grok-4.6": ("xai", "openrouter"),
+    "grok-4.5": ("xai", "openrouter"),
+    "grok-4.3": ("xai", "openrouter"),
     # Retired on 2026-10-01 under the same rule (superseded by gpt-6.1-sol).
     "gpt-6-sol": ("openai-codex", "openai"),
     "gemini-3.1-pro": ("google", "gemini", "openrouter"),
+    # Recognition-only, in no shipped chain (catalog sync, 2026-10-28): the
+    # Gemini API pricing page lists each id and OpenRouter lists
+    # `google/<id>`. Gemini 3.7 Flash and 3.5 Flash were deprecated on
+    # 2026-10-08 and route to 3.8 Flash and 3.6 Flash; they get no row.
+    "gemini-3.8-flash": ("google", "gemini", "openrouter"),
+    "gemini-3.6-flash": ("google", "gemini", "openrouter"),
+    "gemini-3.5-flash-lite": ("google", "gemini", "openrouter"),
     # Retired on 2026-10-13 under the same rule: Claude Haiku 4.5 behind
     # claude-haiku-5-5, and the 2025 Qwen3-Coder with no Qwen successor.
     "claude-haiku-4-5": ("ccapi", "anthropic", "openrouter"),
@@ -1390,13 +1470,22 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # hour) stay on the contracts.
     "kimi-k3.1-pro": (2.0, 10.0),
     "kimi-k3.1-pro-highspeed": (4.0, 20.0),
-    # Zhipu AI list price (docs.z.ai pricing, 2026-08):
-    "glm-5.2": (0.6, 2.2),
+    # Z.ai list price (docs.z.ai/guides/overview/pricing, read 2026-10-28):
+    # GLM-5.2 1.4/4.4, cached input 0.26 (APPROX_CACHE_READ_RATIO). The
+    # earlier 0.6/2.2 was the GLM-4.7/4.6/4.5 rate on the same page and
+    # under-reported GLM-5.2 input 2.3x and output 2x.
+    "glm-5.2": (1.4, 4.4),
     # Z.ai list price for the 5.3 generation (docs.z.ai pricing, 2026-08).
     # 5.3 always reasons and bills the reasoning inside output tokens, so the
     # output side dominates real spend; still an approximation, not billing.
     "glm-5.3": (1.4, 4.4),
     "glm-5.3-flash": (0.15, 0.5),
+    # Z.ai list price (docs.z.ai/guides/overview/pricing, read 2026-10-28):
+    # GLM-5.3-FlashX 0.37/1.25, cached input 0.075 (APPROX_CACHE_READ_RATIO).
+    # The id is listed on the glm-5.3-flash model page (it has no page of its
+    # own): 1M context, 128K output, thinking `enabled` only. Recognition-only,
+    # in no shipped chain.
+    "glm-5.3-flashx": (0.37, 1.25),
     # Z.ai publishes no separate rate for the 5.3-generation Ultrafast serving
     # (observed 2026-09-24), so this row carries the generation's own
     # documented list price (docs.z.ai pricing, 2026-08) rather than the
@@ -1420,18 +1509,36 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # the rate -- and, like the GLM tier above, it gets no provider-family row:
     # the tier was observed on a gateway and no vendor catalog lists it.
     "deepseek-v4.1-flash-ultrafast": (0.30, 1.20),
-    # DeepSeek list price (api-docs.deepseek.com/quick_start/pricing, 2026-09):
-    # peak-hour cache-miss input 0.30 / output 1.20; cache-hit input 0.006
-    # (the 0.02 ratio below); every rate halves off-peak (outside 01:00-04:00
-    # and 06:00-10:00 UTC, Monday-Friday). Peak is the honest approximation
-    # because a fanout wave has no off-peak guarantee.
+    # DeepSeek list price (api-docs.deepseek.com/quick_start/pricing, 2026-09,
+    # re-read 2026-10-28): peak-hour cache-miss input 0.30 / output 1.20;
+    # cache-hit input 0.006 (the 0.02 ratio below); every rate halves
+    # off-peak. Peak is 01:00-04:00 and 06:00-10:00 UTC, Monday-Friday,
+    # excluding Chinese public holidays; every other hour, weekends, and
+    # those holidays are off-peak. Peak is the honest approximation because a
+    # fanout wave has no off-peak guarantee. Since 2026-10-17 the
+    # `deepseek-flash` pointer serves DeepSeek-V4.1-Flash-1017 at unchanged
+    # prices.
     "deepseek-v4.1-flash": (0.30, 1.20),
+    # DeepSeek list price (api-docs.deepseek.com/quick_start/pricing, read
+    # 2026-10-28): peak cache-miss input 1.32 / output 3.96, cache-hit input
+    # 0.044 (APPROX_CACHE_READ_RATIO); every rate halves off-peak under the
+    # V4.1 Flash rule above. The served id carries no `-0813` suffix: that is
+    # the version name (DeepSeek-V4-Pro-0813, GA 2026-08-13). 1M context and
+    # 384K output (the page's shared limits cell); effort `low`/`high`/`max`
+    # (default `high`) with V4.1 Flash's mapping. No V4.1 Pro exists.
+    # Recognition-only, in no shipped chain.
+    "deepseek-v4-pro": (1.32, 3.96),
     # DeepSeek list price (api-docs.deepseek.com pricing, 2026-08); the id
     # left the shipped chains on 2026-09-11 but a machine-level override may
     # still route it, so the row stays.
     "deepseek-v3.2": (0.28, 0.42),
-    # Zhipu AI speed-tier ballpark (docs.z.ai pricing, 2026-08):
-    "glm-5.2-ultrafast": (0.3, 1.2),
+    # Z.ai publishes no separate rate for the GLM-5.2 Ultrafast serving, so
+    # this row carries the base model's documented list price
+    # (docs.z.ai/guides/overview/pricing, read 2026-10-28) -- the
+    # `glm-5.3-ultrafast` shape. It moved on 2026-10-28 from a halved
+    # ballpark (0.3/1.2) of the stale 0.6/2.2 base, together with the
+    # corrected base row, as `kimi-k3-ultrafast` did on 2026-10-01.
+    "glm-5.2-ultrafast": (1.4, 4.4),
     # The Ultrafast serving of K3 (a gateway tier, not a Moonshot product)
     # publishes no tier rate, so
     # this row carries the base model's documented list price
@@ -1443,12 +1550,78 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # 2026-10-01): Gemini 3.1 Pro Preview 2/12 up to 200K prompt tokens, 4/18
     # above. The earlier 1.25/10 was Gemini 2.5 Pro's rate on the same page.
     "gemini-3.1-pro": (2.0, 12.0),
+    # Google list price (ai.google.dev/gemini-api/docs/pricing, read
+    # 2026-10-28), paid tier, no prompt-size tier: Gemini 3.8 Flash and 3.6
+    # Flash 0.75/3.75, cached input 0.075 (the default tenth). Both are an
+    # introductory price through 2026-12-31; from 2027-01-01 they are
+    # 1.50/7.50 (cache 0.15), so re-read the page after that date. 3.8 Flash
+    # went GA 2026-09-02 and 3.6 Flash 2026-07-21; both take 1,048,576 input
+    # and 65,536 output tokens. Thinking levels: 3.8 Flash `low`/`medium`/
+    # `high` (default `medium`, `minimal` errors), 3.6 Flash `minimal` to
+    # `high` (default `medium`). Gemini 3.7 Flash and 3.5 Flash were
+    # deprecated on 2026-10-08 and route to 3.8 Flash and 3.6 Flash; neither
+    # has a price on the page, so neither has a row. Recognition-only, in no
+    # shipped chain.
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-3.6-flash": (0.75, 3.75),
+    # Google list price (the same page, read 2026-10-28): Gemini 3.5
+    # Flash-Lite 0.30/2.50, cached input 0.03 (the default tenth), no
+    # introductory mark. GA 2026-07-21; thinking `minimal` to `high`, default
+    # `minimal`. Recognition-only, in no shipped chain.
+    "gemini-3.5-flash-lite": (0.30, 2.50),
     # Alibaba Cloud Model Studio list price (alibabacloud.com pricing, 2026-08).
     # The id left the shipped chains on 2026-10-13 and stays priced for
     # overrides.
     "qwen3-coder": (0.4, 1.6),
-    # Upstage list price (upstage.ai pricing, 2026-08):
+    # Alibaba Cloud Model Studio list price
+    # (alibabacloud.com/help/en/model-studio/model-pricing, Singapore region,
+    # read 2026-10-28): Qwen3.8-Max 2/6 and Qwen3.8-Flash 0.15/0.47, one tier
+    # up to 1M input tokens. The page publishes no per-model cache-hit rate,
+    # so the default tenth applies and is unverified; Alibaba's general
+    # context-cache rule bills an explicit hit at 10% of input and an
+    # implicit hit at 20%, so the tenth may under-report implicit hits.
+    # China and global deployments bill 1.65/4.951 (Max) and 0.113/0.382
+    # (Flash). Alibaba also serves the snapshot `qwen3.8-max-0902` (MMDD),
+    # which this row does not cover: only `-YYYY-MM-DD` snapshots project
+    # onto a base. No provider row: the vocabulary holds no first-party
+    # family observed serving either id (`qwen-oauth`'s served list is
+    # undocumented). OpenRouter lists `qwen/qwen3.8-flash`, but a relay-only
+    # row would claim that every first-party provider does not serve it.
+    # Recognition-only, in no shipped chain.
+    "qwen3.8-max": (2.0, 6.0),
+    "qwen3.8-flash": (0.15, 0.47),
+    # Upstage list price (upstage.ai pricing, 2026-08): every Solar Pro 2
+    # version reaches end of service on 2026-10-30 KST, and Upstage
+    # recommends Solar Pro 4 (upstage.ai/pricing and
+    # console.upstage.ai/docs/models/solar-pro-2, read 2026-10-28). The row
+    # stays because a machine-level override may still name the id.
     "solar-pro2": (0.15, 0.60),
+    # Upstage list price (upstage.ai/pricing and
+    # console.upstage.ai/docs/models/solar-pro-4, read 2026-10-28): 0.30/1.20,
+    # cached input 0.06 (APPROX_CACHE_READ_RATIO), excluding VAT. The pricing
+    # page also shows a time-limited promotional rate; this is the standard
+    # one. `solar-pro4` is the served alias of `solar-pro4-260806`; 512K
+    # context, 128K output. No provider row: the vocabulary has no Upstage
+    # family (the `solar-pro2` precedent). OpenRouter lists
+    # `upstage/solar-pro4`, but a relay-only row would claim that every
+    # first-party provider does not serve it. Recognition-only, in no shipped
+    # chain.
+    "solar-pro4": (0.30, 1.20),
+    # MiniMax list price (platform.minimax.io/docs/guides/pricing-paygo, read
+    # 2026-10-28), standard tier: MiniMax-M3 0.30/1.20 with cache read 0.06
+    # (APPROX_CACHE_READ_RATIO) up to 512K input tokens; above that the card
+    # is 0.60/2.40 (cache 0.12), and the priority tier bills 1.5x. Like the
+    # Gemini 3.1 Pro row, this table carries the lower card. MiniMax-M3.1-Flash
+    # (released 2026-10-19, platform.minimax.io/docs/release-notes/models) is
+    # 0.15/0.60, cache read 0.015 (the default tenth), one tier; reasoning is
+    # always on, effort `low` to `max` (default `max`), and `none` is a 400.
+    # The vendor serves them as `MiniMax-M3` and `MiniMax-M3.1-Flash`; cost
+    # lookup casefolds the id first, so the lower-case keys match. No provider
+    # row: the vocabulary has no MiniMax family. OpenRouter lists both ids,
+    # but a relay-only row would claim that every first-party provider does
+    # not serve them. Recognition-only, in no shipped chain.
+    "minimax-m3": (0.30, 1.20),
+    "minimax-m3.1-flash": (0.15, 0.60),
     # xAI list price (docs.x.ai/developers/models/grok-build-0.1, read
     # 2026-10-01): 1/2 below 200K prompt tokens, 2/4 at or above; cached input
     # 0.20, a fifth of input (APPROX_CACHE_READ_RATIO below). The page's
@@ -1460,6 +1633,24 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # `grok-code-fast-1` to `grok-4.3` (observed in the Hermes source).
     "grok-build-0.1": (1.0, 2.0),
     "grok-code-fast": (1.0, 2.0),
+    # xAI list price (docs.x.ai/developers/models/grok-4.7, /grok-4.6,
+    # /grok-4.5, and /grok-4.3, read 2026-10-28), below 200K prompt tokens.
+    # A request whose prompt reaches 200K is billed at the higher card for
+    # ALL its tokens, not only the excess: Grok 4.7/4.6/4.5 4/12, Grok 4.3
+    # 2.50/5.00. This table carries the lower card, so a long-prompt run is
+    # under-reported twofold. Cached input (APPROX_CACHE_READ_RATIO): 0.50 on
+    # 4.7 and 4.6, 0.30 on 4.5, 0.20 on 4.3 (doubled above 200K). Context
+    # 500K (1M on 4.3). Effort: 4.7 and 4.6 `low`/`medium`/`high` (default)/
+    # `xhigh`; 4.5's model page lists the same, but its July release note
+    # says no `xhigh`; 4.3 `none`/`low` (default)/`medium`/`high`/`xhigh`.
+    # Release notes date 4.7 to September, 4.6 to August, and 4.5 to July
+    # 2026 (month only). Aliases: `grok-4.5-latest` and `grok-build-latest`
+    # for 4.5, `grok-4.3-latest` for 4.3 (see the Grok Build 0.1 row for the
+    # Hermes retirement map). Recognition-only, in no shipped chain.
+    "grok-4.7": (2.0, 6.0),
+    "grok-4.6": (2.0, 6.0),
+    "grok-4.5": (2.0, 6.0),
+    "grok-4.3": (1.25, 2.50),
     # TypeSafe list price (docs.typesafe.ai/models, 2026-09): input $0.042
     # per Mtok, output free. The zero is the published rate, not a missing
     # one -- this model is never a chain member, but a machine-level override
@@ -1488,6 +1679,9 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # the tier would price cached input at the generic tenth.
     "deepseek-v4.1-flash": 0.02,
     "deepseek-v4.1-flash-ultrafast": 0.02,
+    # DeepSeek V4 Pro cache hit 0.044 vs cache miss 1.32 per MTok input
+    # (api-docs.deepseek.com/quick_start/pricing, read 2026-10-28).
+    "deepseek-v4-pro": 0.0333,
     # Kimi K3.1 Pro Highspeed cached input 0.20 against 4.00 input
     # (platform.kimi.ai/docs/pricing/chat, read 2026-10-24); the base model's
     # 0.20 against 2.00 is the default tenth and needs no row.
@@ -1497,6 +1691,13 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # read 2026-10-01); the retired alias bills at the same rate.
     "grok-build-0.1": 0.2,
     "grok-code-fast": 0.2,
+    # Grok 4.7 and 4.6 cached input 0.50, Grok 4.5 0.30, against 2.00 input;
+    # Grok 4.3 0.20 against 1.25 (docs.x.ai/developers/models/<id>, read
+    # 2026-10-28). The ratio holds on the card above 200K too.
+    "grok-4.7": 0.25,
+    "grok-4.6": 0.25,
+    "grok-4.5": 0.15,
+    "grok-4.3": 0.16,
     # Z.ai lists GLM-5.3 cached input at $0.26 against $1.4 input, and
     # GLM-5.3-Flash cached input at $0.03 against $0.15 input (docs.z.ai
     # pricing, read 2026-09-24). The Ultrafast serving of GLM-5.3 carries the
@@ -1506,6 +1707,17 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     "glm-5.3": 0.186,
     "glm-5.3-flash": 0.2,
     "glm-5.3-ultrafast": 0.186,
+    # The same page, read 2026-10-28: GLM-5.2 cached input $0.26 against $1.4
+    # (its Ultrafast serving carries the base ratio, as above), and
+    # GLM-5.3-FlashX $0.075 against $0.37.
+    "glm-5.2": 0.186,
+    "glm-5.2-ultrafast": 0.186,
+    "glm-5.3-flashx": 0.203,
+    # Solar Pro 4 cached input 0.06 against 0.30 (upstage.ai/pricing, read
+    # 2026-10-28), and MiniMax-M3 cache read 0.06 against 0.30 on both of its
+    # cards (platform.minimax.io/docs/guides/pricing-paygo, read 2026-10-28).
+    "solar-pro4": 0.2,
+    "minimax-m3": 0.2,
     # GPT-6.1 Sol: "Cached input tokens are priced at 5% of the uncached input
     # token rate" (developers.openai.com model page, read 2026-10-01).
     "gpt-6.1-sol": 0.05,

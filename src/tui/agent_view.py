@@ -19,10 +19,11 @@ on the highlighted node's child as the list's keys do. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
 every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
 in a row had no tail, until that agent sends a frame; nothing is ever sent to
-a subagent. Mouse reports are on only while the agent list (or the dag
+a subagent. On the main screen, mouse reports are on only while the agent list (or the dag
 tree) has the keys and the row a click would land on is certain (the owner's decision of 2026-10-14:
 during a turn the wheel scrolls and a drag selects, and Down opens the list
-from the keyboard). A plain left click on a list row opens that agent's log,
+from the keyboard); a pager, an agent's log among them, takes them for its
+own wheel and drag (`pager`). A plain left click on a list row opens that agent's log,
 or on the list's main row leaves the list; on a tree row it takes the
 highlight, and on a node's row opens its child's log; every other report
 does nothing. Reports the terminal sent before it acted on an off
@@ -401,7 +402,7 @@ class AgentViewMixin:
             return wanted
         # What allocate left the view and the tail under the parts placed before them (`layout.allocate`).
         left = max_height(rows) - (
-            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot + budget.badge
+            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot
         )
         return max(last_given, left - working)
 
@@ -470,8 +471,8 @@ class AgentViewMixin:
         """
         cols, rows = self.size
         shown = listed[: budget.agents]
-        # Counted up from the region's last row: the badge row under the view comes first.
-        self.clickable = {budget.badge + budget.agents - 1 - index: (Hit(0, cols, row_id),)
+        # Counted up from the region's last row, the view's last.
+        self.clickable = {budget.agents - 1 - index: (Hit(0, cols, row_id),)
                           for index, row_id in enumerate(shown)}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
@@ -586,7 +587,7 @@ class AgentViewMixin:
             {"session_id": sid, "subagent_id": agent.subagent_id, "text": text},
             lambda result: self._on_agent_steered(sid, session, block, result),
             lambda error: self._on_agent_steered(sid, session, block, {}, as_text(error.get("message")).strip().rstrip(".")),
-            lambda: self._on_agent_steer_unanswered(sid, session, block),  # its text comes back, never sent again
+            lambda seconds: self._on_agent_steer_unanswered(sid, session, block, seconds),  # given back, never resent
             steer=block,
         )
 

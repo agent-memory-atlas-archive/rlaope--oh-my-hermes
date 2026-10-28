@@ -464,7 +464,8 @@ class KeyboardProtocolTests(unittest.TestCase):
             b"\x1b[55296u",  # a surrogate
             b"\x1b[0u",
             b"\x1b[57441u",  # a modifier key on its own (kitty private use code point)
-            b"\x1b[?1u",  # a keyboard-flags reply, not a key
+            b"\x1b[?u",  # a keyboard-flags answer with no flags
+            b"\x1b[?1;2u",
             b"\x1b[>1u",
             b"\x1b[27;9;99~",
             b"\x1b[27;5;99:67~",
@@ -518,6 +519,33 @@ class ProtocolReportedTests(unittest.TestCase):
         self.assertEqual(repr(reported), repr(legacy))
         self.assertTrue(reported.protocol)
         self.assertFalse(legacy.protocol)
+
+    def test_a_kitty_flags_answer_is_no_key_and_says_so_only_with_disambiguate_on(self) -> None:
+        # The answer to `CSI ? u`, which `Terminal.query_background` sends where it pushed the kitty flags.
+        for answer, on in ((b"\x1b[?1u", True), (b"\x1b[?31u", True), (b"\x1b[?0u", False), (b"\x1b[?2u", False)):
+            with self.subTest(answer=answer):
+                decoder = KeyDecoder()
+                self.assertEqual(decoder.feed(b"a" + answer + b"b"), [char("a"), char("b")])  # it types nothing
+                self.assertIs(decoder.protocol_reported, on)
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1b[?") + decoder.feed(b"1u"), [])  # split across reads, as over SSH
+        self.assertTrue(decoder.protocol_reported)
+        decoder.feed(b"\x1b[?0u")  # a later answer with the flag off takes nothing back
+        self.assertTrue(decoder.protocol_reported)
+
+    def test_a_late_xtversion_answer_is_no_key_and_alt_p_stays_alt_p(self) -> None:
+        # One unknown key, as an OSC answer is: it types nothing, whole or split across reads.
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"a\x1bP>|kitty(0.35.2)\x1b\\b"), [char("a"), Key("unknown"), char("b")])
+        split = decoder.feed(b"\x1bP") + decoder.feed(b">|WezTerm\x07") + decoder.feed(b"c")
+        self.assertEqual(split, [Key("unknown"), char("c")])
+        self.assertEqual(decode(b"\x1bPx"), [Key("char", "P", alt=True), char("x")])
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1bP") + decoder.flush(), [Key("char", "P", alt=True)])
+        # An answer split right after its ESC: the next read goes on with it, so none of its bytes are typed.
+        decoder = KeyDecoder()
+        events = decoder.feed(b"\x1b") + decoder.feed(b"P>|kitty(0.35.2)\x1b\\") + decoder.flush()
+        self.assertEqual(events, [Key("unknown")])
 
     def test_a_report_that_decodes_to_no_key_says_nothing(self) -> None:
         decoder = KeyDecoder()

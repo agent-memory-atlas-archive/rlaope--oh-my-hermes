@@ -6,6 +6,77 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Six more model categories you can route a subagent to.** `google-search`
+  (Gemini 3.1 Pro first, for research grounded in Google Search), `x-search`
+  (Grok 4.7 first, for live search on X), `review` (GPT-6.1 Sol at xhigh, so
+  a different model tries to break the diff), `swarm` (DeepSeek V4.1 Flash
+  at low, for many parallel workers), `forensics` (GPT-6 Astra at xhigh, for
+  root-causing a live symptom or a trace) and `synthesize` (Claude Opus 5.5
+  at xhigh, for merging many results into one answer) join the eighteen
+  shipped chains, in the Hermes lane, the Codex and Claude Code tables, the
+  delegate-route tool and the public chain table. Each chain ends on a model
+  from another provider. They are opt-in: no role or task size picks them,
+  so every existing route is unchanged. Two heads repeat an earlier
+  category's (`forensics` shares `ultrabrain`'s, `synthesize` shares
+  `architect`'s), so an unrouted child on those models is still labelled
+  with the earlier name; a lane routed through `omh_delegate_route` keeps its
+  own. Six HUD labels move with the new chains: DeepSeek V4.1 Flash at low
+  now reads `swarm`, Gemini 3.1 Pro at medium `google-search`, Kimi K3.1 Pro
+  at high `x-search` and at xhigh `review`, and GPT-6.1 Sol at xhigh and
+  Grok 4.7 at high, which had no label, read `review` and `x-search`.
+- **Selecting the transcript no longer copies its left bar, and the pager
+  copies on drag.** Each block's rail was a `┃` glyph, so a terminal's own
+  selection pasted `┃` in front of every row. The rail is now one cell
+  painted in the block's colour (reverse video, so a reply's and a call's
+  still show under `NO_COLOR`, where your prompt's `❯` marks it alone) that
+  holds a space: a copy on the main screen carries two leading spaces and no
+  bar. In a pager (Ctrl+O, `/history`, `/logs`, `/dag`, an
+  agent's log, the bot board) the TUI now takes the mouse: the wheel scrolls three lines,
+  a drag selects and copies on release without the rails or a reply's
+  margin, a double click copies a word and a triple click a row, and the
+  footer says `✓ copied N chars to clipboard`. The copy is OSC 52 for kitty,
+  Ghostty, WezTerm and Alacritty, `pbcopy` on a local Mac otherwise, and
+  else OSC 52 the footer says was only sent. The main screen keeps the
+  terminal's own selection, since taking the mouse there would take the
+  wheel and the scrollback.
+- **Fourteen more models cost out at their vendors' list prices.** OMH
+  already recognized Grok 4.7, 4.6, 4.5 and 4.3, DeepSeek V4 Pro, Gemini
+  3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, GLM-5.3-FlashX, Qwen3.8-Max and
+  Qwen3.8-Flash, Solar Pro 4, MiniMax-M3 and MiniMax-M3.1-Flash, but it had
+  no price for them, so a run on one that the host recorded no cost for
+  showed no estimate. Each now
+  carries the first-party list price read on 2026-10-28, with its cached-input
+  rate where the vendor publishes one. The rows also note what the table
+  cannot represent: Grok's 200K whole-request tier, DeepSeek's off-peak half
+  rate, the Gemini Flash introductory price that doubles on 2027-01-01, and
+  MiniMax-M3's 512K tier. The xAI, DeepSeek, Gemini and Z.ai ids also get
+  provider checks; Qwen, Solar and MiniMax have no provider family to name.
+  No shipped chain named any of them until Grok 4.7 joined `x-search` (above). GLM-5.2 was costed at the GLM-4.x rate
+  (0.6/2.2) and now uses its own 1.4/4.4. Its Ultrafast serving moves from a
+  halved figure to the same base rate, as no separate tier rate is published.
+- **The route hint stops saying the same thing twice.** Route hint text is
+  about 18% of the OMH text a model reads per session, and part of it repeated
+  other text in the same block: a hint's `adjacent_workflows=` line that equals
+  the block's top-level one, and a `fallback_action_label=` or
+  `next_action_label=` that only respells its action's underscores. Each one
+  now renders only when it differs from the text it would repeat. Rendered
+  before and after on the same 68 routing-intervention hints, the block went
+  from 106,957 to 98,121 characters (8.3%), and no hint grew. Selection, the payload, `first_response_shape=` and
+  `not_evidence_yet=` do not change, and the per-turn ratchets drop with the
+  render (`pre_llm_call` 5786 -> 5632, fallback 7338 -> 7184).
+- **A long turn in the OMH TUI no longer ends with blank rows over the
+  composer.** Once a turn's output scrolled the prompt off the screen, the
+  `↳ you:` reminder and the blank row over it took two rows on the bottom
+  rows. That scrolled two transcript rows into scrollback, where nothing can
+  bring them back. When the turn ended, the region kept its height, so the
+  done line (`✻ 7m 11s · 12 tools`) stood three blank rows above the
+  composer, and with the plan shown any turn left one more over the plan,
+  whose own blank row the running turn had. The frame that ends a turn now
+  gives up the rows nothing in it takes: the reminder, its blank row, and the
+  blank row over the plan. The done line sits one blank row above the
+  composer or the plan, as between any two blocks. The composer rises by
+  those rows, at most three, left blank under the footer, and the next turn's
+  output takes it back to the bottom rows.
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character
   `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history
@@ -51,6 +122,63 @@ All notable changes will be documented here.
   archived only with its hash, version and catalog row read back, published
   only when the destination's own URL resolves to the same hash, and the
   final file is the one the person approved, never the newest mtime. (#2335)
+- **An approval in the OMH TUI shows every risky command, not just the one
+  Hermes named.** Hermes names a command line by the first dangerous pattern
+  it matches, and the slot printed the line as one wrapped block. One real
+  request chained 14 commands and read as "recursive delete", while the same
+  block force-removed a worktree, force-deleted two branches and deleted a
+  remote branch. The slot now splits the line at its top-level `&&`, `||`, `;`
+  and line breaks, keeping a here-document with its command and reading no
+  comment. Each command is listed on a row of its own, and each one that runs
+  `rm` recursively or on a path from `/`, deletes or force-pushes a remote
+  branch, force-deletes a local branch, force-removes a worktree, hard-resets
+  or force-cleans is marked `▲`, with the home directory written `~` where the
+  shell would read it so. Only when the list does not fit, and Hermes' own
+  description names a risk the slot marked, do the commands that change
+  nothing (`cd`, `echo`, `ls`, `grep`, read-only `git` and `gh` and the like,
+  writing no file, with no assignment in front and no risk inside quotes) fold
+  into one `+ N other commands (cd, git, …) · ctrl+o shows all` row; every
+  other command stays listed. Hermes knows far more dangerous patterns than
+  the slot, so when it flagged one the slot does not know, nothing folds and a
+  long list is cut from its end with the usual Ctrl+O marker. Risks Hermes did
+  not name get a `✦ OMH also sees:` row under its header. Quoted text and the
+  arguments of `echo` or `grep` never match. Each choice now has an icon and a
+  tone: `✗ deny`, `✓ allow`, `★ always allow`, `✎ tell Hermes`. The
+  highlighted one is bold on a band of its tone. Ctrl+O still pages the
+  command whole, as Hermes sent it. Deny stays first and selected, and the
+  keys do not change.
+- **The OMH TUI says when OMH caught a model mistake.** OMH's catches
+  reached only the model, so an install looked like it did nothing. Now the
+  moment one happens the transcript gets one row, `✦ OMH` stepped through
+  the launch look's logo colours and the words in its label colour, so it
+  follows `/theme`: `✦ OMH 🔁 stopped a loop of N identical calls` (the
+  repeat guard's first refusal of a streak), `✦ OMH 📖 pointed the re-read
+  at line 1667` (the first note on a truncated read's refused re-read),
+  `✦ OMH 📋 kept going, plan has 2 open items` (a turn continued over an
+  open plan), and `✦ OMH ⏰ flagged a wait with nothing armed to wake it`
+  (the turn's unarmed remote-wait directive). Nothing prints otherwise, and a resumed
+  session does not replay earlier catches. The hooks record each catch
+  beside their unchanged decision in `<omh_home>/runtime/catches.json`
+  (`omh_catch_log/v1`): a kind from a closed set and small integers, never
+  model text, arguments or paths; the HUD payload carries the reading
+  session's newest few as `catches`.
+- **The OMH TUI shows a session's background processes, and offers Enter
+  when one ends unreported.** A `terminal` command Hermes ran in the
+  background with `notify_on_complete` off ended without waking the
+  session, and nothing on screen said work was still running. While this
+  session owns one, a row above the composer says
+  `background  terminal(<command>)  1h 07m 13s` and, once the turn is over,
+  who will be told: `🔔 will ping you when done`, `🔔 will ping you on a
+  match` (watch patterns), or `🔕 Hermes won't be pinged · OMH is watching
+  it`. When a process in that last state ends after the turn, the row turns
+  green, `✓ … finished 0:12 ago` (`+N more` when others ended too), the bell
+  rings once, and Enter on an empty composer sends one prompt asking the
+  session to check the results; nothing is sent on its own. The TUI reads
+  Hermes' `processes.json` read-only, matches rows on the session's own key,
+  and asks a host process by pid and recorded start time whether it still
+  runs. A process it cannot ask that way (a sandbox, or off POSIX) says
+  `🔕 won't ping you · ask Hermes for the result` instead, shows only while
+  its row is listed, and is never called finished.
 - **A generation's own skills pack is never registered, and a home left on
   one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
   the running generation's pack (`generations/<id>/skills`) beside the shared
@@ -81,6 +209,20 @@ All notable changes will be documented here.
   readiness` and the installed-skill weight advisory expand entries the same
   way and read a relative one under the home that names it, so uninstall
   keeps a store a home names as `../omh/skills`.
+- **Setup, update and doctor read every skills entry from the home that
+  names it.** The registration migration, the generation-pack retirement,
+  the two-directories finding and the registered check now read a relative
+  entry under that Hermes home and a Windows entry rooted without a drive
+  on the home's drive, as Hermes does, instead of skipping the first and
+  resolving the second on the drive `omh` runs from. So `../.omh/skills` or
+  `../omh/generations/<id>/skills` beside the pointer is retired and
+  reported, and `omh update` run from `D:` still retires `\omh\...` when the
+  home is on `C:`. Registration no longer adds the pointer beside an entry
+  that already names it another way (`C:\omh\current\skills` on Windows,
+  `${VAR}`, `~`, or relative to the home), and `omh uninstall
+  --registration-only` removes every spelling setup retires (`${VAR}`, `~`,
+  relative to the home, or through a symlink). Nothing is retired or
+  removed that Hermes does not read through that home.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
@@ -96,14 +238,15 @@ All notable changes will be documented here.
   synchronized update as the frame drawn after it, so a terminal that holds
   the update (DEC 2026) swaps the old screen for the new one in one step.
 - **The TUI's menus lose their bands, a sent prompt gains one, and the
-  bottom row names the branch.** The completion menu, the session, model,
+  bottom line names the branch.** The completion menu, the session, model,
   rewind and launch-look pickers, the agent list, the delegation view and the
   bot board's sessions draw no fill: the highlighted row is a `❯` and a bold
   name in the skill hue, other commands keep that hue and their descriptions
   are muted. A prompt you sent runs on a band to the right edge, tinted by
-  the launch look. From 30 rows the region's last row shows the session
-  directory's git branch with its changed and untracked counts, read off the
-  screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
+  the launch look. The one line under the composer starts with
+  `[ ⚚ OMH Native ]` and shows the session directory's git branch with its
+  changed and untracked counts, read off the screen's thread, first on its
+  right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
 - **A long `/compress` is waited for, and side answers are not lost
@@ -152,6 +295,34 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **A queued prompt can be sent into the running turn now, and one line sits
+  under the composer.** As in Claude Code, a muted row under the queued
+  prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; on an
+  empty composer the key sends the oldest queued prompt into the turn as a
+  steer and takes it off the queue. A queued `!` line, skill prompt or plan
+  prompt keeps its place and shows no row. Where the terminal has not shown
+  that it tells Ctrl+Enter from Enter, the row names Ctrl+J, which every
+  terminal sends apart from Enter; with text typed, Ctrl+J still adds a line
+  and Ctrl+Enter steers that text, as before. A sent-now steer Hermes refuses
+  goes back to the head of the queue as it was, and one it took but had not
+  read when the turn is stopped is queued again, with a notice. The info line
+  no longer says `/steer <text> steers`; `/steer <text>` still works and
+  stays in `/help` and the `?` list. The branch row is gone: the info line
+  starts with `[ ⚚ OMH Native ]` and the branch, then the mode and the keys
+  that matter, with the title, model, context and effort on the right, and
+  the row goes back to the transcript. Between turns it no longer says
+  `? for shortcuts`: the launch card names `? every shortcut`, and `?` still
+  opens the list. As the line narrows the right side's fields go first, then
+  the branch's name is cut, then the badge shortens to `[ ⚚ OMH ]` and `⚚`;
+  the mode's label and a question's or picker's keys keep their words. The
+  start-up query now asks every terminal for its kitty keyboard flags
+  (`CSI ? u`): one that answers gets them pushed, Otty with its
+  `kitty-keyboard` setting on among them, and names Ctrl+Enter from the
+  first frame; a terminal the environment does not name (over SSH) must also
+  name itself through XTVERSION as one known to read them, never Ghostty. The
+  push is undone on every exit but `kill -9`. A steer or a second
+  `/compress` that waited behind a compression and went unanswered now says
+  how long it really waited, not 120 s or 660 s.
 - **The exit card is the session's title and how to resume it.** Leaving
   the OMH TUI printed five lines: the title, a line of id, turns, messages
   and duration, a line of tokens and model, `omh --resume <id>` and
@@ -161,6 +332,36 @@ All notable changes will be documented here.
   line so the shell prompt does not sit right under it. The
   `-c "<title>"` line is gone with the counts, since the id always opens
   this session and a title can be shadowed by a newer `<title> #N`.
+- **The `/sessions` picker reads as a table, and `/resume` is `/sessions`.**
+  The session you are in heads the list under `Current` (named `this
+  session` until it has a title), and the rest sit under a muted heading for
+  the day each started (Today, Yesterday, Previous 7 days, Earlier), in
+  Hermes' order inside a day. Age and message count are right-aligned in
+  columns of their own, and a rule sets the list off from its header and
+  its filter row, in the `/rewind` and `/model` pickers too. The arrows and
+  Page keys move past the headings, a heading never ends the visible list
+  with its sessions below, and a filter keeps only the headings with a
+  match. The `/` menu offers `/resume` under its own name once what you type
+  starts it and is not in `sessions`. `/res`, which highlighted Hermes'
+  `/compress`, now starts with `/resume`; every other short prefix keeps
+  the top row it had. On Hermes' shared gateway, which resumes ids only,
+  `/sessions <title>` and `/resume <title>` were refused `not_found`. A
+  refused title is now looked up through the gateway's exact-title
+  `session.list`, over the whole store, then among the listed sessions
+  ignoring case. The one session with it opens; several (titles that
+  differ only in case) or none open the picker filtered by the title.
+- **A prompt sent now is put back only when Hermes really dropped it.** The
+  OMH TUI counted a sent-now steer as read only after a tool finished and the
+  turn took a further step, so Esc in between could put back a steer Hermes
+  had already joined to the stopped tool batch, and resending it doubled it.
+  It now counts as read at the first tool that finishes after Hermes took
+  it, since Hermes finalizes even an interrupted batch. A sent-now steer
+  Hermes refuses after its turn ended and the next queued prompt started
+  goes back to the composer with a notice, instead of running after that
+  later prompt; this includes a refusal that arrives while that prompt
+  waits on the default-model check, which before took its place and lost
+  it. A prompt held for that check is never replaced: the queue waits
+  behind it.
 - **`omh uninstall` removes an OMH home under `/var` or `/tmp` on macOS
   again (#2359, reported and fixed by @Kenmege).** The uninstall guard that
   keeps a home configured through a symlink walked every ancestor of the

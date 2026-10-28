@@ -3274,6 +3274,45 @@ class HermesProfileSyncTests(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [])
 
+    def test_a_profile_entry_is_read_from_the_profile_s_own_home(self) -> None:
+        # Each profile names its older directory relative to its own home:
+        # `kami` an older generation's pack, `nori` the pre-pointer copy.
+        # Read from the primary's home or the cwd they name nothing, so the
+        # registered predicate, the migration and the post-check must all
+        # read them from the profile; both end on the pointer alone.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kami = self._profile(root, "kami")
+            nori = self._profile(root, "nori")
+            pointer, first, second, _gone = self._generation_layout(root)
+            older_copy = root / ".omh" / "skills"
+            older_copy.mkdir(parents=True, exist_ok=True)
+            with self._managed_install(pointer, pack=first):
+                status, _, stderr = run_cli(self._base(root) + ["setup"], output_json=False)
+            self.assertEqual(status, 0, stderr)
+            for profile, older in ((kami, first), (nori, older_copy)):
+                # From the resolved paths on both sides: `relpath` across the
+                # macOS `/var` alias would climb out of the wrong prefix.
+                relative = Path(os.path.relpath(older.resolve(), profile.resolve())).as_posix()
+                (profile / "config.yaml").write_text(
+                    (profile / "config.yaml").read_text(encoding="utf-8").replace(pointer.as_posix(), relative),
+                    encoding="utf-8",
+                    newline="",
+                )
+                self.assertEqual(external_dirs((profile / "config.yaml").read_text(encoding="utf-8")), [relative])
+
+            with self._managed_install(pointer, pack=second):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("kami (refreshed)", stdout)
+            self.assertIn("nori (refreshed)", stdout)
+            for profile in (kami, nori):
+                self.assertEqual(
+                    external_dirs((profile / "config.yaml").read_text(encoding="utf-8")), [pointer.as_posix()], profile
+                )
+            self.assertNotIn("OMH-managed skills directories", stdout)
+
     @requires_symlinks
     def test_an_older_entry_spelled_through_a_link_is_retired_too(self) -> None:
         # Retirement matches by real path, the way Hermes resolves entries
