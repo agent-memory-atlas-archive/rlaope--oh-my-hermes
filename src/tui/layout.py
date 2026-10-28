@@ -31,8 +31,8 @@ the app gives the agent view a row that comes free (the working row's, once a
 turn ends) only when the view wants more rows than it did
 (`agent_view.AgentViewMixin._held_view_rows`).
 The one frame where the composer rises there is the one a turn ends with: the
-sticky prompt's rows (the prompt and the blank row over it), which only a
-running turn has and nothing in that frame takes, are left out of
+rows only a running turn had and nothing in that frame takes (the sticky
+prompt, the blank row over it, the blank row over the plan) are left out of
 `min_height`, since pad rows for them would stand between the turn's done line
 and the composer (the owner's report of 2026-10-28; `App._render`).
 

@@ -5552,10 +5552,10 @@ class App(ModesMixin, AgentViewMixin):
         pinned = self.region.last_row(rows) == rows - 1
         min_height = max(self.region.height - len(stable), 0) if pinned else 0
         # The frame a turn ends with, on the bottom rows: the turn's last frame. Its working rows, their spacer and
-        # the done line balance out, but the sticky prompt and the blank row over it have nothing in this frame to take
-        # their rows. They came in once the prompt had scrolled off, scrolling as many transcript rows into scrollback,
-        # and nothing brings those back, so kept they would stand as blank rows between the done line and the
-        # composer. The region gives them up and the composer rises by them.
+        # the done line balance out, but the sticky prompt (and the blank row over it) and the blank row over the plan
+        # have nothing in this frame to take their rows. The sticky came in once the prompt had scrolled off, scrolling
+        # as many transcript rows into scrollback, and nothing brings those back, so kept they would stand as blank
+        # rows between the done line and the composer. The region gives them up and the composer rises by them.
         ended = self.frame_budget if pinned and self.frame_busy and not self._busy() else None
         if ended is not None:
             min_height = max(min_height - ended.sticky - ended.sticky_gap, 0)
@@ -5597,6 +5597,10 @@ class App(ModesMixin, AgentViewMixin):
             else "",
         )
         frame = build()
+        if ended is not None and frame.budget.gaps[0] < ended.gaps[0]:  # the tail now ends blank, its own gap
+            min_height = max(min_height - (ended.gaps[0] - frame.budget.gaps[0]), 0)
+            build = partial(build, min_height=min_height)
+            frame = build()
         if self._place_menu(rows, len(stable), frame):
             build = partial(build, slot=self._slot_lines(cols, rows), below=self.menu_under)
             frame = build()

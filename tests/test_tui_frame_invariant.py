@@ -654,8 +654,10 @@ class AppBottomRowsTests(unittest.TestCase):
         # The owner's report (2026-10-28): after a long turn, three blank rows stood between `✻ 7m 11s · 12 tools`
         # and the composer. Once the prompt scrolled off, its sticky echo and the blank row over it took two rows on
         # the bottom rows, scrolling two transcript rows away for good, and at the turn's end they stayed as pad rows.
-        # The region gives those two rows up as the turn ends: the composer rises by them, and the next turn's output
-        # takes it back down to the bottom rows. A short turn, its prompt still on screen, had no sticky: nothing moves.
+        # With the plan shown, the blank row over it went the same way in every turn, short or long: the running
+        # turn had it, and the idle tail's own spacer stands in for it. The region gives those rows up as the turn
+        # ends: the composer rises by them, and the next turn's output takes it back down to the bottom rows. A short
+        # turn without the plan, its prompt still on screen, had none of them: nothing moves.
         from test_tui_agent_view import relay, STARTS
         from test_tui_live_region_pass import PLAN
         from test_tui_modes import drawn, make_app, type_text
@@ -669,7 +671,7 @@ class AppBottomRowsTests(unittest.TestCase):
             return next(count for count in range(len(screen)) if screen[done + count + 1].strip())
 
         for rows, cols in ((24, 80), (40, 120)):
-            for tools, extra in ((12, ""), (12, "plan"), (12, "agents"), (1, "")):
+            for tools, extra in ((12, ""), (12, "plan"), (12, "agents"), (1, ""), (1, "plan")):
                 with self.subTest(size=f"{cols}x{rows}", tools=tools, extra=extra):
                     app = make_app(rows=rows, cols=cols)[0]
                     app._on_input(Key(CHAR, "l", ctrl=True))
@@ -703,11 +705,10 @@ class AppBottomRowsTests(unittest.TestCase):
                     self.assertEqual(app.region.last_row(rows), rows - 1)
                     event("message.complete", text="Every listing matched.", usage={})
                     ended = drawn(app)
-                    # The spacing between any two blocks. Over the plan one more blank row stays: the plan's own
-                    # blank row, which the running turn had and the idle tail's spacer stands in for, a separate row.
-                    self.assertEqual(blank_under_done(ended), 1 + (extra == "plan"), ended)
+                    self.assertEqual(blank_under_done(ended), 1, ended)  # the spacing between any two blocks
                     rose = self.where(busy)[0] - self.where(ended)[0]
-                    self.assertEqual(rose, 2 if sticky else 0)  # the sticky and the blank row over it, no more
+                    # the sticky and the blank row over it, the plan's blank row, no more
+                    self.assertEqual(rose, 2 * bool(sticky) + (extra == "plan"))
                     self.assertFalse(any(ended[rows - rose :]), ended)  # the rows given up: under the region
                     type_text(app, "and again")
                     app._on_input(Key(ENTER))
@@ -715,6 +716,43 @@ class AppBottomRowsTests(unittest.TestCase):
                     event("message.delta", text="Again.")
                     drawn(app)
                     self.assertEqual(app.region.last_row(rows), rows - 1)  # the next turn is on the bottom rows again
+
+    def test_a_menu_closing_mid_turn_under_the_sticky_prompt_leaves_the_composer_on_the_bottom_rows(self) -> None:
+        # Only the frame a turn ends with gives rows up (#2370 review): a running turn's frames keep the region's
+        # height whatever closes in them, so the composer never climbs while the sticky prompt shows.
+        from test_tui_modes import drawn, make_app, type_text
+
+        from omh.tui.gateway import Event
+
+        app = make_app(rows=24, cols=80)[0]
+        app._on_input(Key(CHAR, "l", ctrl=True))
+        drawn(app)
+        app.transcript.add_notice("\n".join(f"line {n}" for n in range(60)))
+        drawn(app)
+        type_text(app, "check the tree")
+        app._on_input(Key(ENTER))
+
+        def event(kind: str, **payload: object) -> None:
+            app._on_event(Event(kind, app.sid, payload))
+
+        event("message.start")
+        for n in range(12):
+            args = {"command": f"ls {n}"}
+            event("tool.start", tool_id=f"c{n}", name="terminal", args=args)
+            drawn(app)
+            event("tool.complete", tool_id=f"c{n}", name="terminal", args=args, duration_s=1.0,
+                  result={"output": "a", "exit_code": 0})
+            drawn(app)
+        event("message.delta", text="Every listing matched so far.")
+        before = drawn(app)
+        self.assertTrue([row for row in before if row.startswith("↳ you: check the tree")])
+        type_text(app, "/")  # the completion menu opens over the composer, then closes
+        drawn(app)
+        app._on_input(Key(BACKSPACE))
+        for _ in range(4):
+            after = drawn(app)
+            self.assertEqual(self.where(after), self.where(before), after)  # the composer did not climb
+            self.assertEqual(app.region.last_row(24), 23)  # the region stays on the bottom rows
 
     def test_the_next_output_fills_the_freed_rows_and_a_redraw_starts_under_the_output_again(self) -> None:
         from test_tui_modes import drawn, type_text
