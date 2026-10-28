@@ -2270,16 +2270,24 @@ def resumed_other(messages: list[dict] | None = None) -> dict:
     }
 
 
+# The bytes the TUI reads from the path Hermes staged an image at: the fixtures' paths name no real file.
+KEPT_IMAGE = b"\x89PNG\r\n\x1a\nfixture"
+DETACHED = ("image.detach", {"result": {"detached": True, "count": 0}})
+
+
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+@patch("omh.tui.app.read_image", lambda path: KEPT_IMAGE)
 class AttachmentTests(AppTestCase):
-    def test_image_shows_a_chip_above_the_composer_and_the_submit_that_sends_it_clears_it(self) -> None:
-        answers = (*startup_answers(), ("image.attach", {"result": SHOT}))
+    def test_image_is_a_token_in_the_composer_and_the_echo_lists_it_under_the_prompt(self) -> None:
+        upload = "/fixture/hermes-home/images/upload_1.png"
+        answers = (*startup_answers(), ("image.attach", {"result": SHOT}), DETACHED,
+                   ("image.attach_bytes", {"result": {"attached": True, "path": upload, "count": 1}}))
         run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers))
         terminal = run.terminal
         terminal.script(
             Step(b"/image ./shot.png\r", when=terminal.idle, capture="before", label="idle"),
-            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("shot.png 1280×720"), capture="chip",
-                 label="the chip"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("[Image #1]"), capture="token",
+                 label="the token"),
             Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), capture="after",
                  label="the reply"),
         )
@@ -2287,34 +2295,45 @@ class AttachmentTests(AppTestCase):
         self.assert_clean_run(run)
         (attach,) = run.calls("image.attach")
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
-        before, chip = terminal.captures["before"], terminal.captures["chip"]
-        status = info_index(chip)
-        # The chip row sits between the top rule and the input; the launch put the composer on the bottom rows, and
-        # it stays there, the chip taking a row above the input.
-        self.assertEqual(status, info_index(before))
-        composer = status - 1 - UNDER_COMPOSER
-        self.assertTrue(composer_text(chip[composer]).startswith("❯"), chip)
-        self.assertEqual(composer_text(chip[composer - 1]), "📎 shot.png 1280×720  Backspace removes")  # under the rule
-        self.assertIn(RULE_MARK, chip[composer - 2])
-        self.assertEqual(len(run.calls("prompt.submit")), 1)
-        self.assertNotIn("📎 shot.png", "\n".join(terminal.captures["after"]))  # the echo above still names it
+        # Hermes let go of it at once, and the prompt staged it again from the TUI's bytes, right before it went.
+        (detach,) = run.calls("image.detach")
+        self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
+        (stage,) = run.calls("image.attach_bytes")
+        self.assertEqual(base64.b64decode(stage["params"]["content_base64"]), KEPT_IMAGE)
+        methods = [frame.get("method") for frame in run.frames if frame.get("method")]
+        self.assertLess(methods.index("image.attach_bytes"), methods.index("prompt.submit"))
+        before, token = terminal.captures["before"], terminal.captures["token"]
+        # The token is in the input row itself: no row above it, and the composer stays where the launch put it.
+        self.assertEqual(info_index(token), info_index(before))
+        self.assertEqual(composer_row(token), "❯ [Image #1]")
+        self.assertIn(RULE_MARK, token[info_index(token) - 1 - UNDER_COMPOSER - 1])
+        self.assertNotIn("📎", "\n".join(token))  # no attachment row: the token is the image
+        (submit,) = run.calls("prompt.submit")
+        self.assertEqual(submit["params"]["text"], "[Image #1] Reply with exactly the word: ok")
+        history = terminal.history()
+        self.assertIn("[Image #1] Reply with exactly the word: ok", history)
+        self.assertIn("⎿  [Image #1]", history)  # one row under the echo for the image it went with
 
     def test_paste_reports_an_empty_clipboard_and_ctrl_v_attaches_its_image(self) -> None:
         answers = (
             *startup_answers(),
             ("clipboard.paste", {"result": {"attached": False, "message": "No image found in clipboard"}}),
             ("clipboard.paste", {"result": CLIP}),
+            DETACHED,
         )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
         terminal.script(
             self.submit(run, "/paste"),
             Step(b"\x16", when=terminal.shows("No image found in clipboard"), label="the empty-clipboard notice"),
-            Step(b"\x04", when=terminal.shows("clip_20261013_120000_1.png 640×480"), label="the clipboard chip"),
+            # Ctrl+C clears the draft, the token with it, and Ctrl+D then exits on the empty composer.
+            Step(b"\x03\x04", when=terminal.shows("❯ [Image #1]"), label="the clipboard image's token"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual([frame["params"] for frame in run.calls("clipboard.paste")], [{"session_id": LIVE_ID}] * 2)
+        (detach,) = run.calls("image.detach")  # at once, as it was staged; Ctrl+C sends nothing more
+        self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": CLIP["path"]})
 
     def test_a_one_line_paste_is_offered_to_detect_drop_first(self) -> None:
         answers = (
@@ -2327,15 +2346,16 @@ class AttachmentTests(AppTestCase):
                 "matched": True, "is_image": False, "path": "/fixture/project/notes.txt", "name": "notes.txt",
                 "text": "[User attached file: /fixture/project/notes.txt]"}}),
             ("input.detect_drop", {"result": {"matched": False}}),
+            DETACHED,
         )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
         file_ref = "[User attached file: /fixture/project/notes.txt]"
         terminal.script(
             Step(bracketed("/fixture/project/drop.png"), when=terminal.idle, label="idle"),
-            Step(bracketed("/fixture/project/notes.txt"), when=terminal.shows("drop.png 800×600"), capture="image",
-                 label="the image chip"),
-            Step(bracketed(" and hello"), when=terminal.shows(f"❯ {file_ref}"), label="the file reference"),
+            Step(bracketed("/fixture/project/notes.txt"), when=terminal.shows("❯ [Image #1]"), capture="image",
+                 label="the image token"),
+            Step(bracketed(" and hello"), when=terminal.shows(f"{file_ref}"), label="the file reference"),
             Step(bracketed("line one\nline two"), when=terminal.shows("and hello"), capture="typed",
                  label="the unmatched paste"),
             Step(b"\x03\x04", when=terminal.shows("line two"), label="the multi-line paste"),
@@ -2348,28 +2368,26 @@ class AttachmentTests(AppTestCase):
             {"session_id": LIVE_ID, "text": "/fixture/project/notes.txt"},
             {"session_id": LIVE_ID, "text": " and hello"},
         ])
-        # An image drop is queued by the gateway: a chip, and nothing typed (the placeholder is drawn, not typed).
-        self.assertEqual(composer_row(terminal.captures["image"]), "❯ Ask Hermes anything")
-        self.assertEqual(composer_row(terminal.captures["typed"]), f"❯ {file_ref} and hello")
+        # An image drop is queued by the gateway: a token, never the path typed.
+        self.assertEqual(composer_row(terminal.captures["image"]), "❯ [Image #1]")
+        self.assertEqual(composer_row(terminal.captures["typed"]), f"❯ [Image #1] {file_ref} and hello")
 
-    def test_backspace_on_an_empty_composer_detaches_the_last_image(self) -> None:
-        answers = (
-            *startup_answers(),
-            ("image.attach", {"result": SHOT}),
-            ("image.detach", {"result": {"detached": True, "count": 0}}),
-        )
+    def test_cmd_backspace_takes_the_text_and_the_image_and_nothing_stages_it_again(self) -> None:
+        answers = (*startup_answers(), ("image.attach", {"result": SHOT}), DETACHED)
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
         terminal.script(
             self.submit(run, "/image ./shot.png"),
-            Step(b"\x7f", when=terminal.shows("shot.png 1280×720"), label="the chip"),
-            Step(b"\x04", when=lambda: not terminal.shows("📎 shot.png")() and terminal.idle(), capture="gone",
-                 label="the chip gone"),
+            Step("이런느낌으로".encode(), when=terminal.shows("[Image #1]"), label="the token"),
+            Step(b"\x15", when=terminal.shows("[Image #1] 이런느낌으로"), label="the token and the words"),  # Cmd+Backspace
+            Step(b"\x04", when=lambda: not terminal.shows("[Image #1]")() and terminal.idle(), capture="gone",
+                 label="the token gone"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        (detach,) = run.calls("image.detach")
+        (detach,) = run.calls("image.detach")  # when it was staged; the token's deletion needs no call
         self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
+        self.assertEqual(run.calls("image.attach_bytes"), [])
         self.assertTrue(composer_row(terminal.captures["gone"]).startswith("❯"))
 
 

@@ -317,6 +317,21 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **An image you attach in the OMH TUI is an `[Image #N]` token in the text,
+  as in Claude Code.** Ctrl+V, a dropped file and `/image` put the token at
+  the caret, in place of the `📎 shot.png  Backspace removes` row above the
+  composer. Images are numbered upward through the TUI run, past any number a
+  resumed session already holds. The TUI keeps the image's bytes and Hermes
+  holds it only while its prompt is sent: the prompt stages exactly its own
+  images once Hermes has admitted the turn before it. So deleting the token
+  (Backspace, Cmd+Backspace, Ctrl+W, Ctrl+U, Ctrl+K, Ctrl+C, Esc Esc) removes
+  the image; before, Cmd+Backspace cleared the text and left the image
+  attached. An undo puts both back, and so does Up/Down through history over
+  a draft. The sent prompt keeps the labels and lists under its echo each
+  image whose staging Hermes answered (`⎿  [Image #1]`). A queued prompt, and each command in
+  flight, goes with its own images. A `!` line or a command that sends no
+  prompt gives its tokens back to the composer, with a notice. Typing the
+  label yourself attaches nothing.
 - **A queued prompt can be sent into the running turn now, and one line sits
   under the composer.** As in Claude Code, a muted row under the queued
   prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; on an

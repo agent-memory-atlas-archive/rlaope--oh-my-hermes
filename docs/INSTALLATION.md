@@ -1031,11 +1031,20 @@ run and approval decision stays Hermes'; the screen is OMH's.
     and the pager's footer bar are reversed, and every state keeps its
     glyph.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
-  the clipboard, or type `/image <path>`. Each one shows as a chip on the row
-  above the input (`📎 shot.png 1280×720`) and goes with the next message you
-  send; Backspace on an empty composer removes the last one. Hermes reads and
-  queues the file; the OMH TUI keeps only its name. Dropping a file that is not
-  an image types Hermes' reference to it instead.
+  the clipboard, or type `/image <path>`. Each one is a token at the caret,
+  `[Image #1]`, in the text you type around it (`[Image #1] like this`).
+  Images are numbered upward through the TUI run, as Claude Code numbers
+  them, past any number a resumed session already holds. The OMH TUI keeps
+  the image's bytes in memory, and Hermes holds the image only while the
+  prompt it goes with is sent, so the image belongs to its token: whatever
+  deletes the token (Backspace into it, Cmd+Backspace, Ctrl+W, Ctrl+U,
+  Ctrl+K, Ctrl+C, Esc Esc) removes the image, and an undo puts both back.
+  The prompt keeps the `[Image #N]` labels in its text so the model can name
+  them, and the transcript lists under it each image Hermes accepted for it
+  (`⎿  [Image #1]`). A `!` line or a command that sends no prompt gives its
+  tokens back to the composer. Typing `[Image #1]` yourself attaches
+  nothing, and a prompt recalled from history is plain text. Dropping a file
+  that is not an image types Hermes' reference to it instead.
 - A line that starts with `!` is a shell command: while the composer holds
   one, its `❯` mark turns the shell family's amber and the info line says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
@@ -1119,13 +1128,13 @@ Esc closes it):
 | ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list; in a DAG run, to its folding tree |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
-| Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
+| Backspace / Delete | Delete a character, or a paste chip or an `[Image #N]` token whole; deleting a token removes its image |
 | Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
 | Ctrl+_ / Ctrl+Y | Undo or redo an edit in the composer (Ctrl+_ is what Ctrl+- and Ctrl+/ send on most terminals); a run of typed characters is one edit |
 | Esc | Closes the `/` or `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run, then `interrupting…`, and what you queued comes back to the composer unsent); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed; after an approval's tell row, sends nothing more and brings your draft back |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
-| Ctrl+V | Attaches the clipboard image |
+| Ctrl+V | Attaches the clipboard image as an `[Image #N]` token at the caret |
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, while Hermes asks something, the whole question (it answers nothing); q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+Z | Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); fg brings it back |
