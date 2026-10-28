@@ -31,24 +31,40 @@ question's last row opens a text field for an answer of the person's own
 (Hermes' wording, "Other (type your answer)"); while that field is open the
 composer is the field. Every slot row hangs off a `▌` bar, in the warn colour
 for an approval and grey for anything else, so a question Hermes asked
-never reads as panel or transcript text. The command an approval would run is
-drawn in the code style; the choices are plain text, the highlighted one also
-highlighted.
+never reads as panel or transcript text.
+
+An approval shows its command one command per row (`command_risk`), the
+ones that destroy something in full after a `▲`. Every command is listed when
+they all fit. Only when they do not, and only when Hermes' description names a
+risk `command_risk` found (so what Hermes flagged is one of the `▲` rows), do
+the commands that change nothing (`Segment.foldable`, a closed allowlist) fold
+into one `+ N other commands` row; every other one stays. `command_risk` knows
+far fewer patterns than Hermes, so when Hermes flagged something it does not
+know, every command is listed and `_fit` cuts from the end with its marker.
+Risks Hermes did not name get a `✦ OMH also sees:` row under its header.
+Ctrl+O shows the command whole, as Hermes sent it (`whole_lines`). Each choice
+has its icon and its tone (deny red, an allow green, always amber), and the
+highlighted one sits on a band of its tone (`Theme.pick_*`). When rows run
+short the spacing goes first, then the listing folds, then `_fit` cuts the
+body from its end.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 import json
+import os
 import sys
 from typing import Any
 
+from . import command_risk
 from . import gateway_contract as contract
 from .keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from .markdown import wrap_prefixed
-from .style import Line, Span, Style
+from .panels import CATCH_MARK
+from .style import Line, Span, Style, fill, is_fill
 from .theme import Theme
-from .width import cell_width, line_width, truncate_line, wrap_line
+from .width import cell_width, line_width, truncate, truncate_line, wrap_line
 
 # The order is the distance from safe: deny first (and selected), then the
 # narrowest allow, then the broadest. `always` is Hermes' permanent allow:
@@ -71,6 +87,14 @@ _APPROVAL_LABELS = {
     APPROVAL_TELL: "no, and tell Hermes what to do instead",
 }
 ALWAYS_WHAT = "commands like this"  # `always`'s label for a request with no description
+# Each choice's icon and tone: the theme role its row is drawn in, and `pick_<tone>` when highlighted.
+APPROVAL_TONES = dict(zip((*APPROVAL_ORDER, APPROVAL_TELL),
+                          (("✗", "error"), ("✓", "ok"), ("✓", "ok"), ("★", "warn"), ("✎", "muted"))))
+RISK_MARK = "▲ "
+ALSO_SEES = " also sees: "
+OTHER_COMMANDS = "    + {count} other command{s} "
+OTHER_HINT = " · ctrl+o shows all"
+RULE_CELLS = 60  # the faint rule between the command and the choices, at most
 # A letter can only deny. Allowing takes the arrows and Enter, so a key typed
 # for the composer as the slot opens can never run a command.
 _DENY_KEYS = frozenset("dn")
@@ -485,31 +509,36 @@ class PromptSlot:
 
     # -- rendering --------------------------------------------------------------------------
 
-    def lines(self, width: int, theme: Theme, max_rows: int, waiting: int = 0) -> list[Line]:
+    def lines(self, width: int, theme: Theme, max_rows: int, waiting: int = 0, whole: bool = False) -> list[Line]:
         """The slot's rows, at most `max_rows`; the question's keys are the info line's (`keys_while`).
 
         A list keeps the highlighted row whatever the budget (`_fit`). A
         question with no list keeps its first row and its last ones. Whatever
         is cut, a marker says Ctrl+O shows the question whole. `waiting`
         questions queued behind this one are counted after its first words.
+        `whole` draws an approval's command as Hermes sent it instead of by
+        command (`whole_lines`).
         """
         if max_rows <= 0:
             return []
         inner = max(width - len(SLOT_BAR), 1)
         queued: Line = (Span(WAITING.format(count=waiting, s="s" if waiting != 1 else ""), theme.muted),) if waiting else ()
         if self.method == "approval":
-            rows = self._approval_lines(inner, theme, max_rows, queued)
+            rows = self._approval_lines(inner, theme, max_rows, queued, whole)
         elif self.method == "clarify":
             rows = self._clarify_lines(inner, theme, max_rows, queued)
         else:
             # The header and the hint matter most; the body is what gets cut.
             rows = _keep_ends(self._value_lines(inner, theme, queued), max_rows, inner, theme)
         bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.muted)
-        return [truncate_line((bar, *truncate_line(row, inner)), width) for row in rows]
+        # A highlighted choice's band (a fill span) runs on to the right edge past the cut.
+        return [(*truncate_line((bar, *truncate_line(row, inner)), width), *(row[-1:] if row and is_fill(row[-1]) else ()))
+                for row in rows]
 
     def whole_lines(self, width: int, theme: Theme, waiting: int = 0) -> list[Line]:
-        """Every row of the question, nothing cut: what Ctrl+O pages while it is open (the pager has its own keys)."""
-        return self.lines(width, theme, sys.maxsize, waiting=waiting)
+        """Every row of the question, nothing cut, an approval's command whole as Hermes sent it: what Ctrl+O pages
+        while it is open (the pager has its own keys)."""
+        return self.lines(width, theme, sys.maxsize, waiting=waiting, whole=True)
 
     def _choice_rows(self, labels: list[tuple[str, str]], width: int, theme: Theme, mark_style: Style) -> list[list[Line]]:
         """Each `(lead, label)` as its rows: the label wrapped under its lead (a number), whole, so a tag at its end
@@ -613,23 +642,92 @@ class PromptSlot:
             above[-1] = _ends_with_more(above[-1], width, theme)
         return [*above, *shown]
 
-    def _approval_lines(self, width: int, theme: Theme, max_rows: int, queued: Line) -> list[Line]:
-        """The header (wrapped), the command's rows from its first, then the choices (`_fit`).
+    def _approval_lines(self, width: int, theme: Theme, max_rows: int, queued: Line, whole: bool) -> list[Line]:
+        """The header, the risks Hermes did not name, the command by command, then the choices (`_fit`).
 
-        The beginning of a command is what says what it does, so a long one is
-        cut from the end.
+        Every command is listed, its risky ones marked, when that fits; else,
+        when Hermes' description names a risk found, its risky ones in full and
+        one row for the rest (`_command_rows`). `whole` draws the command as
+        Hermes sent it instead (`whole_lines`). The spacing around the command
+        goes first when rows run short, then the listing folds, then `_fit`
+        cuts the body from its end, so the folded row goes before a risky one.
         """
         description = str(self.params.get("description") or "dangerous command")
         command = str(self.params.get("command") or "")
-        header = wrap_prefixed(
-            (Span(f"Hermes asks to run {description}", theme.warn), *queued), (Span("⚠ ", theme.warn),), (Span("  "),),
-            width,
+        found = command_risk.segments(command)
+        count: Line = (Span(f" · {len(found)} commands", theme.muted),) if len(found) > 1 else ()
+        head = wrap_prefixed(
+            (Span(f"Hermes asks to run {description}", theme.warn), *count, *queued), (Span("⚠ ", theme.warn),),
+            (Span("  "),), width,
         )
-        labels = [("", self.approval_label(choice)) for choice in self.approval_choices()]
-        choices = self._choice_rows(labels, width, theme, theme.warn)
-        indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
-        command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
-        return self._fit(header, command_rows, choices, max_rows, width, theme)
+        unnamed = command_risk.unnamed_risks(found, description)
+        if unnamed:
+            steps = theme.catch_mark or (theme.brand,)
+            mark = tuple(Span(cell, steps[min(index, len(steps) - 1)]) for index, cell in enumerate(CATCH_MARK))
+            words = (*mark, Span(ALSO_SEES, theme.catch_words if theme.catch_mark else theme.muted),
+                     Span(" · ".join(unnamed), replace(theme.warn, bold=True)))
+            head.extend(wrap_prefixed(words, (Span("  "),), (Span("  "),), width))
+        indent: Line = (Span("  ", theme.code),)
+        if whole:
+            bodies = [wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []]
+        else:
+            bodies = [self._command_rows(found, width, theme, fold=False)]
+            # Folding hides commands, so only when what Hermes flagged is one of the risky rows that stay.
+            if command_risk.names_a_found_risk(found, description):
+                bodies.append(self._command_rows(found, width, theme, fold=True))
+        rule: Line = (Span("  " + "─" * max(min(width - 4, RULE_CELLS), 1), theme.faint),)
+        blank: Line = ()
+        choices = self._approval_choice_rows(width, theme)
+        listed = [row for choice in choices for row in choice]
+        for body in bodies:
+            for spaced in ([*head, blank, *body, blank, rule, blank], [*head, *body, rule]):
+                if len(spaced) + len(listed) <= max_rows:
+                    return [*spaced, *listed]
+        return self._fit(head, bodies[-1], choices, max_rows, width, theme)
+
+    def _command_rows(self, found: list[command_risk.Segment], width: int, theme: Theme, fold: bool) -> list[Line]:
+        """Each command in order: a risky one after a `▲` (on one line, wrapped, never cut), any other as written (its
+        own line breaks kept), wrapped. With `fold`, the other commands that may fold (`Segment.foldable`) give way to
+        one `+ N other commands` row naming their programs. With none risky, every command is listed as written."""
+        home = os.path.expanduser("~")
+        if not any(segment.risks for segment in found):
+            indent: Line = (Span("  ", theme.code),)
+            return [row for segment in found
+                    for row in wrap_prefixed((Span(segment.text, theme.code),), indent, indent, width)]
+        # A risky command is never cut at the width: on a narrow slot it wraps under its mark.
+        mark: Line = (Span("  "), Span(RISK_MARK, replace(theme.error, bold=True)))
+        under: Line = (Span(" " * (2 + cell_width(RISK_MARK))),)
+        plain: Line = (Span(" " * (2 + cell_width(RISK_MARK)), theme.code),)
+        rows: list[Line] = []
+        others: list[command_risk.Segment] = []
+        for segment in found:
+            if segment.risks:
+                text = Span(_home_short(_joined(segment.text), home), replace(theme.warn, bold=True))
+                rows.extend(wrap_prefixed((text,), mark, under, width))
+            elif fold and segment.foldable:
+                others.append(segment)
+            else:
+                rows.extend(wrap_prefixed((Span(segment.text, theme.code),), plain, plain, width))
+        if others:
+            lead = Span(OTHER_COMMANDS.format(count=len(others), s="s" if len(others) != 1 else ""), theme.muted)
+            names = truncate("(" + ", ".join(dict.fromkeys(segment.head for segment in others)) + ")",
+                             max(width - cell_width(lead.text) - cell_width(OTHER_HINT), 0))
+            rows.append(truncate_line((lead, Span(names, theme.faint), Span(OTHER_HINT, theme.hint)), width))
+        return rows
+
+    def _approval_choice_rows(self, width: int, theme: Theme) -> list[list[Line]]:
+        """Each choice as its rows: its icon and label in its tone (`APPROVAL_TONES`), wrapped under the icon; the
+        highlighted one marked `❯`, bold, on its tone's band to the right edge."""
+        rows: list[list[Line]] = []
+        for index, choice in enumerate(self.approval_choices()):
+            icon, tone = APPROVAL_TONES[choice]
+            current = index == self.selected
+            style = getattr(theme, f"pick_{tone}") if current else getattr(theme, tone)
+            first: Line = (Span(CHOICE_MARK if current else " " * len(CHOICE_MARK), style), Span(f"{icon} ", style))
+            rest: Line = (Span(" " * (len(CHOICE_MARK) + 2), style),)
+            wrapped = wrap_prefixed((Span(self.approval_label(choice), style),), first, rest, width)
+            rows.append([(*row, fill(style)) for row in wrapped] if current and style.bg is not None else wrapped)
+        return rows
 
     def _clarify_lines(self, width: int, theme: Theme, max_rows: int, queued: Line) -> list[Line]:
         """The question (its counter when there are several), then its choices and the text field's row.
@@ -693,6 +791,64 @@ def _without_recommended(text: object) -> str:
     if stripped.casefold().endswith(RECOMMENDED_TAG.casefold()):
         return stripped[: -len(RECOMMENDED_TAG)].strip()
     return stripped
+
+
+def _home_short(text: str, home: str) -> str:
+    """`text` with the home directory `home` written `~` where the shell would read `~` as it: unquoted, starting a
+    word, and a whole path part (`/Users/a` in `/Users/a/x`, not in `/Users/ab` or `"/Users/a"`)."""
+    if len(home) <= 1 or home not in text:
+        return text
+    shown: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote != "'" and char == "\\":
+            shown.append(text[index : index + 2])
+            index += 2
+            continue
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        elif text.startswith(home, index) and (index == 0 or text[index - 1].isspace() or text[index - 1] in ";&|(<>"):
+            after = text[index + len(home) : index + len(home) + 1]
+            if not after or after.isspace() or after in "/\\;&|)<>":
+                shown.append("~")
+                index += len(home)
+                continue
+        shown.append(char)
+        index += 1
+    return "".join(shown)
+
+
+def _joined(text: str) -> str:
+    """`text` on one line: each line break outside quotes, with a `\\` continuation before it and the indentation
+    around it, as one space; a line break inside quotes, and every other space, as written."""
+    shown: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if not quote and (char == "\n" or text.startswith("\\\n", index)):
+            while shown and shown[-1] in (" ", "\t"):
+                shown.pop()
+            index += 1 if char == "\n" else 2
+            while index < len(text) and text[index] in " \t":
+                index += 1
+            shown.append(" ")
+            continue
+        if quote != "'" and char == "\\":
+            shown.append(text[index : index + 2])
+            index += 2
+            continue
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        shown.append(char)
+        index += 1
+    return "".join(shown).strip()
 
 
 def _one_line(value: object) -> str:

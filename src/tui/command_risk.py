@@ -1,0 +1,474 @@
+"""Which commands in an approval's shell line would destroy something, for the slot to show first.
+
+Hermes flags a command line by the first of its dangerous patterns that
+matches and names only that one (`detect_dangerous_command`), so a line that
+chains a recursive delete with a forced worktree removal and a remote branch
+delete reads as "recursive delete" alone. The approval slot shows each command
+of the line on its own row and names the risks Hermes did not.
+
+Two small, explicit steps, no shell parser:
+
+- `split_commands` cuts the line at the top-level `&&`, `||`, `;` and line
+  breaks, skipping over single quotes, double quotes and backslash escapes.
+  A pipe stays inside its command. A comment (`#` starting a word) runs to the
+  end of its line, and a here-document (`<<EOF`) stays with the command that
+  opened it through its closing line; neither is read for what it runs.
+- A command is risky only when a program it runs (its first word after any
+  `NAME=value` assignments, the first word of a pipe stage, or the word after
+  `sudo`, `env` or `xargs` and their options) matches a row of `RISKS`. Words
+  are read quote-aware, so text inside quotes, or an argument to `echo` or
+  `grep`, never matches.
+
+`RISKS` is far narrower than Hermes' own table, so what it does not find is
+not safe. `Segment.foldable` is a closed allowlist instead: a command may
+fold out of sight only when every program it runs reads and changes nothing
+(`FOLDABLE`, `GIT_FOLDABLE`, `GH_READ_ONLY`), it writes no file, and nothing
+in it runs more than its words say (a substitution, a background job, a
+here-document, an open quote, a function or alias the line defines, an
+assignment in front of a program, git's `-c`) or reads as a risk inside
+quotes (Hermes' patterns are not quote-aware). Everything else is listed.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+# Words that run the program after them; their options that take a value consume the next word.
+_RUNNERS = {"sudo": frozenset("ugCDhprtUT"), "env": frozenset("uCS"), "xargs": frozenset("InPLsdEa")}
+# Options git itself takes before the subcommand that consume the next word.
+_GIT_VALUE_OPTIONS = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"))
+# The programs a command may run and still fold out of sight: they read, print or move the shell, and change
+# nothing. git folds only on `_git_folds`, gh only on `GH_READ_ONLY`.
+FOLDABLE = frozenset(("cd", "pushd", "popd", "echo", "printf", "ls", "pwd", "true", ":", "wc", "grep", "head"))
+GH_READ_ONLY = frozenset((
+    ("pr", "view"), ("pr", "list"), ("pr", "checks"), ("pr", "status"), ("pr", "diff"), ("issue", "view"),
+    ("issue", "list"), ("run", "view"), ("run", "list"), ("run", "watch"), ("repo", "view"), ("auth", "status"),
+))
+# The git subcommands that may fold. They read, except `worktree prune`, which only drops git's records of worktrees
+# whose directory is already gone (the owner's line runs it, and Hermes flags none of them).
+GIT_FOLDABLE = frozenset(("status", "log", "diff", "show", "rev-parse", "worktree list", "worktree prune", "branch",
+                          "remote"))
+# `git branch` options that only list; with `--list` or `-l` its other words are patterns.
+_GIT_BRANCH_LISTS = frozenset(("--list", "-l", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose",
+                               "--show-current", "--no-color"))
+# git options before the subcommand that make it run a program of their choosing.
+_GIT_RUNS = ("-c", "--config-env", "--exec-path")
+# Text that runs something the words do not show: a command substitution, a subshell or a process substitution.
+_OPAQUE_TEXT = ("(", "`")
+# What a word is cut at when looking for `rm` anywhere, inside quotes too.
+_WORD_BREAKS = "'\"`;&|(){}<>=!"
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One command of the line: its text as written, the first word it runs, and the risks found in it."""
+
+    text: str
+    head: str
+    risks: tuple[str, ...]
+    foldable: bool = True  # may fold out of sight: it changes nothing (`_foldable`)
+
+
+def _word_start(text: str, index: int) -> bool:
+    return index == 0 or text[index - 1].isspace() or text[index - 1] in ";&|()<>"
+
+
+def _heredoc(command: str, index: int) -> tuple[str, int, bool]:
+    """The here-document `<<` at `index` opens: its delimiter with the quotes taken off, the index past it, and
+    whether its closing line may be indented with tabs (`<<-`). No delimiter for a `<<` that opens none (`1<<2`)."""
+    end = index + 2
+    tabs = command.startswith("-", end)
+    end += tabs
+    while end < len(command) and command[end] in " \t":
+        end += 1
+    start, word, quote = end, [], ""
+    while end < len(command):
+        char = command[end]
+        if quote:
+            quote = "" if char == quote else quote
+            if quote:
+                word.append(char)
+        elif char in "'\"":
+            quote = char
+        elif char.isspace() or char in ";&|<>()":
+            break
+        elif char != "\\":
+            word.append(char)
+        end += 1
+    opens = start < len(command) and (command[start] in "'\"\\_" or command[start].isalpha())
+    return ("".join(word) if opens else ""), end, tabs
+
+
+def _heredoc_end(command: str, index: int, pending: list[tuple[str, bool]]) -> int:
+    """Where the bodies of the `pending` here-documents end, from the line break at `index`: the line break after the
+    last one's closing line, or the end of `command` when a body is never closed."""
+    end = index
+    for delimiter, tabs in pending:
+        while end < len(command):
+            start = end + 1
+            end = command.find("\n", start)
+            end = len(command) if end < 0 else end
+            line = command[start:end]
+            if (line.lstrip("\t") if tabs else line) == delimiter:
+                break
+    return end
+
+
+def _scan(command: str) -> list[tuple[str, str, bool]]:
+    """Each top-level command of `command`: its text as written, the text read for what it runs (its comments and
+    here-document bodies left out), each stripped, and whether its quotes close (an unclosed one swallows every command
+    after it); a command with nothing to read (a comment line) is dropped."""
+    parts: list[tuple[list[str], list[str]]] = []
+    written: list[str] = []
+    read: list[str] = []
+    opener = written  # the command a pending here-document's body belongs to
+    pending: list[tuple[str, bool]] = []
+    quote = ""
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            quote = "" if char == "'" else quote
+        elif char == "\\" and index + 1 < len(command):
+            written.append(command[index : index + 2])
+            read.append(command[index : index + 2])
+            index += 2
+            continue
+        elif quote == '"':
+            quote = "" if char == '"' else quote
+        elif char in "'\"":
+            quote = char
+        elif char == "#" and _word_start(command, index):
+            end = command.find("\n", index)
+            end = len(command) if end < 0 else end
+            written.append(command[index:end])
+            index = end
+            continue
+        elif command.startswith("<<", index) and not command.startswith("<<<", index):
+            delimiter, end, tabs = _heredoc(command, index)
+            if delimiter:
+                pending.append((delimiter, tabs))
+                opener = written
+                written.append(command[index:end])
+                read.append(command[index:end])
+                index = end
+                continue
+        elif char == "\n" and pending:
+            end = _heredoc_end(command, index, pending)
+            opener.append(command[index:end])
+            pending = []
+            index = end
+            continue
+        if not quote and (command.startswith(("&&", "||"), index) or char in ";\n"):
+            parts.append((written, read))
+            written, read = [], []
+            index += 1 if char in ";\n" else 2
+            continue
+        written.append(char)
+        read.append(char)
+        index += 1
+    parts.append((written, read))
+    return [("".join(text).strip(), "".join(words).strip(), not quote or number < len(parts) - 1)
+            for number, (text, words) in enumerate(parts) if "".join(words).strip()]
+
+
+def split_commands(command: str) -> list[str]:
+    """`command` cut at its top-level `&&`, `||`, `;` and line breaks (`_scan`), each part as written, stripped."""
+    return [text for text, _, _ in _scan(command)]
+
+
+def _stages(segment: str) -> list[list[str]]:
+    """`segment`'s pipe stages, each as its words with the quotes taken off (a quoted text is one word), a comment
+    (`#` starting a word, to the end of its line) left out."""
+    stages: list[list[str]] = [[]]
+    word: list[str] = []
+    started = False  # a word is open, so `""` is still a word
+    quote = ""
+    index = 0
+    while index < len(segment):
+        char = segment[index]
+        if quote == "'":
+            if char == "'":
+                quote = ""
+            else:
+                word.append(char)
+        elif char == "\\" and index + 1 < len(segment):
+            word.append(segment[index + 1])
+            started = True
+            index += 2
+            continue
+        elif quote == '"':
+            if char == '"':
+                quote = ""
+            else:
+                word.append(char)
+        elif char in "'\"":
+            quote, started = char, True
+        elif char == "#" and not started:
+            end = segment.find("\n", index)
+            index = len(segment) if end < 0 else end
+            continue
+        elif char.isspace() or char == "|":
+            if started or word:
+                stages[-1].append("".join(word))
+            word, started = [], False
+            if char == "|":
+                stages.append([])
+        else:
+            word.append(char)
+            started = True
+        index += 1
+    if started or word:
+        stages[-1].append("".join(word))
+    return [stage for stage in stages if stage]
+
+
+def _is_assignment(word: str) -> bool:
+    name, equals, _ = word.partition("=")
+    return bool(equals) and name.replace("_", "a").isalnum() and not name[0].isdigit()
+
+
+def _program(words: list[str]) -> list[str]:
+    """`words` from the program they run: past `NAME=value` assignments, and past `sudo`, `env` or `xargs` with
+    their options."""
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if _is_assignment(word):
+            index += 1
+            continue
+        valued = _RUNNERS.get(word)
+        if valued is None:
+            return words[index:]
+        index += 1
+        while index < len(words) and (words[index].startswith("-") or (word == "env" and _is_assignment(words[index]))):
+            option = words[index]
+            index += 2 if len(option) == 2 and option[1] in valued else 1
+    return []
+
+
+def _options(args: list[str]) -> tuple[set[str], set[str], list[str]]:
+    """`args` before a `--`: the long options (without a `=value`), the letters of the short ones, and the rest."""
+    longs: set[str] = set()
+    shorts: set[str] = set()
+    rest: list[str] = []
+    for arg in args:
+        if arg == "--":
+            break
+        if arg.startswith("--"):
+            longs.add(arg.partition("=")[0])
+        elif arg.startswith("-") and len(arg) > 1:
+            shorts.update(arg[1:])
+        else:
+            rest.append(arg)
+    return longs, shorts, rest
+
+
+def _given(longs: set[str], *names: str) -> bool:
+    """Whether `longs` hold one of `names` or a prefix of it: git and GNU tools take `--ha` for `--hard`."""
+    return any(len(given) > 2 and name.startswith(given) for given in longs for name in names)
+
+
+def _rm(args: list[str]) -> list[str]:
+    longs, shorts, rest = _options(args)
+    if _given(longs, "--recursive") or shorts & {"r", "R"}:
+        return ["recursive delete"]
+    operands = rest + (args[args.index("--") + 1 :] if "--" in args else [])
+    return ["deletes in root path"] if any(path.startswith("/") for path in operands) else []
+
+
+def _git(args: list[str]) -> list[str]:
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        index += 2 if args[index] in _GIT_VALUE_OPTIONS else 1
+    if index >= len(args):
+        return []
+    sub, longs, shorts, rest = args[index], *_options(args[index + 1 :])
+    found: list[str] = []
+    if sub == "push":
+        if _given(longs, "--delete") or "d" in shorts or any(ref.startswith(":") and len(ref) > 1 for ref in rest[1:]):
+            found.append("deletes a remote branch")
+        if _given(longs, "--force", "--force-with-lease") or "f" in shorts or any(ref.startswith("+") for ref in rest[1:]):
+            found.append("force-pushes")
+    elif sub == "branch":
+        deletes, forced = _given(longs, "--delete") or "d" in shorts, _given(longs, "--force") or "f" in shorts
+        if "D" in shorts or (deletes and forced):
+            found.append("deletes local branches")
+    elif sub == "worktree":
+        if rest[:1] == ["remove"] and (_given(longs, "--force") or "f" in shorts):
+            found.append("force-removes a worktree")
+    elif sub == "reset":
+        if _given(longs, "--hard"):
+            found.append("hard reset")
+    elif sub == "clean":
+        if _given(longs, "--force") or "f" in shorts:
+            found.append("deletes untracked files")
+    return found
+
+
+# The closed table: a program's name, and what reads its arguments for the risks it names.
+RISKS: dict[str, Callable[[list[str]], list[str]]] = {"rm": _rm, "git": _git}
+# Hermes' own descriptions of the same risks where its wording differs from OMH's (tools/approval_detection.py,
+# hermes-agent bf0203a794), so a risk Hermes already named is not named again in other words.
+HERMES_NAMES = {
+    "deletes in root path": ("delete in root path",),
+    # Hermes says "delete in root path" for any `rm` with an operand from `/`, recursive or not (its first pattern).
+    "recursive delete": (
+        "delete in root path",
+        "recursive delete (long flag)",
+        "recursive delete (flags after operands)",
+        "recursive delete of root filesystem",
+        "recursive delete of system directory",
+        "recursive delete of home directory",
+        "xargs with rm",
+        "find -exec/-execdir rm",
+    ),
+    "force-pushes": (
+        "git force push (rewrites remote history)",
+        "git force push short flag (rewrites remote history)",
+    ),
+    "deletes local branches": (
+        "git branch force delete",
+        "git branch force delete (long flags)",
+        "git branch force delete (long flags, force-first)",
+    ),
+    "hard reset": ("git reset --hard (destroys uncommitted changes)",),
+    "deletes untracked files": ("git clean with force (deletes untracked files)",),
+}
+
+
+def segment_risks(segment: str) -> tuple[str, ...]:
+    """The risks of the programs `segment` runs, in table order within each, once each."""
+    found: list[str] = []
+    for stage in _stages(segment):
+        words = _program(stage)
+        check = RISKS.get(words[0].rsplit("/", 1)[-1]) if words else None
+        found.extend(risk for risk in (check(words[1:]) if check else []) if risk not in found)
+    return tuple(found)
+
+
+def _head(segment: str) -> str:
+    """The first program `segment` runs, or `NAME=` for a command that only assigns."""
+    stages = _stages(segment)
+    words = stages[0] if stages else []
+    program = next((word for word in words if not _is_assignment(word)), "")
+    if program:
+        return program
+    return words[0].partition("=")[0] + "=" if words else segment.split(maxsplit=1)[0]
+
+
+def _git_folds(args: list[str]) -> bool:
+    """Whether `git` with `args` may fold: a `GIT_FOLDABLE` subcommand that writes no file (`--output`) and runs no
+    program of an option's choosing (`-c`, `--config-env`, `--exec-path`, `--ext-diff`), and no risk found."""
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        if args[index].partition("=")[0] in _GIT_RUNS:
+            return False
+        index += 2 if args[index] in _GIT_VALUE_OPTIONS else 1
+    sub, rest = (args[index], args[index + 1 :]) if index < len(args) else ("", [])
+    if sub == "worktree":
+        sub = " ".join(["worktree", *rest[:1]])
+    elif sub == "branch":
+        listing = "--list" in rest or "-l" in rest
+        if not all(arg in _GIT_BRANCH_LISTS or (listing and not arg.startswith("-")) for arg in rest):
+            return False
+    elif sub == "remote" and not set(rest) <= {"-v", "--verbose"}:
+        return False
+    if any(arg.startswith(("--output", "--ext-diff")) for arg in rest):
+        return False
+    return sub in GIT_FOLDABLE and not _git(args)
+
+
+def _program_folds(stage: list[str]) -> bool:
+    """Whether the pipe stage `stage` only assigns, or runs a program that changes nothing (`FOLDABLE`, `_git_folds`,
+    read-only gh) with no assignment in front of it (`LD_PRELOAD=…`, `PAGER=…` choose what it runs)."""
+    if all(_is_assignment(word) for word in stage):
+        return True
+    if _is_assignment(stage[0]):
+        return False
+    program = stage[0].rsplit("/", 1)[-1]
+    if program == "git":
+        return _git_folds(stage[1:])
+    if program == "gh":
+        return tuple(stage[1:3]) in GH_READ_ONLY and not {"--show-token", "-t"} & set(stage)
+    return program in FOLDABLE
+
+
+def _writes(stage: list[str]) -> bool:
+    """Whether `stage` redirects output into a file (`> f`, `>> f`, `>& f`); a descriptor (`2>&1`, `>&2`, `>&-`) and
+    `/dev/null` are none."""
+    for index, word in enumerate(stage):
+        if ">" in word:
+            target = word.rpartition(">")[2]
+            descriptor = target.startswith("&")
+            target = target.removeprefix("&") or (stage[index + 1] if index + 1 < len(stage) else "")
+            if not ((descriptor and (target.isdigit() or target == "-")) or target == "/dev/null"):
+                return True
+    return False
+
+
+def _foldable(read: str) -> bool:
+    """Whether the command `read` may fold out of sight: every stage's program changes nothing (`_program_folds`), no
+    stage writes a file, nothing runs more than the words say (a substitution, a background job, a here-document),
+    and no quoted text reads as a risk or names `rm`, since Hermes' patterns match inside quotes."""
+    if any(text in read for text in _OPAQUE_TEXT) or "<<" in read:
+        return False
+    for index, char in enumerate(read):
+        if char == "&" and read[index - 1 : index] not in ("&", ">", "<", "|") and read[index + 1 : index + 2] not in ("&", ">"):
+            return False  # a background job: `a & b` runs two commands
+    spaced = read
+    for char in _WORD_BREAKS:
+        spaced = spaced.replace(char, " ")
+    if any(word.rsplit("/", 1)[-1] == "rm" for word in spaced.split()):
+        return False
+    stages = _stages(read)
+    if any(segment_risks(word) for stage in stages for word in stage if any(char.isspace() for char in word)):
+        return False
+    return all(_program_folds(stage) and not _writes(stage) for stage in stages)
+
+
+def _defined(scanned: list[tuple[str, str, bool]]) -> set[str]:
+    """The names the line defines as a function (`f() {`, `function f`) or an alias (`alias f=…`)."""
+    names: set[str] = set()
+    for _, read, _ in scanned:
+        if "()" in read and read.partition("()")[0].split():
+            names.add(read.partition("()")[0].split()[-1])
+        for stage in _stages(read):
+            if stage[0] == "function" and len(stage) > 1:
+                names.add(stage[1])
+            if stage[0] == "alias":
+                names.update(word.partition("=")[0] for word in stage[1:])
+    return names
+
+
+def segments(command: str) -> list[Segment]:
+    """Each command of `command` (`split_commands`) with its first program, its risks and whether it may fold (a call
+    to a function or alias the line defines never does)."""
+    scanned = _scan(command)
+    defined = _defined(scanned)
+    return [Segment(text, _head(read), segment_risks(read),
+                    closed and _foldable(read) and not {word for stage in _stages(read) for word in stage} & defined)
+            for text, read, closed in scanned]
+
+
+def _wordings(risk: str) -> set[str]:
+    """The ways `risk` is named, OMH's and Hermes', ignoring case."""
+    return {risk.casefold(), *(name.casefold() for name in HERMES_NAMES.get(risk, ()))}
+
+
+def names_a_found_risk(found: list[Segment], description: str) -> bool:
+    """Whether Hermes' `description` names a risk found in `found`, so the command it flagged is drawn as risky."""
+    named = description.strip().casefold()
+    return any(named in _wordings(risk) for segment in found for risk in segment.risks)
+
+
+def unnamed_risks(found: list[Segment], description: str) -> list[str]:
+    """The risks in `found`, once each in order, without the one Hermes named (`description`, ignoring case)."""
+    named = description.strip().casefold()
+    risks: list[str] = []
+    for segment in found:
+        for risk in segment.risks:
+            if risk not in risks and named not in _wordings(risk):
+                risks.append(risk)
+    return risks

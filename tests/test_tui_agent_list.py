@@ -354,7 +354,7 @@ class ListLeaveTests(unittest.TestCase):
         status = screen_info_index(app, screen)
         # The approval stands where the composer was, the row under it is the info line, with its keys, and the
         # agent view stays under that.
-        self.assertEqual(screen[status - 1], "▌   no, and tell Hermes what to do instead")  # the approval's last row
+        self.assertEqual(screen[status - 1], "▌   ✎ no, and tell Hermes what to do instead")  # the approval's last row
         self.assertIn("esc denies", screen[status])
         self.assertEqual([row[4:] for row in screen[status + 1 : status + 4]], [row[4:] for row in VIEW])
         now[0] += SLOT_ARM_SECONDS

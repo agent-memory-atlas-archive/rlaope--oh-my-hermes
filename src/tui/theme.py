@@ -67,7 +67,10 @@ its words do on every background, so a highlight is a pointer (`❯`) and the
 highlighted row's name bold in the skill hue (`menu_current`, the `slash`
 colour, so a command reads the same in the menu and in the composer), with
 every other row in the terminal's foreground (`menu`) and its details on
-`muted`. The
+`muted`. An
+approval's choices are the exception: the highlighted one is bold in its tone
+on a band of that tone (`pick_error`, `pick_ok`, `pick_warn`, `pick_muted`),
+since allowing and denying must not look alike at a glance. The
 info line under the composer and the sticky prompt over a running turn have
 no bar: their words and marks are measured against the terminal's background
 like any transcript row.
@@ -103,6 +106,10 @@ LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
+# An approval's highlighted choice: its tone moved this far toward the background for the band behind it (on a dark
+# background, on a light one), so the band is the tone's tint and the tone itself, lifted, still reads on it. On a
+# light background 0.85 left an amber band at 1.08:1, too close to the background to see.
+PICK_BAND_SHARE = (0.72, 0.78)
 # The delegation view's edge gradient, top to bottom, for a palette that names none of these tokens.
 DAG_EDGE_STOPS = {"dag_edge_start": "#8B5CF6", "dag_edge_mid": "#6366F1", "dag_edge_end": "#3B82F6"}
 DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
@@ -263,6 +270,13 @@ class Theme:
     catch_mark: tuple[Style, ...] = ()  # a catch row's `✦ OMH`, cell by cell, bold, through the launch look's logo
     catch_words: Style = Style()  # what a catch row says: the launch look's label colour (`with_catch_colours`);
     # `build_theme` sets both from the default launch look, so no built theme leaves them unpainted
+    # An approval's highlighted choice, bold in its tone (deny `error`, an allow `ok`, always `warn`, the tell row
+    # `muted`) on a band of that tone mixed into the background (`PICK_BAND_SHARE`); no band when no background was
+    # reported. `build_theme` paints all four.
+    pick_error: Style = Style()
+    pick_ok: Style = Style()
+    pick_warn: Style = Style()
+    pick_muted: Style = Style()
 
 
 def aura_moves(theme: Theme) -> bool:
@@ -389,6 +403,12 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
         return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
 
+    def pick(colour: str, toward: str) -> Style:
+        if not reported:
+            return Style(fg=_lifted(colour, toward, surface, TEXT_CONTRAST), bold=True)
+        band = _mix(colour, surface, PICK_BAND_SHARE[side])
+        return Style(fg=_lifted(colour, toward, band, TEXT_CONTRAST), bg=band, bold=True)
+
     if not reported:
         ok_band = error_band = Style()
     elif light:
@@ -455,6 +475,10 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         slash=Style(fg=hue("skill"), bold=True),
         aura=tuple(Style(fg=colour, bold=True) for colour in aura_steps) if moving else (Style(bold=True),),
         aura_glint=tuple(Style(fg=colour, bold=True) for colour in glint_steps) if moving else (Style(bold=True),),
+        pick_error=pick(c["ui_error"], ink),
+        pick_ok=pick(c["ui_ok"], ink),
+        pick_warn=pick(c["ui_warn"], ink),
+        pick_muted=pick(NEUTRAL_GREYS["muted"][side], BLACK if light else WHITE),
     )
     # A catch row's colours from the default launch look; `with_catch_colours` repaints them for the shown one.
     return with_catch_colours(theme, skin, background, DEFAULT_LAUNCH)
