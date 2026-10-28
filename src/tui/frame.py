@@ -34,7 +34,7 @@ it shrinks, the composer moves up by as many rows. Once the region's last row
 is the screen's last row, the app passes the region's height as
 `min_height`, so what shrinks there becomes pad rows under the live block,
 above the working row and its tip, and the composer does not move up (but for
-the rows a turn's end leaves nothing to take, `layout`): when the agent view
+the sticky prompt's rows as a turn ends, `layout`): when the agent view
 under it shrinks, it moves down by as many rows.
 
 An empty composer shows `placeholder` after the prompt glyph in the hint

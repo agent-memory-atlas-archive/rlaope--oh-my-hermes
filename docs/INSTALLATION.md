@@ -545,10 +545,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   rows it stays there: what grows above it scrolls the transcript up, and a
   list or question closing there does not pull it up, its rows staying blank
   above the composer until more is printed into them. A turn's end is the one
-  exception: the `↳ you:` reminder, the blank row over it and the blank row
-  over the plan go with the turn, so the composer rises by those rows (at most
-  three, left blank under the footer) and the done line stays one blank row
-  above it; the next turn's output takes it back down. The agent view under
+  exception: the `↳ you:` reminder and the blank row over it go with the turn,
+  so the composer rises by those two rows (left blank under the footer) and
+  the done line stays one blank row above it; the next turn's output takes it
+  back down. The agent view under
   it takes at most a quarter of the screen, seven rows on a terminal of 28
   rows or more (so a one-row composer's input row is row 16 of 24 or 31 of
   40), raised only to show every running agent and never past a third of the

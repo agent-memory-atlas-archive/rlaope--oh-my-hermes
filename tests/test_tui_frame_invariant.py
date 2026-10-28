@@ -657,8 +657,8 @@ class AppBottomRowsTests(unittest.TestCase):
         # The owner's report (2026-10-28): after a long turn, three blank rows stood between `✻ 7m 11s · 12 tools`
         # and the composer. Once the prompt scrolled off, its sticky echo and the blank row over it took two rows on
         # the bottom rows, scrolling two transcript rows away for good, and at the turn's end they stayed as pad rows.
-        # The blank row over the plan went the same way. The region gives those rows up as the turn ends: the composer
-        # rises by them, and the next turn's output takes it back down to the bottom rows.
+        # The region gives those two rows up as the turn ends: the composer rises by them, and the next turn's output
+        # takes it back down to the bottom rows. A short turn, its prompt still on screen, had no sticky: nothing moves.
         from test_tui_agent_view import relay, STARTS
         from test_tui_live_region_pass import PLAN
         from test_tui_modes import drawn, make_app, type_text
@@ -672,8 +672,8 @@ class AppBottomRowsTests(unittest.TestCase):
             return next(count for count in range(len(screen)) if screen[done + count + 1].strip())
 
         for rows, cols in ((24, 80), (40, 120)):
-            for extra in ("", "plan", "agents"):
-                with self.subTest(size=f"{cols}x{rows}", extra=extra):
+            for tools, extra in ((12, ""), (12, "plan"), (12, "agents"), (1, "")):
+                with self.subTest(size=f"{cols}x{rows}", tools=tools, extra=extra):
                     app = make_app(rows=rows, cols=cols)[0]
                     app._on_input(Key(CHAR, "l", ctrl=True))
                     drawn(app)
@@ -690,7 +690,7 @@ class AppBottomRowsTests(unittest.TestCase):
                     event("message.start")
                     if extra == "agents":
                         relay(app, STARTS)
-                    for n in range(12):
+                    for n in range(tools):
                         args = {"command": f"ls {n}"}
                         event("tool.start", tool_id=f"c{n}", name="terminal", args=args)
                         drawn(app)
@@ -699,15 +699,18 @@ class AppBottomRowsTests(unittest.TestCase):
                         drawn(app)
                     event("message.delta", text="Every listing matched.")
                     busy = drawn(app)
-                    self.assertTrue([row for row in busy if row.startswith("↳ you: check the tree")])
+                    sticky = [row for row in busy if row.startswith("↳ you: check the tree")]
+                    self.assertEqual(bool(sticky), tools == 12)
                     self.assertEqual((app.frame_budget.slot > 0, app.frame_budget.agents > 0),
                                      (extra == "plan", extra == "agents"))
                     self.assertEqual(app.region.last_row(rows), rows - 1)
                     event("message.complete", text="Every listing matched.", usage={})
                     ended = drawn(app)
-                    self.assertEqual(blank_under_done(ended), 1, ended)  # the spacing between any two blocks
+                    # The spacing between any two blocks. Over the plan one more blank row stays: the plan's own
+                    # blank row, which the running turn had and the idle tail's spacer stands in for, a separate row.
+                    self.assertEqual(blank_under_done(ended), 1 + (extra == "plan"), ended)
                     rose = self.where(busy)[0] - self.where(ended)[0]
-                    self.assertEqual(rose, 2 + (extra == "plan"))  # the sticky, its blank row, the plan's blank row
+                    self.assertEqual(rose, 2 if sticky else 0)  # the sticky and the blank row over it, no more
                     self.assertFalse(any(ended[rows - rose :]), ended)  # the rows given up: under the region
                     type_text(app, "and again")
                     app._on_input(Key(ENTER))

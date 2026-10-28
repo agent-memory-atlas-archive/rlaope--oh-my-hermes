@@ -37,12 +37,11 @@ All notable changes will be documented here.
   rows. That scrolled two transcript rows into scrollback, where nothing can
   bring them back. When the turn ended, the region kept its height, so the
   done line (`✻ 7m 11s · 12 tools`) stood three blank rows above the
-  composer, and four with the plan shown. The frame that ends a turn now
-  gives up the rows nothing in it takes: the reminder, its blank row, and the
-  blank row over the plan. The done line sits one blank row above the
-  composer or the plan, as between any two blocks. The composer rises by
-  those rows, at most three, with the freed rows left blank under the footer,
-  and the next turn's output takes it back to the bottom rows.
+  composer. The frame that ends a turn now gives up the reminder's two rows,
+  which nothing in it takes, so the done line sits one blank row above the
+  composer, as between any two blocks. The composer rises by those two rows,
+  left blank under the footer, and the next turn's output takes it back to
+  the bottom rows.
 
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character

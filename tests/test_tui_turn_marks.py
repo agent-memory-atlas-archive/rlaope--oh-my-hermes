@@ -676,11 +676,11 @@ class SettledTailTests(unittest.TestCase):
                 plan = next(index for index, line in enumerate(screen) if "[Plan]" in line)
                 done = max(index for index, line in enumerate(screen[:plan]) if line.startswith("  ✻ "))
                 # The spacer row every block opens with, then the panel. On the bottom rows the region keeps its
-                # height as the turn ends, but not the rows only the running turn had and nothing takes at its end:
-                # the blank row over the plan (2026-10-27 spacing) and, under a tall group, the sticky prompt row
-                # and the blank row over it. Those stood here as blank rows until the next prompt (the owner's report
-                # of 2026-10-28); the region gives them up and the composer rises by them.
-                self.assertEqual(plan - done - 1, 1, "\n".join(screen[done - 1 : plan + 1]))
+                # height as the turn ends, and a 40-row screen gave the running turn its blank row over the working
+                # row and over the plan (2026-10-27 spacing): one of them stays until the next prompt. A tall group's
+                # sticky prompt row and the blank row over it stood here too until the owner's report of 2026-10-28;
+                # the region gives those up as the turn ends. Blank rows only, the done line right above them.
+                self.assertEqual(plan - done - 1, 2, "\n".join(screen[done - 1 : plan + 1]))
                 self.assertEqual(set(screen[done + 1 : plan]), {""}, "\n".join(screen[done - 1 : plan + 1]))
 
     def test_the_prompt_and_its_sticky_echo_are_never_on_screen_together(self) -> None:
