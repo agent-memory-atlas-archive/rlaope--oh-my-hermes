@@ -133,7 +133,9 @@ class BidiControlTests(unittest.TestCase):
         screen = drawn(app)
         writes = "".join(app.terminal.writes)  # type: ignore[attr-defined]
         self.assertFalse(any(ch in writes for ch in self.BIDI))
-        self.assertTrue(any("echo safe ~ fr- mr ; done" in line for line in screen), screen)
+        # The `;` is a separator whatever the controls around it draw: each command on a row of its own, in order.
+        rows = [line.strip("▌ ") for line in screen]
+        self.assertEqual(rows[rows.index("echo safe ~ fr- mr") + 1], "done", screen)
 
 
 class RosterFeedTests(unittest.TestCase):
@@ -859,9 +861,10 @@ class RoomTests(unittest.TestCase):
             top = box_top(pinned(app))
             self.assertEqual(app.frame_budget.agents, 4)
             app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
-            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (None, 3))
+            # The approval's rule over its choices (2026-10-28) is the slot's within its cap, here the view's third row.
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (None, 2))
             app._on_event(Event("message.complete", SID, {"text": "done"}))
-            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (None, 3))
+            self.assertEqual((box_top(drawn(app)), app.frame_budget.agents), (None, 2))
             app.slot_opened_at = app.clock() - 10.0  # past the delay that drops keys pressed as it opened
             app._on_input(Key(ENTER))
             self.assertIsNone(app.slot)

@@ -104,6 +104,31 @@ All notable changes will be documented here.
   archived only with its hash, version and catalog row read back, published
   only when the destination's own URL resolves to the same hash, and the
   final file is the one the person approved, never the newest mtime. (#2335)
+- **An approval in the OMH TUI shows every risky command, not just the one
+  Hermes named.** Hermes names a command line by the first dangerous pattern
+  it matches, and the slot printed the line as one wrapped block. One real
+  request chained 14 commands and read as "recursive delete", while the same
+  block force-removed a worktree, force-deleted two branches and deleted a
+  remote branch. The slot now splits the line at its top-level `&&`, `||`, `;`
+  and line breaks, keeping a here-document with its command and reading no
+  comment. Each command is listed on a row of its own, and each one that runs
+  `rm` recursively or on a path from `/`, deletes or force-pushes a remote
+  branch, force-deletes a local branch, force-removes a worktree, hard-resets
+  or force-cleans is marked `▲`, with the home directory written `~` where the
+  shell would read it so. Only when the list does not fit, and Hermes' own
+  description names a risk the slot marked, do the commands that change
+  nothing (`cd`, `echo`, `ls`, `grep`, read-only `git` and `gh` and the like,
+  writing no file, with no assignment in front and no risk inside quotes) fold
+  into one `+ N other commands (cd, git, …) · ctrl+o shows all` row; every
+  other command stays listed. Hermes knows far more dangerous patterns than
+  the slot, so when it flagged one the slot does not know, nothing folds and a
+  long list is cut from its end with the usual Ctrl+O marker. Risks Hermes did
+  not name get a `✦ OMH also sees:` row under its header. Quoted text and the
+  arguments of `echo` or `grep` never match. Each choice now has an icon and a
+  tone: `✗ deny`, `✓ allow`, `★ always allow`, `✎ tell Hermes`. The
+  highlighted one is bold on a band of its tone. Ctrl+O still pages the
+  command whole, as Hermes sent it. Deny stays first and selected, and the
+  keys do not change.
 - **The OMH TUI says when OMH caught a model mistake.** OMH's catches
   reached only the model, so an install looked like it did nothing. Now the
   moment one happens the transcript gets one row, `✦ OMH` stepped through

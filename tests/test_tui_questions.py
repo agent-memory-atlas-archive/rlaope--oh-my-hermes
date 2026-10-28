@@ -60,13 +60,13 @@ class QuestionViewTests(unittest.TestCase):
         self.assertIs(app.pager, app.question_view)
         text = paged(app)
         self.assertEqual([row for row in text if "echo line" in row], [f"▌   echo line {n}" for n in range(1, 21)])
-        self.assertIn("▌ ❯ allow once", text)
+        self.assertIn("▌ ❯ ✓ allow once", text)
         self.assertEqual(client.answers, [])
         press(app, Key(CHAR, "q"))
         self.assertIsNone(app.pager)
         self.assertIs(app.slot.request_id, "srq-1")  # type: ignore[union-attr]
         self.assertEqual(app.slot.selected, 1)  # type: ignore[union-attr]
-        self.assertIn("▌ ❯ allow once", drawn(app))
+        self.assertIn("▌ ❯ ✓ allow once", drawn(app))
         self.assertEqual(client.answers, [])
 
     def test_esc_in_the_pager_leaves_it_and_denies_nothing(self) -> None:
@@ -281,7 +281,7 @@ class QuestionOutcomeTests(unittest.TestCase):
         app, client = opened(ServerRequest("srq-1", "approval", {
             "command": "rm -rf ./x", "description": "recursive delete", "choices": ["once", "session", "always", "deny"],
         }))
-        self.assertIn("▌   always allow recursive delete (Hermes saves it)", drawn(app))
+        self.assertIn("▌   ★ always allow recursive delete (Hermes saves it)", drawn(app))
         press(app, Key(DOWN), Key(DOWN), Key(DOWN), Key(ENTER))
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "always"}})])
         # The TUI sent the choice; that Hermes saved it is not something it saw.
