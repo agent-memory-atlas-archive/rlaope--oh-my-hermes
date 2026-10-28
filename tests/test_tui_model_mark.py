@@ -84,7 +84,8 @@ class OpenedPickerTests(unittest.TestCase):
         answer(app, client, OPTIONS)
         screen = drawn(app)
         header = next(index for index, line in enumerate(screen) if line.startswith(" Model ("))
-        self.assertTrue(screen[header + 1].startswith(f"❯ {CURRENT_MARK} {RUNNING}"), screen)
+        # The first row under the header's rule.
+        self.assertTrue(screen[header + 2].startswith(f"❯ {CURRENT_MARK} {RUNNING}"), screen)
 
 
 if __name__ == "__main__":

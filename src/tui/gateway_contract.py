@@ -63,7 +63,9 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     # See CONFIG_SET_VALUES: `scope` is deliberately not declared. `confirm_expensive_model` goes only with a model,
     # once the person picked "switch anyway" after Hermes answered `confirm_required`.
     "config.set": frozenset({"key", "value", "session_id", "confirm_expensive_model"}),
-    "session.list": frozenset({"limit"}),
+    # `title`: an exact-title lookup, which `/sessions <title>` asks after a shared gateway refused the title as an id;
+    # a gateway that does not know it answers with its normal listing, which the TUI scans the same way.
+    "session.list": frozenset({"limit", "title"}),
     # Bare `/model`: the providers and models Hermes offers this session, for the picker (`refresh` for
     # `/model --refresh`: Hermes asks the providers again). The pick goes back as `config.set model`. Asked
     # without a session, the answer's `model` and `provider` are the profile's configured default.
