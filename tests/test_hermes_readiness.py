@@ -1,11 +1,37 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from _cli_harness import run_cli
+
+from omh.workflows.hermes_readiness import _path_registered
+
+
+class SkillDirRegistrationTests(unittest.TestCase):
+    """An entry is read as Hermes reads it: `${VAR}` then `~`, anchored at the home."""
+
+    def test_a_variable_and_a_home_relative_entry_name_the_skills_directory(self) -> None:
+        with TemporaryDirectory() as tmp, TemporaryDirectory() as unrelated:
+            root = Path(tmp)
+            home = root / "hermes"
+            skills = root / "omh" / "skills"
+            skills.mkdir(parents=True)
+            home.mkdir()
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                with mock.patch.dict(os.environ, {"OMH_TEST_OMH_ROOT": (root / "omh").as_posix()}):
+                    self.assertTrue(_path_registered(skills, ["${OMH_TEST_OMH_ROOT}/skills"], home))
+                # Relative to the home, never to this command's directory.
+                self.assertTrue(_path_registered(skills, ["../omh/skills"], home))
+                self.assertFalse(_path_registered(skills, ["omh/skills"], home))
+            finally:
+                os.chdir(cwd)
 
 
 class HermesReadinessCliTests(unittest.TestCase):

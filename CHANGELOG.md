@@ -64,6 +64,23 @@ All notable changes will be documented here.
   collected; only the installer-managed command, which retires the pack in
   the same write, counts it as a registration. A relative entry, which
   Hermes anchors at its own home, never matches.
+- **A skills entry spelled through `${VAR}` is matched the way Hermes reads
+  it.** Hermes expands `${VAR}` and `~` in `skills.external_dirs` before it
+  resolves an entry, but setup, update and `omh doctor` expanded only `~`,
+  so `${XDG_DATA_HOME}/omh/generations/<id>/skills` beside the pointer was
+  neither retired nor reported and the home lost every OMH skill once the
+  pointer moved. Such entries are now expanded first; one whose variable is
+  unset is left untouched, as Hermes leaves it. A Windows entry rooted
+  without a drive (`\omh\...`), which Hermes loads from its home's drive, is
+  matched on every Python version instead of through 3.12 only. A relative
+  entry, which Hermes reads under its own home, is no longer resolved
+  against the directory `omh` runs from, so update cannot retire it or read
+  the home as registered through it, and doctor cannot count it as a second
+  managed directory. Uninstall's
+  check for a store another Hermes home still names, `omh hermes
+  readiness` and the installed-skill weight advisory expand entries the same
+  way and read a relative one under the home that names it, so uninstall
+  keeps a store a home names as `../omh/skills`.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child

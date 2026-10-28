@@ -20,22 +20,29 @@ and the update post-check report a home that still names two, in the same
 words. This module is the one place both sides read the candidate set and
 spell the finding, so the writer and the readers cannot drift: both match an
 entry by its real path, the way Hermes reads it, so a spelling through `~`,
-a trailing slash or a symlink is the same directory to the migration that it
-is to the finding.
+a trailing slash, a `${VAR}` or a symlink is the same directory to the
+migration that it is to the finding.
 
 Pure path and text work: no config write, no subprocess, no network.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import sys
 
-from .config_adapter import ensure_external_dir, external_dirs, remove_external_dir_entries
-from ..paths import OmhPaths, configured_omh_home
-from .lifecycle_safety import primary_hermes_home
+from .config_adapter import (
+    ensure_external_dir,
+    expand_external_dir_entry,
+    external_dir_names_a_root,
+    external_dirs,
+    remove_external_dir_entries,
+)
+from ..paths import OmhPaths, configured_omh_home, managed_command_venv_dir
+from .lifecycle_safety import command_runtime_owned, primary_hermes_home
 from ..plugin_bundle.omh import runtime_paths
 
 AMBIGUOUS_REGISTRATION_NEXT_ACTION = "run `omh update`"
@@ -44,6 +51,41 @@ AMBIGUOUS_REGISTRATION_NEXT_ACTION = "run `omh update`"
 def external_dir_key(path: str | Path) -> str:
     """One comparable spelling of a registered directory across separators and case."""
     return os.path.normcase(os.path.normpath(str(path))).replace("\\", "/")
+
+
+def managed_command_runtime() -> dict[str, object]:
+    """Whether the running `omh` is the installer-managed command, and why not when it is not."""
+    venv_dir = managed_command_venv_dir()
+    if venv_dir is None:
+        return {"managed": False, "reason": "no home directory or OMH_VENV_DIR is available"}
+    executable = Path(sys.executable).expanduser()
+    if not command_runtime_owned(executable, venv_dir):
+        return {
+            "managed": False,
+            "reason": "current omh command is not running from the installer-managed OMH venv",
+            "python": str(executable.resolve()),
+            "venv_dir": str(venv_dir),
+        }
+    return {"managed": True, "reason": "", "python": str(executable), "venv_dir": str(venv_dir)}
+
+
+def registered_skill_dir(
+    paths: OmhPaths, *, current: Path | None, runtime: Callable[[], Mapping[str, object]]
+) -> Path:
+    """The ONE managed skills directory this command writes into a home's registration.
+
+    The shared generation pointer when it is on disk and the running command
+    is the installer-managed one, otherwise `paths.skills_dir` -- never the
+    running generation's own pack, which the next update would leave beside
+    the pointer. `omh setup`, `omh update` and `omh chat
+    --auto-apply-target-change` all write through this. `current` and
+    `runtime` (`managed_command_runtime`) are the caller's own bindings,
+    passed in for the reason `managed_skill_dir_candidates` takes `current`;
+    `runtime` is only called once the pointer is on disk.
+    """
+    if current is not None and current.is_dir() and runtime().get("managed"):
+        return current
+    return paths.skills_dir
 
 
 def managed_skill_dir_candidates(paths: OmhPaths, *, current: Path | None) -> list[Path]:
@@ -114,7 +156,10 @@ def migrate_managed_registration(
     older entry spelled through `~`, a trailing slash or a symlink is
     retired too -- Hermes expands and resolves every entry, and a spelling
     the migration could not match would be reported as an ambiguity that
-    `omh update` can never clear. An entry resolving to `registered_dir`
+    `omh update` can never clear. A relative entry is never matched: Hermes
+    anchors it at its own home, so resolving it against this command's
+    working directory would name a directory Hermes never reads
+    (`external_dir_names_a_root`). An entry resolving to `registered_dir`
     itself is one directory to Hermes and stays. Whether a home should be
     registered at all, and whether this command may retire anything, are the
     caller's questions: this function always writes today's path, the
@@ -136,7 +181,9 @@ def migrate_managed_registration(
     candidate_reals.discard(registered_real)
     packs = set(generation_pack_entries(change.text, current))
     to_retire = [
-        entry for entry in external_dirs(change.text) if _real_key(entry) in candidate_reals or entry in packs
+        entry
+        for entry in external_dirs(change.text)
+        if entry in packs or _rooted_real_key(entry) in candidate_reals
     ]
     removal = remove_external_dir_entries(change.text, to_retire)
     retired = list(to_retire) if removal.changed else []
@@ -158,22 +205,36 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     owns. Matched by the real path of the `generations` directory, so the
     entry's spelling through `~`, a trailing slash or a link to the root is
     the same entry; `generations/<id>` itself is not resolved, because the
-    pack it names may no longer exist. A relative entry is never one: Hermes
-    anchors it at its own home, so it names a directory there, not under the
-    managed root, whatever directory this command runs from. Config order is
-    kept.
+    pack it names may no longer exist. An entry is expanded the way Hermes
+    expands it (`expand_external_dir_entry`), so a spelling through `${VAR}`
+    is the same entry too. A relative entry is never one: Hermes anchors it at
+    its own home, so it names a directory there, not under the managed root,
+    whatever directory this command runs from (`external_dir_names_a_root`).
+    Config order is kept.
     """
     if current is None:
         return []
     generations = _real_key(current.parent.parent / "generations")
     entries: list[str] = []
     for entry in external_dirs(config_text):
-        normalized = os.path.normpath(os.path.expanduser(entry))
-        if not os.path.isabs(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
+        normalized = os.path.normpath(expand_external_dir_entry(entry))
+        if not external_dir_names_a_root(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
             continue
         if _real_key(os.path.dirname(os.path.dirname(normalized))) == generations:
             entries.append(entry)
     return entries
+
+
+def _rooted_real_key(entry: str) -> str | None:
+    """The real-path key of an entry Hermes reads from a root, else None.
+
+    A relative entry names a directory under Hermes' home, which no reader
+    here is given; resolved against this command's working directory it
+    could be taken for a managed directory when OMH runs from the managed
+    root.
+    """
+    expanded = expand_external_dir_entry(entry)
+    return _real_key(expanded) if external_dir_names_a_root(expanded) else None
 
 
 def _real_key(path: str | Path) -> str:
@@ -195,23 +256,26 @@ def registered_managed_entries(
     once; two that resolve to different directories are the ambiguity. An
     entry whose directory is not on disk is not counted at all: Hermes skips
     a missing external directory when it collects skills, so nothing can be
-    ambiguous through it. Config order is kept so a message names them the
-    way the file does.
+    ambiguous through it. A relative entry is not counted either: Hermes
+    reads it under its own home, never under this command's working
+    directory (`_rooted_real_key`). Config order is kept so a message names
+    them the way the file does.
 
     With `current`, the shared pointer, an entry naming one generation's own
     pack is managed too (`generation_pack_entries`): beside the pointer it
     becomes a second directory as soon as the pointer moves on.
     """
-    candidates = [*candidates, *map(Path, generation_pack_entries(config_text, current))]
+    packs = generation_pack_entries(config_text, current)
+    candidates = [*candidates, *(Path(expand_external_dir_entry(entry)) for entry in packs)]
     keys = {external_dir_key(candidate) for candidate in candidates}
     reals = {_real_key(candidate) for candidate in candidates}
     seen: set[str] = set()
     entries: list[str] = []
     for entry in external_dirs(config_text):
-        real = _real_key(entry)
-        if external_dir_key(entry) not in keys and real not in reals:
+        real = _rooted_real_key(entry)
+        if real is None or (external_dir_key(entry) not in keys and real not in reals):
             continue
-        if not os.path.isdir(os.path.expanduser(entry)):
+        if not os.path.isdir(expand_external_dir_entry(entry)):
             continue
         if real in seen:
             continue
