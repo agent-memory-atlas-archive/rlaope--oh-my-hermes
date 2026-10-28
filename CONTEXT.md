@@ -501,7 +501,8 @@ right under them (the streaming tail, one slot for the plan or a prompt
 Hermes asked, the composer, the info line under it, and under that the agent
 view, always expanded while there are agents) repaints; the
 composer sits right under the output until the screen fills, then stays on
-the bottom rows, and a slot closing there does not move it. When it cannot start
+the bottom rows, and a slot closing there does not move it (a turn's end gives
+up the rows only the running turn had). When it cannot start
 (an OMH that cannot import itself, gateway unavailable, protocol drift at
 startup) it creates the sentinel file `omh` named for that launch and exits
 75; that exit, and a blocker found before anything starts, has `omh` say why
