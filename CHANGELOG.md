@@ -6,6 +6,21 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Fourteen more models cost out at their vendors' list prices.** OMH
+  already recognized Grok 4.7, 4.6, 4.5 and 4.3, DeepSeek V4 Pro, Gemini
+  3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, GLM-5.3-FlashX, Qwen3.8-Max and
+  Qwen3.8-Flash, Solar Pro 4, MiniMax-M3 and MiniMax-M3.1-Flash, but it had
+  no price for them, so a run on one that the host recorded no cost for
+  showed no estimate. Each now
+  carries the first-party list price read on 2026-10-28, with its cached-input
+  rate where the vendor publishes one. The rows also note what the table
+  cannot represent: Grok's 200K whole-request tier, DeepSeek's off-peak half
+  rate, the Gemini Flash introductory price that doubles on 2027-01-01, and
+  MiniMax-M3's 512K tier. The xAI, DeepSeek, Gemini and Z.ai ids also get
+  provider checks; Qwen, Solar and MiniMax have no provider family to name.
+  No shipped chain names any of them. GLM-5.2 was costed at the GLM-4.x rate
+  (0.6/2.2) and now uses its own 1.4/4.4. Its Ultrafast serving moves from a
+  halved figure to the same base rate, as no separate tier rate is published.
 - **The route hint stops saying the same thing twice.** Route hint text is
   about 18% of the OMH text a model reads per session, and part of it repeated
   other text in the same block: a hint's `adjacent_workflows=` line that equals
@@ -117,8 +132,9 @@ All notable changes will be documented here.
   home is on `C:`. Registration no longer adds the pointer beside an entry
   that already names it another way (`C:\omh\current\skills` on Windows,
   `${VAR}`, `~`, or relative to the home), and `omh uninstall
-  --registration-only` removes every spelling setup retires. Nothing is
-  retired or removed that Hermes does not read through that home.
+  --registration-only` removes every spelling setup retires (`${VAR}`, `~`,
+  relative to the home, or through a symlink). Nothing is retired or
+  removed that Hermes does not read through that home.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
@@ -134,14 +150,15 @@ All notable changes will be documented here.
   synchronized update as the frame drawn after it, so a terminal that holds
   the update (DEC 2026) swaps the old screen for the new one in one step.
 - **The TUI's menus lose their bands, a sent prompt gains one, and the
-  bottom row names the branch.** The completion menu, the session, model,
+  bottom line names the branch.** The completion menu, the session, model,
   rewind and launch-look pickers, the agent list, the delegation view and the
   bot board's sessions draw no fill: the highlighted row is a `❯` and a bold
   name in the skill hue, other commands keep that hue and their descriptions
   are muted. A prompt you sent runs on a band to the right edge, tinted by
-  the launch look. From 30 rows the region's last row shows the session
-  directory's git branch with its changed and untracked counts, read off the
-  screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
+  the launch look. The one line under the composer starts with
+  `[ ⚚ OMH Native ]` and shows the session directory's git branch with its
+  changed and untracked counts, read off the screen's thread, first on its
+  right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
 - **A long `/compress` is waited for, and side answers are not lost
@@ -205,6 +222,34 @@ All notable changes will be documented here.
   flight, goes with its own images. A `!` line or a command that sends no
   prompt gives its tokens back to the composer, with a notice. Typing the
   label yourself attaches nothing.
+- **A queued prompt can be sent into the running turn now, and one line sits
+  under the composer.** As in Claude Code, a muted row under the queued
+  prompts says `ctrl+enter to send now · ↑ to edit` while a turn runs; on an
+  empty composer the key sends the oldest queued prompt into the turn as a
+  steer and takes it off the queue. A queued `!` line, skill prompt or plan
+  prompt keeps its place and shows no row. Where the terminal has not shown
+  that it tells Ctrl+Enter from Enter, the row names Ctrl+J, which every
+  terminal sends apart from Enter; with text typed, Ctrl+J still adds a line
+  and Ctrl+Enter steers that text, as before. A sent-now steer Hermes refuses
+  goes back to the head of the queue as it was, and one it took but had not
+  read when the turn is stopped is queued again, with a notice. The info line
+  no longer says `/steer <text> steers`; `/steer <text>` still works and
+  stays in `/help` and the `?` list. The branch row is gone: the info line
+  starts with `[ ⚚ OMH Native ]` and the branch, then the mode and the keys
+  that matter, with the title, model, context and effort on the right, and
+  the row goes back to the transcript. Between turns it no longer says
+  `? for shortcuts`: the launch card names `? every shortcut`, and `?` still
+  opens the list. As the line narrows the right side's fields go first, then
+  the branch's name is cut, then the badge shortens to `[ ⚚ OMH ]` and `⚚`;
+  the mode's label and a question's or picker's keys keep their words. The
+  start-up query now asks every terminal for its kitty keyboard flags
+  (`CSI ? u`): one that answers gets them pushed, Otty with its
+  `kitty-keyboard` setting on among them, and names Ctrl+Enter from the
+  first frame; a terminal the environment does not name (over SSH) must also
+  name itself through XTVERSION as one known to read them, never Ghostty. The
+  push is undone on every exit but `kill -9`. A steer or a second
+  `/compress` that waited behind a compression and went unanswered now says
+  how long it really waited, not 120 s or 660 s.
 - **The exit card is the session's title and how to resume it.** Leaving
   the OMH TUI printed five lines: the title, a line of id, turns, messages
   and duration, a line of tokens and model, `omh --resume <id>` and

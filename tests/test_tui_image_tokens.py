@@ -379,6 +379,19 @@ class KeptTokenTests(ImageTestCase):
         self.assertEqual([image.label for image in self.app.queued[-1].images], ["[Image #1]"])
 
 
+    def test_the_send_now_key_leaves_a_queued_prompt_with_images_for_the_turns_end(self) -> None:
+        self.app.turn_pending = True
+        data = self.paste_image()
+        self.type("first")
+        self.press(Key(ENTER))
+        self.press(Key(ENTER, ctrl=True))  # the send-now key on an empty composer: a steer would drop the image
+        self.assertEqual(self.methods("session.steer"), [])
+        self.assertEqual(len(self.app.queued), 1)
+        self.hermes.complete()
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] first", [data])])
+
+
 class CommandTests(ImageTestCase):
     def test_a_plan_mode_prompt_goes_with_its_images(self) -> None:
         self.app.plan_mode = True

@@ -1301,9 +1301,9 @@ pairing so a benchmark claim can never mix in other prompt changes.
   declared alias (`DECLARED_MODEL_CONTRACT_PROJECTIONS`): it inherits the
   contract with `declared_inheritance` provenance and a read date, because
   the next Flash release moves it. `deepseek-v4-flash` and
-  `deepseek-v4-flash-vision-exp` are routed to V4.1 Flash by the vendor, and
-  `deepseek-v4-pro` routes to it from 2026-09-14 pending a V4.1 Pro; none of
-  those spellings inherits — a routed alias is the vendor's wire concern,
+  `deepseek-v4-flash-vision-exp` are routed to V4.1 Flash by the vendor, while
+  `deepseek-v4-pro` stays a separately priced model (pricing page re-read
+  2026-10-28); none of those spellings inherits — a routed alias is the vendor's wire concern,
   not a catalog claim. The contract records a 1,000,000-token context,
   384,000 max output, thinking on by default at `high`, the documented
   effort ladder `low` / `high` / `max` with no floor to raise to (the

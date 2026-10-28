@@ -155,6 +155,34 @@ class FamilyPrefixParityTests(unittest.TestCase):
     def test_grok_family_is_recognized(self) -> None:
         self.assertEqual(model_family("grok-code-fast-1"), "grok")
 
+    def test_catalog_sync_ids_are_recognized(self) -> None:
+        # The ids priced in the 2026-10-28 catalog sync, as each vendor serves
+        # them and as a gateway spells them: every one reaches its family
+        # block instead of falling to `unknown`. This pins prefix recognition
+        # that predates the sync (the price and provider rows do not feed
+        # `model_family()`), so a later prefix change cannot silently drop one.
+        expected = {
+            "grok-4.7": "grok",
+            "grok-4.6": "grok",
+            "grok-4.5": "grok",
+            "x-ai/grok-4.3": "grok",
+            "deepseek-v4-pro": "deepseek",
+            "gemini-3.8-flash": "gemini",
+            "gemini-3.6-flash": "gemini",
+            "google/gemini-3.5-flash-lite": "gemini",
+            "glm-5.3-flashx": "glm",
+            "z-ai/glm-5.3-flashx": "glm",
+            "qwen3.8-max": "qwen",
+            "qwen3.8-flash": "qwen",
+            "solar-pro4": "solar",
+            "MiniMax-M3": "minimax",
+            "MiniMax-M3.1-Flash": "minimax",
+            "minimax/minimax-m3.1-flash": "minimax",
+        }
+        for model_id, family in expected.items():
+            with self.subTest(model_id=model_id):
+                self.assertEqual(model_family(model_id), family)
+
     def test_solar_family_is_recognized(self) -> None:
         # Upstage Solar ids previously fell to "unknown" (#1052); the family
         # label is what routes them to their calibration instead of generic.
