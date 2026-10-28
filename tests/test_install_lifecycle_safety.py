@@ -389,6 +389,28 @@ class RegistrationOptOutTests(_Fixture):
         self.assertEqual(external_dirs(read_config(config_path)), ["../personal/skills", str(foreign)])
         self.assertTrue((personal / "mine" / "SKILL.md").is_file())
 
+    def test_registration_only_reads_a_profile_s_spellings_from_the_profile_s_own_home(self) -> None:
+        # The profile twin: `../../../omh/skills` in `profiles/bot` is the
+        # managed store's skills only when read from that profile's home.
+        # Read from the primary's it names nothing and the opt-out would
+        # leave it; the profile-relative personal entry still stays.
+        self._setup_primary()
+        bot = self.hermes / "profiles" / "bot"
+        personal = self.root / "personal" / "skills"
+        _write(personal / "mine" / "SKILL.md", "# not owned by OMH\n")
+        entries = ["../../../omh/skills", "${OMH_TEST_STORE}/skills/", "../../../personal/skills"]
+        _write(bot / "config.yaml", "skills:\n  external_dirs:\n" + "".join(f"    - {entry}\n" for entry in entries))
+        self.assertEqual(external_dirs(read_config(bot / "config.yaml")), entries)
+
+        with mock.patch.dict(os.environ, {"OMH_TEST_STORE": self.omh.as_posix()}):
+            status, _, stderr = run_cli(
+                ["--hermes-home", str(bot), "--omh-home", str(self.omh), "uninstall", "--registration-only"]
+            )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(external_dirs(read_config(bot / "config.yaml")), ["../../../personal/skills"])
+        self.assertTrue((personal / "mine" / "SKILL.md").is_file())
+
 
 class CorruptProfileUpdateTests(_Fixture):
     """F3: a bad profile is a named row, never an uncaught exception."""
