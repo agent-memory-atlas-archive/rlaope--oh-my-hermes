@@ -27,6 +27,7 @@ from test_tui_modes import SID, RecordingClient, make_app, notices, type_text
 from omh.tui import gateway_contract as contract
 from omh.tui.app import (
     IMAGE_NOT_SENT_NOTICE,
+    IMAGE_WAIT_LINE,
     UNSENT_BACK_NOTICE,
     UNSENT_BACK_RESPAWN,
     UNSENT_BACK_SWITCH,
@@ -148,6 +149,10 @@ class ImageTestCase(unittest.TestCase):
 
     def shown(self) -> str:
         return self.app.composer.expanded()
+
+    def screen(self) -> str:
+        self.app._render()
+        return "\n".join(self.app.terminal.screen.lines())  # type: ignore[attr-defined]
 
     def methods(self, prefix: str = "image.") -> list[str]:
         return [method for method, _params in self.client.calls if method.startswith(prefix)]
@@ -390,21 +395,115 @@ class GateTests(ImageTestCase):
                     self.hermes.admit()
                 self.assertEqual(self.hermes.turns[1], ("[Image #2] ", [second]))
 
-    def test_enter_before_a_pastes_answer_sends_the_text_alone_and_the_image_stays_in_the_draft(self) -> None:
-        for warm in (True, False):
-            with self.subTest(warm=warm):
-                self.setUp(warm)
-                self.type("describe this")
-                self.app._on_input(CTRL_V)
-                self.app._on_input(Key(ENTER))  # the paste is not answered yet
-                self.assertEqual([method for method, _params in self.client.calls], ["clipboard.paste"])
-                self.hermes.pump()
-                if not warm:
-                    self.hermes.admit()
-                self.assertEqual(self.hermes.turns, [("describe this", [])])
-                self.assertEqual(self.users()[-1].images, ())
-                self.assertEqual(self.shown(), "[Image #1] ")
-                self.assertEqual(self.hermes.held, [])
+    def test_enter_before_a_pastes_answer_waits_for_it_and_goes_with_that_image(self) -> None:
+        # Case D: the person pasted, then sent at once; the image is meant for that prompt, as in Claude Code.
+        for name, intake in (("Ctrl+V", CTRL_V), ("a dropped path", Paste("/h/images/drop.png"))):
+            for warm in (True, False):
+                with self.subTest(name, warm=warm):
+                    self.setUp(warm)
+                    self.type("describe this")
+                    self.app._on_input(intake)
+                    self.app._on_input(Key(ENTER))  # the intake is not answered yet: the prompt waits for it
+                    self.assertEqual(len(self.client.calls), 1)
+                    self.hermes.pump()
+                    if not warm:
+                        self.hermes.admit()
+                    image = list(self.hermes.files.values())[0]
+                    self.assertEqual(self.hermes.turns, [("describe this [Image #1]", [image])])
+                    self.assertEqual(self.users()[-1].images, ("[Image #1]",))
+                    self.assertEqual(self.shown(), "")
+                    self.assertEqual(self.hermes.held, [])
+
+    def test_a_prompt_queued_before_a_pastes_answer_goes_with_that_image(self) -> None:
+        self.app.turn_pending = True  # a turn runs: Enter queues
+        self.type("after this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.hermes.pump()
+        (line,) = self.app.queued
+        self.assertEqual((line.text, [image.label for image in line.images]), ("after this [Image #1]", ["[Image #1]"]))
+        self.assertEqual(self.shown(), "")
+        self.hermes.complete()
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("after this [Image #1]", [list(self.hermes.files.values())[0]])])
+
+    def test_a_submit_held_while_the_turn_ends_goes_once_its_paste_is_answered(self) -> None:
+        self.app.turn_pending = True
+        self.type("after this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))  # held: the paste is out
+        self.app._on_event(Event("message.complete", SID, {"text": "done"}))  # the turn ends before the answer
+        self.assertEqual(self.methods("prompt."), [])
+        self.hermes.pump()
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("after this [Image #1]", [list(self.hermes.files.values())[0]])])
+
+    def test_esc_gives_back_a_submit_held_for_its_paste_and_the_image_joins_the_draft(self) -> None:
+        self.type("describe this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.app._on_input(Key(ESCAPE))  # before the paste answers
+        self.assertEqual(self.shown(), "describe this")
+        self.hermes.pump()
+        self.assertEqual(self.shown(), "describe this [Image #1] ")
+        self.assertEqual(self.methods("prompt."), [])
+        self.assertNotIn(IMAGE_WAIT_LINE, self.screen())
+
+    def test_a_second_submit_waits_behind_a_held_one_and_they_go_in_order(self) -> None:
+        self.app.turn_pending = True  # a turn runs: both queue, in the order they were sent
+        type_text(self.app, "first")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        type_text(self.app, "second")  # the paste is still out
+        self.app._on_input(Key(ENTER))
+        self.hermes.pump()
+        self.assertEqual([line.text for line in self.app.queued], ["first [Image #1]", "second"])
+
+    def test_a_submit_held_for_two_pastes_goes_once_both_are_answered_with_both(self) -> None:
+        type_text(self.app, "compare")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.hermes.pump()
+        self.hermes.admit()
+        first, second = list(self.hermes.files.values())[:2]
+        self.assertEqual(self.hermes.turns, [("compare [Image #1] [Image #2]", [first, second])])
+
+    def test_a_held_ctrl_enter_whose_paste_brought_no_image_still_steers(self) -> None:
+        self.app.transcript.running = True
+        type_text(self.app, "look at b")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER, ctrl=True))
+        (paste,) = [index for index, (method, _params) in enumerate(self.client.calls) if method == "clipboard.paste"]
+        self.hermes.answered = len(self.client.calls)
+        self.app._on_response(Response(paste + 1, {"attached": False, "message": "No image found in clipboard"}, None))
+        self.assertEqual(self.client.calls[-1], ("session.steer", {"session_id": SID, "text": "look at b"}))
+
+    def test_a_prompt_waiting_on_a_paste_says_so_under_the_queue_with_the_time_once_it_is_long(self) -> None:
+        now = [100.0]
+        self.app.clock = lambda: now[0]
+        self.type("describe this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        screen = self.screen()
+        self.assertIn(IMAGE_WAIT_LINE, screen)
+        self.assertNotIn(f"{IMAGE_WAIT_LINE} ", screen)
+        now[0] += 5.0
+        self.assertIn(f"{IMAGE_WAIT_LINE} 5s", self.screen())
+        self.hermes.pump()
+        self.assertNotIn(IMAGE_WAIT_LINE, self.screen())
+
+    def test_a_paste_hermes_never_answers_holds_the_prompt_only_until_it_expires(self) -> None:
+        now = [100.0]
+        self.app.clock = lambda: now[0]
+        self.type("describe this")
+        self.app._on_input(CTRL_V)
+        self.app._on_input(Key(ENTER))
+        self.hermes.answered = len(self.client.calls)  # the paste is never answered
+        now[0] += 10_000.0
+        self.app._expire_calls()
+        self.assertEqual(self.client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "describe this"}))
+        self.assertNotIn(IMAGE_WAIT_LINE, self.screen())
 
     def test_a_staging_hermes_never_answers_is_said_and_the_prompt_goes_without_it(self) -> None:
         now = [100.0]
@@ -467,6 +566,51 @@ class GateTests(ImageTestCase):
         self.assertEqual(self.hermes.waiting[-1], "next")
         self.assertEqual(self.hermes.held, [])  # what the first left staged was detached
 
+    def test_a_staging_answered_after_a_session_switch_touches_nothing_in_the_new_session(self) -> None:
+        self.paste_image()
+        self.type("A")
+        self.app._on_input(Key(ENTER))  # A's staging is out, unanswered
+        stale = [index for index, (method, _params) in enumerate(self.client.calls) if method == "image.attach_bytes"]
+        self.hermes.answered = len(self.client.calls)
+        self.app._enter_session({"session_id": SID, "stored_session_id": "stored-2", "info": {}})
+        self.app._on_input(ctrl("u"))  # A came back to the draft: clear it, and send B in the new session
+        self.paste_image()
+        self.type("B")
+        self.app._on_input(Key(ENTER))  # B stages now
+        before = len(self.client.calls)
+        self.app._on_response(Response(stale[0] + 1, {"attached": True, "path": "/old/upload_1.png"}, None))
+        self.assertEqual(self.client.calls[before:], [])  # no detach in the new session, and the gate stays closed
+        self.app._on_input(CTRL_V)
+        self.assertEqual(self.client.calls[before:], [])
+
+    def test_an_answer_to_an_admitted_prompt_never_opens_the_gate_for_the_next_one(self) -> None:
+        self.paste_image()
+        self.app._on_input(Key(ENTER))
+        self.hermes.pump(len(self.client.calls))  # the staging
+        (submit,) = [index for index, (method, _params) in enumerate(self.client.calls) if method == "prompt.submit"]
+        self.hermes.answered = len(self.client.calls)  # its answer comes late
+        self.app._on_event(Event("message.start", SID, {}))
+        self.app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.paste_image()
+        self.app._on_input(Key(ENTER))  # the next prompt stages, unanswered
+        self.hermes.answered = len(self.client.calls)
+        self.app._on_response(Response(submit + 1, {"status": "queued"}, None))
+        before = len(self.client.calls)
+        self.app._on_input(CTRL_V)
+        self.assertEqual(self.client.calls[before:], [])  # the staging prompt still holds the gate
+
+    def test_a_turn_that_ends_while_the_next_prompt_stages_leaves_the_gate_closed(self) -> None:
+        self.app.busy_mode = "steer"
+        self.app.transcript.running = True  # a turn runs: the prompt goes into it
+        self.paste_image()
+        self.app._on_input(Key(ENTER))  # staging out, unanswered
+        self.hermes.answered = len(self.client.calls)
+        self.app.transcript.running = False
+        self.app._on_event(Event("message.complete", SID, {"text": "done"}))
+        before = len(self.client.calls)
+        self.app._on_input(CTRL_V)
+        self.assertEqual(self.client.calls[before:], [])
+
     def test_a_session_switch_while_a_prompt_stages_gives_it_back_and_a_paste_goes_in_the_new_one(self) -> None:
         self.paste_image()
         self.type("x")
@@ -507,6 +651,17 @@ class RespawnTests(unittest.TestCase):
         (stage,) = new.named("image.attach_bytes")
         self.assertEqual(base64.b64decode(stage["content_base64"]), PNG)
 
+
+    def test_a_paste_the_old_gateway_never_answered_does_not_hold_a_prompt_on_the_new_one(self) -> None:
+        from test_tui_respawn import crash, crashing
+
+        app, old, spawner, _now = crashing()
+        app._on_input(CTRL_V)
+        self.assertEqual(old.calls[-1][0], "clipboard.paste")  # out, and lost with the old gateway
+        crash(app, old)
+        type_text(app, "x")
+        app._on_input(Key(ENTER))
+        self.assertEqual(spawner.made[0].named("prompt.submit"), [{"session_id": app.sid, "text": "x"}])
 
 class KeptTokenTests(ImageTestCase):
     """A line that sends no prompt takes no image: its tokens come back to the draft, and a notice says so."""
@@ -638,6 +793,24 @@ class ReadImageTests(unittest.TestCase):
                 fifo = Path(home, "fifo.png")
                 os.mkfifo(fifo)
                 self.assertIsNone(read_image(str(fifo)))  # returns at once: no writer is waited for
+
+
+class ReadImageRegularFileTests(unittest.TestCase):
+    def test_a_directory_or_a_fifo_is_never_read(self) -> None:
+        opened: list[int] = []
+        real = os.fdopen
+
+        def watch(fd: int, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+            opened.append(fd)
+            return real(fd, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as home, patch("omh.tui.app.os.fdopen", watch):
+            self.assertIsNone(read_image(home))
+            if hasattr(os, "mkfifo"):
+                fifo = Path(home, "fifo.png")
+                os.mkfifo(fifo)
+                self.assertIsNone(read_image(str(fifo)))
+        self.assertEqual(opened, [])  # refused by what fstat said, before any read
 
 
 class AttachmentShapeTests(ImageTestCase):

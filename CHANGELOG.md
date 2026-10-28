@@ -420,6 +420,13 @@ All notable changes will be documented here.
   reads inside `input_tokens` on the Codex route, and the lane priced them
   again as cache reads, so one task read $35.77 instead of $4.98. The control
   model moves from the retired `gpt-5.6-sol` to `gpt-6.1-sol`.
+- **An image pasted or dropped right before Enter goes with that prompt.**
+  The OMH TUI used to send the text and leave the image in the next draft
+  when Enter beat Hermes' answer to the paste. Now the prompt waits for the
+  answer and goes with the image, as in Claude Code, and the composer shows
+  a muted `waiting for the image…` row meanwhile, with the seconds after
+  three. Esc gives the held prompt back. A paste Hermes never answers holds
+  the prompt only until it expires.
 
 ## 4.0.3 - 2026-10-27
 

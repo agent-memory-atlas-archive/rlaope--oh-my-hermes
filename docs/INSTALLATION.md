@@ -1042,8 +1042,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   The prompt keeps the `[Image #N]` labels in its text so the model can name
   them, and the transcript lists under it each image Hermes accepted for it
   (`⎿  [Image #1]`). A `!` line or a command that sends no prompt gives its
-  tokens back to the composer. Typing `[Image #1]` yourself attaches
-  nothing, and a prompt recalled from history is plain text. Dropping a file
+  tokens back to the composer. Enter right after a paste or a drop waits for
+  Hermes to answer it, under `waiting for the image…`, and the prompt goes
+  with that image; Esc meanwhile gives the prompt back. Typing `[Image #1]`
+  yourself attaches nothing, and a prompt recalled from history is plain
+  text. Dropping a file
   that is not an image types Hermes' reference to it instead.
 - A line that starts with `!` is a shell command: while the composer holds
   one, its `❯` mark turns the shell family's amber and the info line says
