@@ -11,9 +11,9 @@ All notable changes will be documented here.
   other text in the same block: a hint's `adjacent_workflows=` line that equals
   the block's top-level one, and a `fallback_action_label=` or
   `next_action_label=` that only respells its action's underscores. Each one
-  now renders only when it differs from the text it would repeat. Across 138
-  routing-precision cases that saves 27,147 of 230,473 route-hint characters
-  (11.8%). Selection, the payload, `first_response_shape=` and
+  now renders only when it differs from the text it would repeat. Rendered
+  before and after on the same 68 routing-intervention hints, the block went
+  from 106,957 to 98,121 characters (8.3%), and no hint grew. Selection, the payload, `first_response_shape=` and
   `not_evidence_yet=` do not change, and the per-turn ratchets drop with the
   render (`pre_llm_call` 5786 -> 5632, fallback 7338 -> 7184).
 - **The answer-first plan line stops repeating its whole rule.** While a
