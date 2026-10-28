@@ -6,6 +6,24 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Six more model categories you can route a subagent to.** `google-search`
+  (Gemini 3.1 Pro first, for research grounded in Google Search), `x-search`
+  (Grok 4.7 first, for live search on X), `review` (GPT-6.1 Sol at xhigh, so
+  a different model tries to break the diff), `swarm` (DeepSeek V4.1 Flash
+  at low, for many parallel workers), `forensics` (GPT-6 Astra at xhigh, for
+  root-causing a live symptom or a trace) and `synthesize` (Claude Opus 5.5
+  at xhigh, for merging many results into one answer) join the eighteen
+  shipped chains, in the Hermes lane, the Codex and Claude Code tables, the
+  delegate-route tool and the public chain table. Each chain ends on a model
+  from another provider. They are opt-in: no role or task size picks them,
+  so every existing route is unchanged. Two heads repeat an earlier
+  category's (`forensics` shares `ultrabrain`'s, `synthesize` shares
+  `architect`'s), so an unrouted child on those models is still labelled
+  with the earlier name; a lane routed through `omh_delegate_route` keeps its
+  own. Six HUD labels move with the new chains: DeepSeek V4.1 Flash at low
+  now reads `swarm`, Gemini 3.1 Pro at medium `google-search`, Kimi K3.1 Pro
+  at high `x-search` and at xhigh `review`, and GPT-6.1 Sol at xhigh and
+  Grok 4.7 at high, which had no label, read `review` and `x-search`.
 - **Selecting the transcript no longer copies its left bar, and the pager
   copies on drag.** Each block's rail was a `┃` glyph, so a terminal's own
   selection pasted `┃` in front of every row. The rail is now one cell
@@ -33,7 +51,7 @@ All notable changes will be documented here.
   rate, the Gemini Flash introductory price that doubles on 2027-01-01, and
   MiniMax-M3's 512K tier. The xAI, DeepSeek, Gemini and Z.ai ids also get
   provider checks; Qwen, Solar and MiniMax have no provider family to name.
-  No shipped chain names any of them. GLM-5.2 was costed at the GLM-4.x rate
+  No shipped chain named any of them until Grok 4.7 joined `x-search` (above). GLM-5.2 was costed at the GLM-4.x rate
   (0.6/2.2) and now uses its own 1.4/4.4. Its Ultrafast serving moves from a
   halved figure to the same base rate, as no separate tier rate is published.
 - **The route hint stops saying the same thing twice.** Route hint text is
