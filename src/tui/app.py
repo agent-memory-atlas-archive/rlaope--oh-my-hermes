@@ -4607,14 +4607,14 @@ class App(ModesMixin, AgentViewMixin):
         self._refresh_catalog()  # its workspace may hold project-local skills the last one did not
 
     def _on_resume_refused(self, target: str, error: dict[str, Any], notice: str = "", by_title: bool = False) -> bool:
-        """Say the refusal, and stay. A typed target the owner refused (`RESUME_REFUSED`) is first looked up among
-        the listed sessions (`_resume_titled`): Hermes' shared gateway resumes ids only, where its stdio entry also
-        took an exact title. Only a listing that fails too says the refusal."""
+        """Say the refusal, and stay. A typed target the owner refused (`RESUME_REFUSED`) is looked up as a title
+        first (`_resume_looked_up`): Hermes' shared gateway resumes ids only, where its stdio entry also took an exact
+        title."""
         if by_title and error.get("code") == RESUME_REFUSED:
             self._request(
-                "session.list", {"limit": SESSION_LIST_LIMIT},
-                lambda result: self._resume_titled(target, error, result, notice),
-                lambda _listing: self._on_resume_refused(target, error),
+                "session.list", {"title": target},
+                lambda result: self._resume_looked_up(target, error, result, notice),
+                lambda _lookup: self._scan_titles(target, error, notice),
             )
             return True
         message = as_text(error.get("message")) or "refused"
@@ -4623,14 +4623,44 @@ class App(ModesMixin, AgentViewMixin):
         )
         return True
 
+    def _resume_looked_up(self, target: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
+        """The owner's exact-title lookup (`session.list` `title`, over its whole store), after it refused `target`
+        as an id.
+
+        The session that has `target` as its id was refused as itself, so the
+        refusal is said. One session titled exactly `target` (or whose lineage
+        is, `root_title`) is resumed by the id it answers with. Anything else,
+        a gateway that ignored `title` and listed as usual included, goes to
+        the listing's scan (`_scan_titles`).
+        """
+        rows = [row for row in result.get("sessions") or [] if isinstance(row, dict)]
+        if any(target in (row.get("id"), row.get("resolved_id")) for row in rows):
+            self._on_resume_refused(target, error)
+            return
+        titled = [row for row in rows if target in (row.get("title"), row.get("root_title"))]
+        found = as_text(titled[0].get("resolved_id")) or as_text(titled[0].get("id")) if len(titled) == 1 else ""
+        if found:
+            self._switch_session(found, notice)
+        else:
+            self._scan_titles(target, error, notice)
+
+    def _scan_titles(self, target: str, error: dict[str, Any], notice: str) -> None:
+        """Look `target` up among the listed sessions (`_resume_titled`); a listing that fails says the refusal."""
+        self._request(
+            "session.list", {"limit": SESSION_LIST_LIMIT},
+            lambda result: self._resume_titled(target, error, result, notice),
+            lambda _listing: self._on_resume_refused(target, error),
+        )
+
     def _resume_titled(self, title: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
-        """`title` against the listed sessions, after the owner refused it as an id.
+        """`title` against the listed sessions, after the owner refused it as an id and found no one session with it.
 
         A listed session with that id was refused as itself, so the refusal
-        is said. Otherwise the one session titled exactly `title` is resumed by
-        its id, matching case first and then ignoring it. Several with that
-        title, or none, open the picker filtered by `title` and say how many
-        matched; with no session listed at all the refusal is said.
+        is said. Otherwise the one session titled `title` is resumed by its
+        id, matching case first and then ignoring it. Several with that title
+        (they differ only in case: Hermes refuses an exact duplicate), or none,
+        open the picker filtered by `title` and say how many matched; with no
+        session listed at all the refusal is said.
         """
         rows = session_rows(result)
         if not rows or any(row.id == title for row in rows):

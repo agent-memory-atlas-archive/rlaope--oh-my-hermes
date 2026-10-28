@@ -373,6 +373,14 @@ class SessionTranslationTests(AdapterCase):
         [(_, answer)] = adapter.from_owner(_answer(stored["id"], {"sessions": [{"id": "b"}, {"id": "c"}, {"id": "d"}]}))
         self.assertEqual(answer, _answer(11, {"sessions": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}))
 
+    def test_a_title_lookup_is_one_call_answered_as_the_owner_answers_it(self) -> None:
+        # The owner looks a title up over its whole store, and refuses `title` with a `scope` (invalid_params).
+        adapter = self.adapter()
+        lookup = self.own_call(adapter.from_client(_call(13, "session.list", {"title": "Release notes"})), "session.list")
+        self.assertEqual(lookup["params"], {"title": "Release notes"})
+        found = {"sessions": [{"id": "a", "resolved_id": "a", "title": "Release notes"}], "scope": "stored"}
+        self.assertEqual(adapter.from_owner(_answer(lookup["id"], found)), [(TO_CLIENT, _answer(13, found))])
+
     def test_other_calls_and_events_pass_through_unchanged(self) -> None:
         adapter = self.adapter()
         frame = _call(12, "commands.catalog", {"session_id": SID})

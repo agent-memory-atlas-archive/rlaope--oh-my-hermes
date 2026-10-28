@@ -162,19 +162,23 @@ All notable changes will be documented here.
   `-c "<title>"` line is gone with the counts, since the id always opens
   this session and a title can be shadowed by a newer `<title> #N`.
 - **The `/sessions` picker reads as a table, and `/resume` is `/sessions`.**
-  Sessions sit under a muted heading for the day each started (Today,
-  Yesterday, Previous 7 days, Earlier), in Hermes' order inside a day; age
-  and message count are right-aligned in columns of their own; and a rule
-  sets the list off from its header and its filter row, in the `/rewind`
-  and `/model` pickers too. The arrows and Page keys move past the
-  headings, and a filter keeps only the headings of days with a match. The
-  `/` menu now offers `/resume` under its own name, first for `/res` and
-  `/resu`, where `/res` used to highlight Hermes' `/compress` and `/resu`
-  went to Hermes' own classic-only `/resume`. On Hermes' shared gateway,
-  which resumes ids only, `/sessions <title>` and `/resume <title>` were
-  refused `not_found`; a title it refuses is now looked up among the listed
-  sessions (case first, then ignoring it) and the one session with it is
-  opened, while several or none open the picker filtered by the title.
+  The session you are in heads the list under `Current` (named `this
+  session` until it has a title), and the rest sit under a muted heading for
+  the day each started (Today, Yesterday, Previous 7 days, Earlier), in
+  Hermes' order inside a day. Age and message count are right-aligned in
+  columns of their own, and a rule sets the list off from its header and
+  its filter row, in the `/rewind` and `/model` pickers too. The arrows and
+  Page keys move past the headings, a heading never ends the visible list
+  with its sessions below, and a filter keeps only the headings with a
+  match. The `/` menu offers `/resume` under its own name once what you type
+  starts it and is not in `sessions`. `/res`, which highlighted Hermes'
+  `/compress`, now starts with `/resume`; every other short prefix keeps
+  the top row it had. On Hermes' shared gateway, which resumes ids only,
+  `/sessions <title>` and `/resume <title>` were refused `not_found`. A
+  refused title is now looked up through the gateway's exact-title
+  `session.list`, over the whole store, then among the listed sessions
+  ignoring case. The one session with it opens; several (titles that
+  differ only in case) or none open the picker filtered by the title.
 
 ## 4.0.3 - 2026-10-27
 

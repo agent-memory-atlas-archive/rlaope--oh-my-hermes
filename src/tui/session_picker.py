@@ -41,7 +41,14 @@ FILTER_PLACEHOLDER = "type to filter"
 # The sessions' day groups, by the local calendar day a session started: today, yesterday, the five days before
 # (the past week), and everything older or of no known start.
 DAY_GROUPS = ("Today", "Yesterday", "Previous 7 days", "Earlier")
-# A picker draws a rule under its header and one over its filter row while it keeps at least this many list rows.
+# The session this TUI is in heads the list under a group of its own: Hermes' rows carry no last activity, so by its
+# start a long session resumed today would sink under `Earlier`.
+CURRENT_GROUP = "Current"
+CURRENT_LABEL = "this session"  # the current session's name while it has no title, in place of its id
+# A start time past this many seconds is in milliseconds (1e11 s is past the year 5000).
+MILLISECONDS_FROM = 1e11
+# A picker draws a rule under its header, and then one over its filter row, while it keeps at least this many list
+# rows: one more row of room never shows one fewer row of list.
 RULED_MIN_ROWS = 3
 # Its rules are set in by one cell on each side, as its header is, so no row of it starts as the composer's rules do.
 RULE_INSET = " "
@@ -73,6 +80,12 @@ def _number(value: object) -> float:
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
 
 
+def _seconds(value: object) -> float:
+    """A start time in seconds: one given in milliseconds is scaled down."""
+    number = _number(value)
+    return number / 1000 if number > MILLISECONDS_FROM else number
+
+
 def session_rows(result: Mapping[str, object]) -> list[SessionRow]:
     """The rows of a `session.list` answer, in its order; rows without an id are skipped."""
     sessions = result.get("sessions")
@@ -89,7 +102,7 @@ def session_rows(result: Mapping[str, object]) -> list[SessionRow]:
                 id=entry["id"],
                 title=title if isinstance(title, str) else "",
                 preview=preview if isinstance(preview, str) else "",
-                started_at=_number(entry.get("started_at")),
+                started_at=_seconds(entry.get("started_at")),
                 message_count=int(_number(entry.get("message_count"))),
             )
         )
@@ -100,7 +113,10 @@ def day_group(started_at: float, now: float) -> int:
     """Which of `DAY_GROUPS` a session that started at `started_at` is in at `now`, by the local calendar."""
     if started_at <= 0:
         return len(DAY_GROUPS) - 1
-    days = (date.fromtimestamp(now) - date.fromtimestamp(started_at)).days
+    try:
+        days = (date.fromtimestamp(now) - date.fromtimestamp(started_at)).days
+    except (ValueError, OverflowError, OSError):  # a start no calendar holds is no known start
+        return len(DAY_GROUPS) - 1
     return 0 if days <= 0 else 1 if days == 1 else 2 if days < 7 else 3
 
 
@@ -164,16 +180,19 @@ def picker_frame(
     width: int,
     theme: Theme,
     max_rows: int,
+    heading: Callable[[int], bool] | None = None,
 ) -> PickerFrame:
     """A picker's rows within `max_rows`, the same for every picker.
 
     A header (`head`), the `count` list rows `row` draws scrolled so the
     highlighted `index` shows (`empty` when there are none), then the
     filter row, its caret at the end of what was typed so an IME pre-edit
-    shows there. A rule (`picker_rule`) sets the list off from the header
-    and from the filter row while `RULED_MIN_ROWS` list rows still fit;
-    with less room the rules go first. With two rows or fewer the
-    header goes too, so the highlighted row stays.
+    shows there. A rule (`picker_rule`) sets the list off from the header,
+    and then one from the filter row, while `RULED_MIN_ROWS` list rows
+    still fit; with less room the rules go first. With two rows or fewer
+    the header goes too, so the highlighted row stays. A list row that
+    only heads the rows after it (`heading`) is never the last row shown
+    while its rows are below: the list scrolls one further.
     """
     if max_rows <= 0:
         return PickerFrame([], None, 1)
@@ -183,11 +202,16 @@ def picker_frame(
         lines = [current(index), filter_line(query, width, theme)][:max_rows]
         return PickerFrame(lines, (1, caret) if max_rows == 2 else None, 1)
     header = truncate_line(head, width)
-    rules = [picker_rule(width, theme)] if max_rows - 4 >= RULED_MIN_ROWS else []
-    body = max_rows - 2 - 2 * len(rules)
+    rule = picker_rule(width, theme)
+    above = [rule] if max_rows - 3 >= RULED_MIN_ROWS else []
+    below = [rule] if max_rows - 4 >= RULED_MIN_ROWS else []
+    body = max_rows - 2 - len(above) - len(below)
     start = min(max(index - body + 1, 0), max(count - body, 0))
-    rows = [current(number) for number in range(start, min(start + body, count))] if count else [current(0)]
-    lines = [header, *rules, *rows, *rules, filter_line(query, width, theme)]
+    end = min(start + body, count)
+    if heading is not None and start < index and end < count and heading(end - 1):
+        start, end = start + 1, end + 1
+    rows = [current(number) for number in range(start, end)] if count else [current(0)]
+    lines = [header, *above, *rows, *below, filter_line(query, width, theme)]
     return PickerFrame(lines, (len(lines) - 1, caret), body)
 
 
@@ -207,10 +231,17 @@ class SessionPicker:
     now: float = 0.0  # the last render's clock, which the day groups count from; 0 keeps the list order
 
     def visible(self) -> list[SessionRow]:
-        """The rows the filter keeps, a day group after another (`day_group`), in list order inside each."""
+        """The rows the filter keeps: the current session first, then a day group after another (`day_group`), in
+        list order inside each."""
         needle = self.query.casefold()
         kept = [row for row in self.rows if not needle or needle in f"{row.title}\n{row.preview}\n{row.id}".casefold()]
-        return sorted(kept, key=lambda row: day_group(row.started_at, self.now)) if self.now > 0 else kept
+        return sorted(kept, key=self._rank) if self.now > 0 else kept
+
+    def _rank(self, row: SessionRow) -> int:
+        return -1 if row.id == self.current else day_group(row.started_at, self.now)
+
+    def _group(self, row: SessionRow) -> str:
+        return CURRENT_GROUP if row.id == self.current else DAY_GROUPS[day_group(row.started_at, self.now)]
 
     def handle_key(self, event: Key | Paste) -> PickerAction | None:
         """Apply one key; a `PickerAction` when the person picked a row or closed the picker."""
@@ -243,7 +274,7 @@ class SessionPicker:
         self.index = min(self.index, max(len(shown) - 1, 0))
         entries: list[SessionRow | str] = []  # a session's row, or a day group's heading before its first
         for row in shown:
-            group = DAY_GROUPS[day_group(row.started_at, now)]
+            group = self._group(row)
             if group not in entries:
                 entries.append(group)
             entries.append(row)
@@ -255,6 +286,7 @@ class SessionPicker:
             (Span(title, theme.heading),), len(entries), highlighted,
             lambda number: self._entry(entries[number], number == highlighted, width, theme, now, ages, digits),
             " no session matches the filter", self.query, width, theme, max_rows,
+            lambda number: isinstance(entries[number], str),
         )
         self.page, self.caret = frame.page, frame.caret
         return frame.lines
@@ -267,7 +299,8 @@ class SessionPicker:
         if isinstance(entry, str):
             inset = cell_width(CHOICE_MARK) + cell_width(f"{CURRENT_MARK} ")
             return (Span(" " * inset, theme.muted), Span(entry, theme.muted))
-        mark = CURRENT_MARK if entry.id == self.current else " "
+        current = entry.id == self.current
+        label = CURRENT_LABEL if current and not entry.title.strip() else entry.label
         age = f"{age_text(entry.started_at, now):>{ages}}{COLUMN_GAP}" if ages else ""
         meta = age + _messages(entry.message_count, digits)
-        return picker_row(highlighted, f"{mark} ", entry.label, meta, width, theme)
+        return picker_row(highlighted, f"{CURRENT_MARK if current else ' '} ", label, meta, width, theme)

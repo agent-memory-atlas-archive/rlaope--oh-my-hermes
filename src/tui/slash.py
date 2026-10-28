@@ -71,7 +71,8 @@ class SlashCommand:
     # pick is echoed as the command it runs.
     echo_bare: bool = True
     # The aliases the `/` menu offers under their own name, when what is typed starts one and is not in `name`:
-    # Claude Code's names for these commands. The rest still run, and are drawn as known, but get no row.
+    # `/resume`, the name the launch card and the last-session line give /sessions. The rest still run, and are
+    # drawn as known, but get no row, so no alias ever displaces a command's own name.
     menu_aliases: tuple[str, ...] = ()
 
 
@@ -79,8 +80,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     # The terminal's own commands.
     SlashCommand("help", LOCAL, "Show commands"),
     SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)", echo_bare=False),
-    SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",), menu_aliases=("exit",)),
-    SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset"), menu_aliases=("clear",)),
+    SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
+    SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
     SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker; an id or exact title after it switches)",
                  ("switch", "session", "resume"), echo_bare=False, menu_aliases=("resume",)),
     SlashCommand("redraw", LOCAL, "Repaint the screen", echo_bare=False),
