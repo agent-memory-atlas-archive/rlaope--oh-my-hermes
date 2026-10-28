@@ -111,7 +111,7 @@ DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
 TEXT_ROLES = (
     "running", "label", "ok", "warn", "error", "thinking", "heading", "code", "link", "quote",
     "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment", "hint", "muted", "faint", "mode_accept",
-    "mode_plan", "brand", "slash",
+    "mode_plan", "brand", "slash", "background_word",
 )
 # The roles drawn only as a glyph or an edge: each reaches EDGE_CONTRAST.
 GLYPH_ROLES = ("dim", "rule", "prompt")
@@ -208,6 +208,9 @@ LAUNCH_PALETTES: dict[str, tuple[LogoPalette, LogoPalette]] = {
 # A sent prompt's band: the launch look's card-edge colour moved this far toward the background (on a dark one, on a
 # light one), so the band is that look's tint at about 1.2-1.5:1 against the background.
 PROMPT_BAND_SHARE = (0.6, 0.8)
+# How far the background-process row's `background` word moves from `label` toward the background (owner, 2026-10-28:
+# a little darker than the label); it is lifted back to TEXT_CONTRAST where that takes it below.
+BACKGROUND_WORD_SHARE = 0.18
 LOGO_BLOCK = "█"
 # How far a drop-shadow glyph (the logo's box-drawing characters) is pulled from its face colour toward the background.
 LOGO_SHADOW_SHARE = 0.55
@@ -257,6 +260,7 @@ class Theme:
     brand: Style  # the banner's title, bold: the palette's accent, which no other role uses
     kinds: tuple[Style, ...]  # a call's name, bold, in its tool family's hue, in `KIND_FAMILIES` order
     slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
+    background_word: Style  # the background-process row's `background` and spinner: bold, `label` a step dimmer
     aura: tuple[Style, ...] = ()  # a `dag-ulw` in the composer and the rules around it, bold, `AURA_STOPS` stepped
     aura_glint: tuple[Style, ...] = ()  # the same steps toward `AURA_GLINT`: the band that sweeps through them
     prompt_band: Style = Style()  # behind a prompt you sent, edge to edge (`with_prompt_band`); none until set
@@ -453,6 +457,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         brand=Style(fg=read("ui_accent"), bold=True),
         kinds=tuple(Style(fg=hue(family), bold=True) for family in KIND_FAMILIES),
         slash=Style(fg=hue("skill"), bold=True),
+        background_word=Style(fg=_lifted(_mix(read("ui_label"), surface, BACKGROUND_WORD_SHARE), ink, surface,
+                                         TEXT_CONTRAST), bold=True),
         aura=tuple(Style(fg=colour, bold=True) for colour in aura_steps) if moving else (Style(bold=True),),
         aura_glint=tuple(Style(fg=colour, bold=True) for colour in glint_steps) if moving else (Style(bold=True),),
     )

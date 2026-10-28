@@ -119,6 +119,23 @@ All notable changes will be documented here.
   (`omh_catch_log/v1`): a kind from a closed set and small integers, never
   model text, arguments or paths; the HUD payload carries the reading
   session's newest few as `catches`.
+- **The OMH TUI shows a session's background processes, and offers Enter
+  when one ends unreported.** A `terminal` command Hermes ran in the
+  background with `notify_on_complete` off ended without waking the
+  session, and nothing on screen said work was still running. While this
+  session owns one, a row above the composer says
+  `background  terminal(<command>)  1h 07m 13s` and, once the turn is over,
+  who will be told: `🔔 will ping you when done`, `🔔 will ping you on a
+  match` (watch patterns), or `🔕 Hermes won't be pinged · OMH is watching
+  it`. When a process in that last state ends after the turn, the row turns
+  green, `✓ … finished 0:12 ago` (`+N more` when others ended too), the bell
+  rings once, and Enter on an empty composer sends one prompt asking the
+  session to check the results; nothing is sent on its own. The TUI reads
+  Hermes' `processes.json` read-only, matches rows on the session's own key,
+  and asks a host process by pid and recorded start time whether it still
+  runs. A process it cannot ask that way (a sandbox, or off POSIX) says
+  `🔕 won't ping you · ask Hermes for the result` instead, shows only while
+  its row is listed, and is never called finished.
 - **A generation's own skills pack is never registered, and a home left on
   one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
   the running generation's pack (`generations/<id>/skills`) beside the shared

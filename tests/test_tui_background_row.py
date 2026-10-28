@@ -1,0 +1,717 @@
+"""The row above the composer for this session's background processes (`omh.tui.background`).
+
+A `terminal` command Hermes runs in the background with `notify_on_complete`
+off ends without waking the session, so the screen looked dead for an hour
+(owner, 2026-10-28). While this session owns such a process one row says so
+and who will be told when it ends; once one ends unreported the row says it
+finished, the bell rings once, and Enter on an empty composer sends one
+prompt. Driven through `test_tui_modes`' app, the poller's snapshots handed
+in as it would hand them, and Hermes' `processes.json` written in the shape
+the live checkpoint has.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from _tui_lines import line_text
+from test_tui_modes import SID, drawn, make_app, type_text
+
+from omh.tui.app import WORKING_GLYPHS
+from omh.tui.background import (
+    LABEL_CELLS, PROCESSES_FILE, PROCESSES_MAX_BYTES, BackgroundProcess, finished_line, process_label,
+    read_processes, report_prompt, running_line, still_running,
+)
+from omh.tui.bot_board import ON_POSIX, process_facts
+from omh.tui.keys import ENTER, Key
+from omh.skin_pack import theme_for_name
+from omh.tui.panels import HudPoller, HudSnapshot
+from omh.tui.style import NO_COLOR
+from omh.tui.theme import (
+    DEFAULT_THEME, TEXT_CONTRAST, build_theme, contrast_ratio, kind_style, surface_for, with_catch_colours,
+    without_colour,
+)
+from omh.tui.width import cell_width, line_width
+
+STORED = "20261028_101500_ab12cd"
+DARK = "#1E2030"
+NOW = 1_793_160_000.0
+COMMAND = 'cd "/Users/me/work tree" && PYTHONPATH=tests uv run python -m unittest tests.test_payment'
+
+
+def row(**fields: object) -> dict:
+    """One checkpoint entry in the shape `ProcessCheckpointMixin._write_checkpoint` writes."""
+    entry = {
+        "session_id": "proc_36b5cd4d7445", "command": COMMAND, "pid": 88629, "pid_scope": "host",
+        "host_start_time": None, "cwd": "/Users/me/work", "started_at": NOW - 4033, "task_id": "",
+        "owner_task_id": "", "session_key": STORED, "parent_session_id": STORED, "notify_on_complete": False,
+        "watch_patterns": [], "completion_output_chars": 0, "heartbeat_seconds": 0, "output_log": "",
+    }
+    entry.update(fields)
+    return entry
+
+
+def process(**fields: object) -> BackgroundProcess:
+    values = {
+        "proc_id": "proc_36b5cd4d7445", "pid": 88629, "host": True, "start_time": None, "command": COMMAND,
+        "started_at": NOW - 4033, "notify": False, "watched": False,
+    }
+    values.update(fields)
+    return BackgroundProcess(**values)  # type: ignore[arg-type]
+
+
+def text(line) -> str:
+    return line_text(line) if line is not None else ""
+
+
+def bells(app) -> int:
+    return sum(write.count("\a") for write in app.terminal.writes)
+
+
+class Clock:
+    def __init__(self, at: float) -> None:
+        self.at = at
+
+    def __call__(self) -> float:
+        return self.at
+
+
+class ReadProcessesTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.home = tempfile.mkdtemp()
+        self.path = Path(self.home) / PROCESSES_FILE
+
+    def write(self, payload: object) -> None:
+        self.path.write_text(payload if isinstance(payload, str) else json.dumps(payload), encoding="utf-8")
+
+    def test_only_this_session_s_rows_are_read(self) -> None:
+        self.write([
+            row(),
+            row(session_id="proc_other", session_key="agent:main:local:dm:local-a1d7"),
+            row(session_id="proc_slack", session_key="agent:kami:slack:group:T0:C0:1.2", parent_session_id=STORED),
+        ])
+        (found,) = read_processes(self.home, STORED)
+        self.assertEqual((found.proc_id, found.pid, found.host, found.notify, found.watched),
+                         ("proc_36b5cd4d7445", 88629, True, False, False))
+        self.assertEqual(read_processes(self.home, "20261028_000000_ffffff"), ())
+        self.assertEqual(read_processes(self.home, ""), ())
+
+    def test_notify_and_watch_patterns_are_read_as_hermes_writes_them(self) -> None:
+        self.write([
+            row(session_id="proc_a", notify_on_complete=True),
+            row(session_id="proc_b", watch_patterns=["READY"]),
+            row(session_id="proc_c", notify_on_complete="true", watch_patterns=[""]),
+            row(session_id="proc_d", pid_scope="sandbox", pid=True),
+        ])
+        found = {process.proc_id: process for process in read_processes(self.home, STORED)}
+        self.assertEqual((found["proc_a"].notify, found["proc_a"].watched), (True, False))
+        self.assertEqual((found["proc_b"].notify, found["proc_b"].watched), (False, True))
+        self.assertEqual((found["proc_c"].notify, found["proc_c"].watched), (False, False))
+        self.assertEqual((found["proc_d"].host, found["proc_d"].pid), (False, None))
+
+    def test_a_missing_malformed_or_huge_file_reads_as_nothing_and_never_raises(self) -> None:
+        self.assertEqual(read_processes(self.home, STORED), ())  # no file
+        self.assertEqual(read_processes(None, STORED), ())
+        for payload in ("{not json", '{"rows": []}', "[1, null, \"x\"]", "[" * 100_000 + "]" * 100_000,
+                        json.dumps([row(session_id=7), row(started_at=True), row(started_at=float("nan")),
+                                    row(command=None), row(session_id=""), row(started_at=10**400),
+                                    row(started_at=-(10**400)), row(started_at=1e300)])):
+            with self.subTest(payload=payload[:20]):
+                self.write(payload)
+                self.assertEqual(read_processes(self.home, STORED), ())
+        # Numbers too big to be a pid or a start time are dropped, not carried to where they would overflow.
+        nested = "[" * 900 + "]" * 900  # deep, but within what the decoder takes
+        self.write("[" + json.dumps(row(host_start_time=10**400, pid=10**400)).replace(
+            '"watch_patterns": []', f'"watch_patterns": {nested}') + "]")
+        (found,) = read_processes(self.home, STORED)
+        self.assertEqual((found.start_time, found.pid, found.watched), (None, None, False))
+        # Its liveness cannot be asked without a pid, so it runs while listed; nothing raises.
+        self.assertEqual(list(still_running({}, (found,))), [found.proc_id])
+
+    def test_a_huge_number_never_ends_the_poller_thread(self) -> None:
+        # The row with no start is dropped; one with no usable start time or pid runs while it is listed.
+        cases = (({"started_at": 10**400}, ()), ({"host_start_time": 10**400}, ((os.getpid(), None),)),
+                 ({"pid": -(10**400)}, ((None, None),)))
+        for fields, expected in cases:
+            with self.subTest(fields=list(fields)):
+                self.write([row(**{"pid": os.getpid(), **fields})])
+                poller = HudPoller("/omh", None, reader=lambda *_a, **_k: {"hermes_home": self.home}, clock=lambda: 5.0)
+                poller.set_session(STORED)
+                poller.poll_once()  # raises nothing: on the poller's thread an exception would end the thread
+                found = poller.take().processes
+                self.assertEqual(tuple((process.pid, process.start_time) for process in found), expected)
+        self.write(json.dumps([row()]).ljust(PROCESSES_MAX_BYTES + 1))
+        self.assertEqual(read_processes(self.home, STORED), ())
+        self.path.unlink()
+        self.path.mkdir()  # a directory where the file goes
+        self.assertEqual(read_processes(self.home, STORED), ())
+
+    def test_the_file_is_never_written(self) -> None:
+        self.write([row()])
+        before = (self.path.read_bytes(), self.path.stat().st_mtime_ns)
+        read_processes(self.home, STORED)
+        self.assertEqual((self.path.read_bytes(), self.path.stat().st_mtime_ns), before)
+
+
+class LabelTests(unittest.TestCase):
+    def test_a_leading_cd_and_assignments_are_dropped(self) -> None:
+        cases = {
+            COMMAND: "uv run python -m unittest tests…",
+            "cd /repo && pytest -x tests/test_payment.py": "pytest -x tests/test_payment.py",
+            'cd "/a b" && L=/tmp/e2e && rm -rf $L && mkdir -p $L': "rm -rf $L && mkdir -p $L",
+            'FOO="a b c" BAR=1 make test': "make test",
+            "pytest": "pytest",
+            "cd /repo": "cd /repo",  # nothing follows the cd: the command is what it says
+            "--flag=1 run": "--flag=1 run",  # not an assignment
+            "  npm\ttest  ": "npm test",
+            "\x1b[31mnpm test": "npm test",  # escapes never reach the label
+        }
+        for command, label in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(process_label(command), label)
+
+    def test_a_long_command_is_cut_with_an_ellipsis(self) -> None:
+        label = process_label("python " + "x" * 80)
+        self.assertEqual(cell_width(label), LABEL_CELLS)
+        self.assertTrue(label.endswith("…"))
+
+    def test_the_report_prompt_names_the_call_and_the_process(self) -> None:
+        self.assertEqual(
+            report_prompt((process(),)),
+            "The background process `terminal(uv run python -m unittest tests…)` (proc_36b5cd4d7445) finished. "
+            "Check its result and continue.",
+        )
+        self.assertEqual(
+            report_prompt((process(proc_id="proc_a", command="make lint"), process(proc_id="proc_b", command="ls"))),
+            "The background processes `terminal(make lint)` (proc_a), `terminal(ls)` (proc_b) finished. "
+            "Check their results and continue.",
+        )
+
+
+class StillRunningTests(unittest.TestCase):
+    def test_a_row_the_file_dropped_is_kept_while_its_process_runs(self) -> None:
+        tracked = {"proc_a": process(proc_id="proc_a")}
+        self.assertEqual(list(still_running(tracked, (), probe=lambda _p: True)), ["proc_a"])
+        self.assertEqual(still_running(tracked, (), probe=lambda _p: False), {})
+
+    def test_a_listed_row_whose_process_ended_is_not_running(self) -> None:
+        self.assertEqual(still_running({}, (process(),), probe=lambda _p: False), {})
+
+    def test_where_nothing_can_be_asked_the_file_decides(self) -> None:
+        listed = process(proc_id="proc_b", host=False)
+        kept = still_running({"proc_a": process(proc_id="proc_a", host=False)}, (listed,), probe=lambda _p: None)
+        self.assertEqual(list(kept), ["proc_b"])
+
+    def test_the_listed_copy_is_the_newer_one(self) -> None:
+        kept = still_running({"proc_a": process(proc_id="proc_a")}, (process(proc_id="proc_a", notify=True),),
+                             probe=lambda _p: True)
+        self.assertTrue(kept["proc_a"].notify)
+
+    @unittest.skipUnless(ON_POSIX, "signal 0 is a probe only on POSIX")
+    def test_the_default_probe_asks_the_process(self) -> None:
+        with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as child:
+            try:
+                started = process_facts(child.pid)[0]  # recorded while it runs, as Hermes records it at spawn
+            finally:
+                child.kill()
+            child.wait(timeout=30)
+        # Reaped, with its start time: a later process given the same pid does not pass for it.
+        alive = process(proc_id="proc_alive", pid=os.getpid())
+        ended = process(proc_id="proc_ended", pid=child.pid, start_time=started)
+        self.assertEqual(list(still_running({}, (alive, ended))), ["proc_alive"])
+        # A pid that is alive under another start time is another process: the recorded one ended.
+        reused = process(proc_id="proc_reused", pid=os.getpid(), start_time=1)
+        self.assertEqual(still_running({"proc_reused": reused}, ()), {})
+
+
+class PollerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.home = tempfile.mkdtemp()
+        self.path = Path(self.home) / PROCESSES_FILE
+        self.poller = HudPoller("/omh", None, reader=lambda *_a, **_k: {"hermes_home": self.home}, clock=lambda: 5.0)
+
+    def test_a_read_carries_this_session_s_running_processes(self) -> None:
+        pid = os.getpid()
+        self.path.write_text(json.dumps([
+            row(pid=pid, started_at=NOW), row(session_id="proc_other", pid=pid, session_key="another"),
+        ]), encoding="utf-8")
+        self.poller.set_session(STORED)
+        self.poller.take()  # the empty snapshot a switch delivers
+        self.poller.poll_once()
+        snapshot = self.poller.take()
+        self.assertIsNotNone(snapshot)
+        self.assertEqual([found.proc_id for found in snapshot.processes], ["proc_36b5cd4d7445"])
+
+    @unittest.skipUnless(ON_POSIX, "signal 0 is a probe only on POSIX")
+    def test_a_process_another_rewrite_dropped_stays_until_it_ends_and_its_end_is_a_change(self) -> None:
+        self.path.write_text(json.dumps([row(pid=os.getpid())]), encoding="utf-8")
+        self.poller.set_session(STORED)
+        self.poller.poll_once()
+        self.path.write_text("[]", encoding="utf-8")  # another interpreter of the profile rewrote it
+        self.poller.poll_once()
+        self.assertEqual(len(self.poller.take().processes), 1)
+        self.poller.poll_once()
+        self.assertIsNone(self.poller.take())  # nothing changed
+        self.poller.set_session("rotated")
+        self.assertEqual(self.poller.take().processes, ())
+
+
+    def test_a_refresh_keeps_the_next_read_even_when_nothing_changed(self) -> None:
+        self.path.write_text("[]", encoding="utf-8")
+        self.poller.set_session(STORED)
+        self.poller.poll_once()
+        self.poller.take()
+        self.poller.poll_once()
+        self.assertIsNone(self.poller.take())  # nothing changed
+        self.poller.refresh()  # a turn ended
+        self.poller.poll_once()
+        self.assertIsNotNone(self.poller.take())
+        self.poller.poll_once()
+        self.assertIsNone(self.poller.take())  # once
+
+    def test_a_read_under_way_at_a_refresh_is_not_the_read_it_asks_for(self) -> None:
+        reads: list[int] = []
+
+        def reader(*_args: object, **_kwargs: object) -> dict:
+            reads.append(1)
+            if len(reads) == 3:
+                poller.refresh()  # the turn ends while this read is under way
+            return {"hermes_home": self.home}
+
+        poller = HudPoller("/omh", None, reader=reader, clock=lambda: 5.0)
+        poller.set_session(STORED)
+        poller.poll_once()
+        poller.take()
+        poller.poll_once()
+        self.assertIsNone(poller.take())
+        poller.poll_once()
+        self.assertIsNone(poller.take())  # it may have read the file before the turn ended
+        poller.poll_once()
+        self.assertIsNotNone(poller.take())
+
+
+@unittest.skipUnless(ON_POSIX, "signal 0 is a probe only on POSIX")
+class TurnEndTests(unittest.TestCase):
+    """The poller and the app together, a real process in a checkpoint row, nothing else in the read changing."""
+
+    def setUp(self) -> None:
+        self.home = tempfile.mkdtemp()
+        self.clock, self.wall = Clock(100.0), Clock(NOW)
+        self.app, _client = make_app(cols=120, clock=self.clock, wall_clock=self.wall)
+        self.app.stored_id = STORED
+        self.app.poller = HudPoller("/omh", None, reader=lambda *_a, **_k: {"hermes_home": self.home},
+                                    clock=lambda: 5.0)
+        self.app.poller.set_session(STORED)
+
+    def read(self) -> None:
+        self.app.poller.poll_once()
+        self.app._take_hud()
+
+    def start_turn_with(self, child: subprocess.Popen) -> None:
+        """A turn starts `child` in the background (notify off) and the poller reads it while the turn runs."""
+        started = process_facts(child.pid)[0]
+        (Path(self.home) / PROCESSES_FILE).write_text(json.dumps([row(pid=child.pid, host_start_time=started)]),
+                                                      encoding="utf-8")
+        self.app.turn_pending = True
+        self.app.busy_since = self.clock.at
+        self.read()
+        self.assertTrue(text(self.app._background_line(120)).startswith("✻ background"))
+        self.clock.at += 1
+
+    def end_turn(self) -> None:
+        self.app.turn_pending = False  # as `message.complete` ends it
+        self.app._turn_ended()
+
+    def test_a_process_first_seen_during_a_turn_finishes_once_it_ends_after_the_turn(self) -> None:
+        with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as child:
+            try:
+                self.start_turn_with(child)
+                self.end_turn()
+                self.read()  # the read after the turn: nothing in it changed, and it is delivered
+                self.app.poller.poll_once()
+                self.assertIsNone(self.app.poller.take())  # an idle session's reads are unchanged from here on
+                self.assertTrue(text(self.app._background_line(120)).endswith("OMH is watching it"))
+                before = bells(self.app)
+            finally:
+                child.kill()
+            child.wait(timeout=30)
+        self.clock.at += 3600
+        self.wall.at += 3600
+        self.read()
+        self.assertTrue(text(self.app._background_line(120)).startswith("✓ background"),
+                        text(self.app._background_line(120)))
+        self.assertEqual(bells(self.app), before + 1)
+        self.read()
+        self.assertEqual(bells(self.app), before + 1)
+
+    def test_a_read_taken_during_the_turn_and_handed_over_after_it_stamps_nothing(self) -> None:
+        reads = iter(range(1, 1000))
+        # The HUD payload changes on every read, as a live turn's does, so each read is a snapshot of its own.
+        self.app.poller = HudPoller("/omh", None, reader=lambda *_a, **_k: {"hermes_home": self.home,
+                                                                             "tick": next(reads)}, clock=lambda: 5.0)
+        self.app.poller.set_session(STORED)
+        with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as child:
+            try:
+                self.start_turn_with(child)
+                self.app.poller.poll_once()  # mid-turn: it lists the process, and it waits to be taken
+            finally:
+                child.kill()
+            child.wait(timeout=30)  # the process ends while the turn still runs
+        before = bells(self.app)
+        self.end_turn()  # `message.complete`, in the same loop step as the `_take_hud` below
+        self.app._take_hud()  # the mid-turn read, taken with no turn running
+        self.clock.at += 1
+        self.read()  # the read the refresh asked for: the process is gone
+        self.assertIsNone(self.app._background_line(120))
+        self.assertEqual(bells(self.app), before)
+
+    def test_a_process_that_ended_during_the_turn_just_goes(self) -> None:
+        with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as child:
+            try:
+                self.start_turn_with(child)
+                before = bells(self.app)
+            finally:
+                child.kill()
+            child.wait(timeout=30)
+        self.end_turn()
+        self.read()
+        self.assertIsNone(self.app._background_line(120))
+        self.assertEqual(bells(self.app), before)
+
+
+def ask_on_any_platform(case: unittest.TestCase) -> None:
+    """`askable` as on POSIX, so a host process's end can be asked on Windows too; the rows are what is tested."""
+    patcher = patch("omh.tui.background.ON_POSIX", True)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
+class RowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        ask_on_any_platform(self)
+        self.clock, self.wall = Clock(100.0), Clock(NOW)
+        self.app, self.client = make_app(cols=120, clock=self.clock, wall_clock=self.wall)
+        self.app.stored_id = STORED
+
+    def deliver(self, *processes: BackgroundProcess, session: str = STORED) -> None:
+        snapshot = HudSnapshot(session, {}, 0.0, {}, tuple(processes))
+        self.app.poller.take = lambda: snapshot
+        self.app._take_hud()
+
+    def shown(self) -> str:
+        return text(self.app._background_line(120))
+
+    def test_nothing_shows_without_a_process(self) -> None:
+        self.deliver()
+        self.assertIsNone(self.app._background_line(120))
+        self.assertFalse(any("background" in line for line in drawn(self.app)))
+
+    def test_a_turn_in_progress_shows_no_right_side(self) -> None:
+        self.app.turn_pending = True
+        self.deliver(process())
+        self.assertEqual(self.shown().split("  "), ["✻ background", "terminal(uv run python -m unittest tests…)",
+                                                     "1h 07m 13s"])
+
+    def test_after_the_turn_it_says_hermes_will_ping_when_notify_is_on(self) -> None:
+        self.deliver(process(notify=True))
+        self.assertTrue(self.shown().endswith("  🔔 will ping you when done"), self.shown())
+
+    def test_watch_patterns_wake_the_session_on_a_match_not_on_exit(self) -> None:
+        self.deliver(process(watched=True))
+        self.assertTrue(self.shown().endswith("  🔔 will ping you on a match"), self.shown())
+
+    def test_with_nothing_to_wake_the_session_it_says_omh_is_watching(self) -> None:
+        self.deliver(process())
+        shown = self.shown()
+        self.assertTrue(shown.startswith("✻ background  terminal(uv run python -m unittest tests…)  1h 07m 13s"))
+        self.assertTrue(shown.endswith("  🔕 Hermes won't be pinged · OMH is watching it"), shown)
+        self.assertEqual(line_width(self.app._background_line(120)), 120)
+        self.assertIn(shown.rstrip(), [line.rstrip() for line in drawn(self.app)])
+
+    def test_the_row_sits_right_above_the_composer_s_top_rule(self) -> None:
+        self.deliver(process())
+        screen = drawn(self.app)
+        rule = next(index for index, line in enumerate(screen) if line.startswith("─") and index > 0)
+        self.assertTrue(screen[rule - 1].startswith("✻ background"), screen[rule - 1])
+
+    def test_the_elapsed_clock_ticks_in_seconds(self) -> None:
+        self.deliver(process())
+        first = self.shown()
+        self.wall.at += 1
+        self.assertIn("1h 07m 14s", self.shown())
+        self.assertNotEqual(first, self.shown())
+        self.deliver(process(started_at=NOW - 73))
+        self.assertIn("  1m 14s  ", self.shown())
+
+    def test_the_session_s_other_processes_are_counted(self) -> None:
+        self.deliver(process(proc_id="proc_a", notify=True), process(proc_id="proc_b", command="make lint"))
+        self.assertIn("terminal(make lint)  1h 07m 13s  +1 more", self.shown())
+
+    def test_another_session_s_snapshot_is_not_taken(self) -> None:
+        self.deliver(process(), session="another")
+        self.assertIsNone(self.app._background_line(120))
+
+    def test_an_unreported_end_shows_the_finished_row_and_rings_once(self) -> None:
+        self.deliver(process())
+        before = bells(self.app)
+        self.clock.at += 8
+        self.wall.at += 8
+        self.deliver()
+        self.wall.at += 12
+        shown = self.shown()
+        self.assertTrue(shown.startswith(
+            "✓ background  terminal(uv run python -m unittest tests…)  finished 0:12 ago"), shown)
+        self.assertTrue(shown.endswith("  ↵ report result"), shown)
+        self.assertEqual(bells(self.app), before + 1)
+        self.deliver()
+        self.deliver()
+        self.assertEqual(bells(self.app), before + 1)  # once, at the transition
+
+    def test_enter_on_an_empty_composer_sends_one_prompt_and_clears_the_row(self) -> None:
+        self.deliver(process())
+        self.clock.at += 8
+        self.deliver()
+        self.app._on_input(Key(ENTER))
+        self.assertEqual(self.client.named("prompt.submit"), [{"session_id": SID, "text": report_prompt((process(),))}])
+        self.assertNotIn("finished", self.shown())
+        self.app.turn_pending = False
+        self.app._on_input(Key(ENTER))
+        self.assertEqual(len(self.client.named("prompt.submit")), 1)  # the offer was taken; nothing more is sent
+
+    def test_enter_with_text_sends_the_text_and_keeps_nothing_automatic(self) -> None:
+        self.deliver(process())
+        self.clock.at += 8
+        self.deliver()
+        self.assertEqual(self.client.named("prompt.submit"), [])  # nothing is ever sent on its own
+        type_text(self.app, "what next")
+        self.app._on_input(Key(ENTER))
+        self.assertEqual(self.client.named("prompt.submit"), [{"session_id": SID, "text": "what next"}])
+        self.assertIsNone(self.app._background_line(120))  # a turn started: the offer was for an idle session
+
+    def test_a_process_hermes_reports_just_goes(self) -> None:
+        self.deliver(process(notify=True))
+        before = bells(self.app)
+        self.clock.at += 8
+        self.deliver()
+        self.assertIsNone(self.app._background_line(120))
+        self.assertEqual(bells(self.app), before)
+
+    def test_a_watched_process_just_goes_since_hermes_may_report_its_end(self) -> None:
+        # Hermes turns watch patterns into a completion notice in memory once they stop matching, and the checkpoint
+        # never says so: the row cannot tell whether the session will be told.
+        self.deliver(process(watched=True))
+        before = bells(self.app)
+        self.clock.at += 8
+        self.deliver()
+        self.assertIsNone(self.app._background_line(120))
+        self.assertEqual(bells(self.app), before)
+
+    def test_a_process_whose_end_cannot_be_asked_never_finishes(self) -> None:
+        # A sandbox process's row goes when another interpreter of the profile rewrites the file from its own table,
+        # whether or not the process ended: the running row goes, silently.
+        self.deliver(process(host=False, pid=None))
+        self.assertTrue(self.shown().endswith("  🔕 won't ping you · ask Hermes for the result"), self.shown())
+        before = bells(self.app)
+        self.clock.at += 8
+        self.deliver()  # dropped by a foreign rewrite
+        self.assertIsNone(self.app._background_line(120))
+        self.assertEqual(bells(self.app), before)
+
+    def test_several_ends_make_one_offer_that_reports_them_all(self) -> None:
+        first, second, third = (process(proc_id=f"proc_{name}", command=f"make {name}") for name in "abc")
+        self.deliver(first, second, third)
+        before = bells(self.app)
+        self.clock.at += 8
+        self.wall.at += 8
+        self.deliver(third)  # two ended in one read
+        self.assertIn("terminal(make a)  finished 0:00 ago  +1 more", self.shown())
+        self.assertEqual(bells(self.app), before + 1)
+        self.wall.at += 5
+        self.deliver()  # one more ends before the offer is taken: it joins, and the first end's clock stays
+        self.assertIn("terminal(make a)  finished 0:05 ago  +2 more", self.shown())
+        self.assertEqual(bells(self.app), before + 2)
+        self.app._on_input(Key(ENTER))
+        self.assertEqual(self.client.named("prompt.submit"),
+                         [{"session_id": SID, "text": report_prompt((first, second, third))}])
+
+    def test_a_whitespace_composer_is_not_empty(self) -> None:
+        self.deliver(process())
+        self.clock.at += 8
+        self.deliver()
+        type_text(self.app, "   ")
+        self.app._on_input(Key(ENTER))
+        self.assertEqual(self.client.named("prompt.submit"), [])
+        self.assertIn("finished", self.shown())
+
+    def test_with_one_row_the_queue_keeps_it(self) -> None:
+        self.app.turn_pending = True
+        self.deliver(process())
+        type_text(self.app, "next step")
+        self.app._on_input(Key(ENTER))  # queued behind the turn
+        self.assertEqual(len(self.app.queued), 1)
+        with patch("omh.tui.app.slot_cap", return_value=1):
+            (only,) = self.app._slot_lines(120, 30)
+        self.assertTrue(line_text(only).startswith("⧗"), line_text(only))
+        with patch("omh.tui.app.slot_cap", return_value=2):
+            shown = [line_text(line) for line in self.app._slot_lines(120, 30)]
+        self.assertTrue(shown[0].startswith("⧗") and shown[1].startswith("✻ background"), shown)
+
+    def test_a_process_that_ends_during_a_turn_or_after_one_started_just_goes(self) -> None:
+        self.deliver(process())
+        self.clock.at += 1
+        self.app.turn_pending = True
+        self.app.busy_since = self.clock.at
+        self.deliver(process())
+        self.clock.at += 1
+        self.deliver()
+        self.assertIsNone(self.app._background_line(120))
+
+        self.app.turn_pending = False  # the turn ended; the next read is the first since it
+        self.deliver(process(proc_id="proc_b"))
+        self.app.busy_since = self.clock.at + 1  # a turn came and went between two reads
+        self.clock.at += 2
+        self.deliver()
+        self.assertIsNone(self.app._background_line(120))
+
+    def test_bell_off_rings_nothing(self) -> None:
+        app, _client = make_app(cols=120, clock=self.clock, wall_clock=self.wall, environ={"OMH_TUI_BELL": "0"})
+        app.stored_id = STORED
+        for processes in ((process(),), ()):
+            snapshot = HudSnapshot(STORED, {}, 0.0, {}, processes)
+            app.poller.take = lambda snapshot=snapshot: snapshot
+            self.clock.at += 1
+            app._take_hud()
+        self.assertIn("finished", text(app._background_line(120)))
+        self.assertEqual(bells(app), 0)
+
+    def test_the_spinner_turns_and_reduced_motion_shows_its_first_frame(self) -> None:
+        self.deliver(process())
+        glyphs = set()
+        for step in range(len(WORKING_GLYPHS)):
+            self.clock.at = 100.0 + step * 0.1
+            glyphs.add(self.shown()[0])
+        self.assertGreater(len(glyphs), 1)
+        still, _client = make_app(cols=120, clock=self.clock, wall_clock=self.wall,
+                                  environ={"OMH_TUI_REDUCED_MOTION": "1"})
+        still.stored_id = STORED
+        snapshot = HudSnapshot(STORED, {}, 0.0, {}, (process(),))
+        still.poller.take = lambda: snapshot
+        still._take_hud()
+        for step in range(len(WORKING_GLYPHS)):
+            self.clock.at = 100.0 + step * 0.37
+            self.assertEqual(text(still._background_line(120))[0], WORKING_GLYPHS[0])
+
+    def test_the_row_keeps_the_loop_ticking(self) -> None:
+        self.assertFalse(self.app._background_live())
+        self.deliver(process())
+        self.assertTrue(self.app._background_live())
+        self.app._render_when_due()
+        rendered = self.app.last_render
+        self.clock.at += 1.0
+        self.app._render_when_due()
+        self.assertGreater(self.app.last_render, rendered)
+
+
+class StyleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        ask_on_any_platform(self)
+        skin = theme_for_name("amber")
+        self.theme = with_catch_colours(build_theme(skin, DARK), skin, DARK, "spectrum")
+
+    def running(self, theme=None, width: int = 120, turn_runs: bool = False, **fields: object):
+        return running_line(process(**fields), more=0, now=NOW, glyph=WORKING_GLYPHS[0], turn_runs=turn_runs,
+                            theme=theme or self.theme, width=width)
+
+    def test_the_left_side_takes_its_roles(self) -> None:
+        line = self.running()
+        styles = {span.text: span.style for span in line}
+        self.assertEqual(styles[WORKING_GLYPHS[0]], self.theme.background_word)
+        self.assertEqual(styles["background"], self.theme.background_word)
+        self.assertEqual(styles["terminal"], kind_style("terminal", self.theme))
+        self.assertEqual(styles["(uv run python -m unittest tests…)"], self.theme.muted)
+        self.assertEqual(styles["  1h 07m 13s"], self.theme.faint)
+
+    def test_omh_is_watching_it_in_the_catch_row_s_colours(self) -> None:
+        line = self.running()
+        styles = {span.text: span.style for span in line}
+        self.assertEqual(styles["🔕 "], self.theme.warn)
+        self.assertEqual(styles["Hermes won't be pinged · "], self.theme.warn)
+        mark = [span.style for span in line if span.text in ("O", "M", "H")]
+        self.assertEqual(mark, list(self.theme.catch_mark[:3]))
+        self.assertEqual(styles[" is watching it"], self.theme.catch_words)
+        bare = replace(DEFAULT_THEME, catch_mark=())  # a theme with no catch colours: brand and muted, as a catch row
+        bare_styles = {span.text: span.style for span in self.running(theme=bare)}
+        self.assertEqual([span.style for span in self.running(theme=bare) if span.text in ("O", "M", "H")],
+                         [bare.brand] * 3)
+        self.assertEqual(bare_styles[" is watching it"], bare.muted)
+
+    def test_where_omh_cannot_ask_it_says_to_ask_hermes_in_the_same_colours(self) -> None:
+        line = self.running(host=False, pid=None)
+        self.assertTrue(text(line).endswith("  🔕 won't ping you · ask Hermes for the result"), text(line))
+        styles = {span.text: span.style for span in line}
+        self.assertEqual((styles["🔕 "], styles["won't ping you · "]), (self.theme.warn, self.theme.warn))
+        self.assertEqual(styles["ask Hermes for the result"], self.theme.catch_words)
+        self.assertNotIn("watching", text(line))
+        bare = replace(DEFAULT_THEME, catch_mark=())
+        bare_styles = {span.text: span.style for span in self.running(theme=bare, host=False, pid=None)}
+        self.assertEqual(bare_styles["ask Hermes for the result"], bare.muted)
+        with patch("omh.tui.background.ON_POSIX", False):  # off POSIX no host process can be asked either
+            self.assertIn("ask Hermes for the result", text(self.running()))
+
+    def test_will_ping_is_ok(self) -> None:
+        styles = {span.text: span.style for span in self.running(notify=True)}
+        self.assertEqual(styles["🔔 will ping you when done"], self.theme.ok)
+
+    def test_the_finished_row_is_ok_and_its_key_bold(self) -> None:
+        line = finished_line(process(), ago=12, theme=self.theme, width=120)
+        styles = {span.text: span.style for span in line}
+        self.assertEqual(styles["✓"].fg, self.theme.ok.fg)
+        self.assertEqual((styles["background"].fg, styles["background"].bold), (self.theme.ok.fg, True))
+        self.assertEqual(styles["  finished 0:12 ago"], self.theme.ok)
+        self.assertTrue(styles["↵"].bold)
+        self.assertEqual(styles[" report result"], self.theme.hint)
+
+    def test_without_colour_the_text_is_the_same(self) -> None:
+        plain = without_colour(self.theme)
+        self.assertEqual(text(self.running(theme=plain)), text(self.running()))
+        self.assertEqual(text(finished_line(process(), ago=12, theme=plain, width=120)),
+                         text(finished_line(process(), ago=12, theme=self.theme, width=120)))
+        self.assertTrue(all(span.style.depth == NO_COLOR for span in self.running(theme=plain) if span.style.fg))
+
+    def test_narrow_rows_stay_inside_the_width_and_keep_the_clock_longest(self) -> None:
+        for width in (1, 5, 12, 20, 30, 40, 60, 80, 100, 119, 140):
+            for line in (self.running(width=width), self.running(width=width, notify=True),
+                         self.running(width=width, host=False, pid=None),
+                         self.running(width=width, turn_runs=True), finished_line(process(), ago=12, theme=self.theme,
+                                                                                   width=width)):
+                with self.subTest(width=width, line=text(line)):
+                    self.assertLessEqual(line_width(line), width)
+        self.assertTrue(text(self.running(width=60)).endswith("1h 07m 13s"), text(self.running(width=60)))
+        self.assertIn("terminal(uv run python -m unittest…)  1h 07m 13s  🔕", text(self.running(width=110)))
+        self.assertTrue(text(self.running(width=110)).endswith("OMH is watching it"))  # the label gave way first
+
+    def test_the_background_word_is_label_a_little_darker(self) -> None:
+        for name in ("sky", "amber", "crimson", "mono"):
+            skin = theme_for_name(name)
+            for background in (None, DARK, "#000000"):
+                theme = build_theme(skin, background)
+                surface = surface_for(skin, background)
+                with self.subTest(theme=name, background=background):
+                    self.assertTrue(theme.background_word.bold)
+                    self.assertLess(contrast_ratio(theme.background_word.fg, surface),
+                                    contrast_ratio(theme.label.fg, surface))
+                    self.assertGreaterEqual(contrast_ratio(theme.background_word.fg, surface), TEXT_CONTRAST)
+            light = build_theme(skin, "#FFFFFF")  # on a light one it is held at 4.5:1 rather than faded
+            self.assertGreaterEqual(contrast_ratio(light.background_word.fg, "#FFFFFF"), TEXT_CONTRAST)
+
+
+if __name__ == "__main__":
+    unittest.main()

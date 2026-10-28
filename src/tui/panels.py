@@ -57,6 +57,7 @@ from urllib.parse import quote
 
 from ..plugin_bundle.omh.hud_text import elapsed_text, todo_unchanged_text
 from ..version import __version__
+from .background import BackgroundProcess, read_processes, still_running
 from .escapes import strip_escapes
 from .style import NO_COLOR, TRUECOLOR, Line, Span, Style
 from .theme import Theme
@@ -126,13 +127,17 @@ _SAFE_PUNCTUATION = frozenset(" .:/_·|+()[]!-',;?\"#%&=@~")
 
 @dataclass(frozen=True)
 class HudSnapshot:
-    """One delivery: whose payload, the payload (None = empty panel), when it was read, and the watched subagents'
-    output tokens the same read took (child session id to count; `read_output_tokens`)."""
+    """One delivery: whose payload, the payload (None = empty panel), when it was read, the watched subagents'
+    output tokens the same read took (child session id to count; `read_output_tokens`), the session's background
+    processes still running (`background.still_running`), oldest first, and how many `HudPoller.refresh` calls came
+    before the read started (a read is newer than a refresh only when this is at least what that call returned)."""
 
     session_id: str
     payload: Mapping[str, Any] | None
     received_at: float
     output_tokens: Mapping[str, int] = field(default_factory=dict)
+    processes: tuple[BackgroundProcess, ...] = ()
+    refreshes: int = 0
 
 
 HudReader = Callable[..., Mapping[str, Any]]
@@ -170,6 +175,11 @@ class HudPoller:
     last named. A count that moved is a change like any other, so the poll
     stays at two seconds while subagents are writing and backs off once they
     stop. With no session watched there is no query.
+
+    Each read also takes the session's background processes from Hermes'
+    `processes.json` (`background.read_processes`) and keeps every one it has
+    seen while it still runs, so a row another interpreter's rewrite dropped
+    stays until its process ends. A process starting or ending is a change.
     """
 
     def __init__(
@@ -194,6 +204,10 @@ class HudPoller:
         self._generation = 0
         self._pending: HudSnapshot | None = None
         self._watched: tuple[str, ...] = ()
+        self._processes: dict[str, BackgroundProcess] = {}
+        # `refresh` calls, and the most a read that started after them has accounted for: that read is kept as new.
+        self._refreshes = 0
+        self._refreshed = 0
         self._last_full = ""
         self._last_structural = ""
         self._interval = HUD_POLL_MIN_SECONDS
@@ -220,6 +234,7 @@ class HudPoller:
                 return
             self._session = stored_id
             self._generation += 1
+            self._processes = {}
             self._last_full = ""
             self._last_structural = ""
             self._interval = HUD_POLL_MIN_SECONDS
@@ -243,11 +258,17 @@ class HudPoller:
         if new:
             self._wake.set()
 
-    def refresh(self) -> None:
-        """Read again now rather than at the next poll, and start the back-off over (Hermes' plan just changed)."""
+    def refresh(self) -> int:
+        """Read again now rather than at the next poll, and start the back-off over (Hermes' plan just changed, or a
+        turn ended). The first read that starts after this call is kept even when nothing in it changed, so the UI
+        sees what runs once a turn is over (`App._take_background`); a read already under way is not that read.
+        Returns the count a snapshot's `refreshes` reaches once it comes from such a read."""
         with self._lock:
             self._interval = HUD_POLL_MIN_SECONDS
+            self._refreshes += 1
+            count = self._refreshes
         self._wake.set()
+        return count
 
     def take(self) -> HudSnapshot | None:
         """The newest snapshot not yet taken, or None. Never blocks on a read."""
@@ -258,21 +279,28 @@ class HudPoller:
     def poll_once(self) -> float:
         """Read once for the current session and return the seconds to wait before the next read."""
         with self._lock:
-            session, generation, watched = self._session, self._generation, self._watched
+            session, generation, watched, tracked = self._session, self._generation, self._watched, self._processes
+            refreshes = self._refreshes
         if not session:
             return HUD_POLL_MAX_SECONDS
         payload = self._read(session)
         # The home this read resolved, so the tokens come from the state.db the payload describes.
-        tokens = read_output_tokens(payload.get("hermes_home"), watched)
-        full = _fingerprint([payload, tokens])
-        structural = _fingerprint([_without_volatile(payload), tokens])
+        home = payload.get("hermes_home")
+        tokens = read_output_tokens(home, watched)
+        processes = still_running(tracked, read_processes(home if isinstance(home, str) else self._hermes_home, session))
+        running = sorted(processes.values(), key=lambda process: (process.started_at, process.proc_id))
+        shown = [[process.proc_id, process.notify, process.watched] for process in running]
+        full = _fingerprint([payload, tokens, shown])
+        structural = _fingerprint([_without_volatile(payload), tokens, shown])
         with self._lock:
             if generation != self._generation:
                 return HUD_POLL_MIN_SECONDS
-            fresh = full != self._last_full
+            self._processes = processes
+            fresh = full != self._last_full or refreshes != self._refreshed
+            self._refreshed = refreshes
             if fresh:
                 self._last_full = full
-                self._pending = HudSnapshot(session, payload, self._clock(), tokens)
+                self._pending = HudSnapshot(session, payload, self._clock(), tokens, tuple(running), refreshes)
             if structural != self._last_structural:
                 self._last_structural = structural
                 self._interval = HUD_POLL_MIN_SECONDS
