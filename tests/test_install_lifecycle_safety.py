@@ -34,6 +34,7 @@ from omh.commands.setup import _sync_hermes_profiles, read_config  # noqa: E402
 from omh.commands import setup as setup_module  # noqa: E402
 from omh.install.config_adapter import external_dirs, plugin_omh_home_setting  # noqa: E402
 from omh.install.installer import uninstall_skill_pack  # noqa: E402
+from omh.install.lifecycle_safety import store_removal_plan  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
 
 
@@ -182,6 +183,67 @@ class SharedStoreUninstallTests(_Fixture):
         self.assertNotIn(self.omh.resolve(),
                          {Path(value).resolve() for value in json.loads(stdout)["removed_paths"]})
 
+    def test_a_skills_reference_spelled_through_a_variable_still_protects_a_shared_store(self) -> None:
+        # Hermes expands `${VAR}` in `skills.external_dirs`, so the primary
+        # still loads skills from this store and the profile's uninstall
+        # must keep it. Read with `~` only, the entry named nothing.
+        bot = self.hermes / "profiles" / "bot"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        config_path = self.hermes / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ${OMH_TEST_SHARED_STORE}/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with mock.patch.dict(os.environ, {"OMH_TEST_SHARED_STORE": self.omh.as_posix()}):
+            plan = store_removal_plan(paths, remove_profiles=False)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
+
+    def test_a_skills_reference_relative_to_its_home_still_protects_a_shared_store(self) -> None:
+        # Hermes anchors a relative entry at its own home, so `../omh/skills`
+        # in the primary names this store whatever directory uninstall runs
+        # from. Resolved against an unrelated cwd it named nothing.
+        bot = self.hermes / "profiles" / "bot"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        config_path = self.hermes / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ../omh/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with TemporaryDirectory() as unrelated:
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                plan = store_removal_plan(paths, remove_profiles=False)
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
+
+    def test_a_skills_reference_relative_to_a_second_profile_protects_the_store(self) -> None:
+        # The twin of the primary case: the reference sits in another bot
+        # profile and is read under that profile's own home, where
+        # `../../../omh/skills` reaches this store. Anchored at the primary,
+        # or at the cwd, it names nothing.
+        bot = self.hermes / "profiles" / "bot"
+        other = self.hermes / "profiles" / "other"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        self._profile_binding(other, self.root / "other-runtime")
+        config_path = other / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ../../../omh/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with TemporaryDirectory() as unrelated:
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                plan = store_removal_plan(paths, remove_profiles=False)
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(other)]))
+
     def test_shared_store_dry_run_does_not_delete_or_rewrite_files(self) -> None:
         """Mutation control, independently of whether the proposed plan is safe."""
         bot = self.hermes / "profiles" / "bot"
@@ -295,6 +357,37 @@ class RegistrationOptOutTests(_Fixture):
         for directory in foreign:
             self.assertIn(directory.resolve(), _external_paths(config))
             self.assertEqual(self._file_snapshot(directory), snapshots[directory])
+
+
+    def test_registration_only_removes_every_spelling_setup_retires_and_no_user_dir(self) -> None:
+        # Setup retires `../omh/skills` and `${VAR}/skills` as the managed
+        # store's skills; the opt-out must take them out as well, or the next
+        # update reads the home as registered again. A relative entry naming
+        # the person's own directory, and a foreign one, stay.
+        self._setup_primary()
+        personal = self.root / "personal" / "skills"
+        _write(personal / "mine" / "SKILL.md", "# not owned by OMH\n")
+        foreign = self.root / "foreign" / "skills"
+        _write(foreign / "theirs" / "SKILL.md", "# not owned by OMH\n")
+        config_path = self.hermes / "config.yaml"
+        text = config_path.read_text(encoding="utf-8")
+        managed = [entry for entry in external_dirs(text) if Path(entry).resolve() == (self.omh / "skills").resolve()]
+        self.assertEqual(len(managed), 1, external_dirs(text))
+        spelled = "    - ../omh/skills\n    - ${OMH_TEST_STORE}/skills/\n    - ../personal/skills\n" + f"    - {foreign}\n"
+        config_path.write_bytes(text.replace(f"    - {managed[0]}\n", spelled).encode("utf-8"))
+        self.assertEqual(
+            external_dirs(read_config(config_path)),
+            ["../omh/skills", "${OMH_TEST_STORE}/skills/", "../personal/skills", str(foreign)],
+        )
+
+        with mock.patch.dict(os.environ, {"OMH_TEST_STORE": self.omh.as_posix()}):
+            status, _, stderr = run_cli(
+                ["--hermes-home", str(self.hermes), "--omh-home", str(self.omh), "uninstall", "--registration-only"]
+            )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(external_dirs(read_config(config_path)), ["../personal/skills", str(foreign)])
+        self.assertTrue((personal / "mine" / "SKILL.md").is_file())
 
 
 class CorruptProfileUpdateTests(_Fixture):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -9,6 +10,7 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.config_adapter import (
+    anchor_external_dir_entry,
     display_key_named_twice,
     display_skin_selection,
     external_dir_registered,
@@ -222,6 +224,93 @@ class ExternalDirRegistrationTests(unittest.TestCase):
             self.assertTrue(external_dir_registered(dirs, root / "current" / "skills"))
             self.assertFalse(external_dir_registered(dirs, root / "generations" / "g2" / "skills"))
             self.assertFalse(external_dir_registered([], generation / "skills"))
+
+    def test_an_entry_is_expanded_the_way_hermes_expands_it(self) -> None:
+        # Hermes expands `${VAR}` and then `~` before it resolves an entry,
+        # so this spelling is the pointer to it; an unset variable stays as
+        # written there and names nothing of OMH's. The order is pinned by a
+        # value that starts with `~`: expanded the other way round, the `~`
+        # it brings in would stay literal.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "managed" / "current" / "skills"
+            pointer.mkdir(parents=True)
+            # USERPROFILE beside HOME: ntpath.expanduser ignores HOME.
+            environment = {
+                "HOME": str(root),
+                "USERPROFILE": str(root),
+                "OMH_TEST_MANAGED_ROOT": (root / "managed").as_posix(),
+                "OMH_TEST_TILDE_ROOT": "~/managed",
+            }
+            with mock.patch.dict(os.environ, environment):
+                os.environ.pop("OMH_TEST_UNSET_ROOT", None)
+                self.assertTrue(external_dir_registered(["${OMH_TEST_MANAGED_ROOT}/current/skills"], pointer))
+                self.assertTrue(external_dir_registered(["${OMH_TEST_TILDE_ROOT}/current/skills"], pointer))
+                self.assertFalse(external_dir_registered(["${OMH_TEST_UNSET_ROOT}/current/skills"], pointer))
+
+    def test_a_relative_entry_is_never_resolved_against_the_working_directory(self) -> None:
+        # Hermes reads `current/skills` as `$HERMES_HOME/current/skills`. Run
+        # from the managed root, the same text resolves to the pointer; it
+        # must not make a home read as registered there, or a home that names
+        # no managed directory is refreshed instead of left as the opt-out.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            pointer.mkdir(parents=True)
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                self.assertTrue(Path("current/skills").resolve().samefile(pointer))
+                self.assertFalse(external_dir_registered(["current/skills"], pointer))
+                self.assertFalse(external_dir_registered(["./current/skills/"], pointer))
+                self.assertTrue(external_dir_registered([pointer.as_posix()], pointer))
+            finally:
+                os.chdir(cwd)
+
+    def test_with_the_home_a_relative_entry_is_read_under_it(self) -> None:
+        # Hermes reads `../m/current/skills` in `<root>/.hermes` as the
+        # pointer, whatever directory this command runs from: it registers
+        # the home, and registration does not add the pointer beside it.
+        with TemporaryDirectory() as tmp, TemporaryDirectory() as unrelated:
+            root = Path(tmp)
+            home = root / ".hermes"
+            pointer = root / "m" / "current" / "skills"
+            for directory in (home, pointer):
+                directory.mkdir(parents=True)
+            text = "skills:\n  external_dirs:\n    - ../m/current/skills\n"
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                self.assertTrue(external_dir_registered(["../m/current/skills"], pointer, hermes_home=home))
+                self.assertFalse(external_dir_registered(["m/current/skills"], pointer, hermes_home=home))
+                self.assertEqual(ensure_external_dir(text, pointer, hermes_home=home).text, text)
+                with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": (root / "m").as_posix()}):
+                    spelled = "skills:\n  external_dirs:\n    - ${OMH_TEST_MANAGED_ROOT}/current/skills/\n"
+                    self.assertFalse(ensure_external_dir(spelled, pointer, hermes_home=home).changed)
+                # Without the home the text compare is the whole contract.
+                self.assertTrue(ensure_external_dir(text, pointer).changed)
+            finally:
+                os.chdir(cwd)
+
+    def test_registration_never_takes_a_generation_s_pack_for_the_pointer(self) -> None:
+        # The pointer resolves to the generation it points at; a real-path
+        # match would read that generation's pack as the pointer, and the
+        # migration that retires the pack would leave the home with neither.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generation = root / "generations" / "g1"
+            (generation / "skills").mkdir(parents=True)
+            os.symlink(generation, root / "current", target_is_directory=True)
+            text = f"skills:\n  external_dirs:\n    - {(generation / 'skills').as_posix()}\n"
+            change = ensure_external_dir(text, root / "current" / "skills", hermes_home=root / ".hermes")
+            self.assertEqual(external_dirs(change.text), [(generation / "skills").as_posix(), (root / "current" / "skills").as_posix()])
+
+    def test_an_entry_is_anchored_at_the_home_the_way_hermes_anchors_it(self) -> None:
+        home = Path("/hermes-home")
+        with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": "/managed"}):
+            self.assertEqual(anchor_external_dir_entry("${OMH_TEST_MANAGED_ROOT}/skills", home), Path("/managed/skills"))
+        self.assertEqual(anchor_external_dir_entry("/managed/skills", home), Path("/managed/skills"))
+        self.assertEqual(anchor_external_dir_entry("skills", home), home / "skills")
 
     def test_a_textual_match_needs_no_directory_on_disk(self) -> None:
         self.assertTrue(external_dir_registered(["/nowhere/skills"], "/nowhere/skills"))

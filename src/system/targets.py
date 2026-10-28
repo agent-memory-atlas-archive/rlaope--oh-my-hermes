@@ -88,7 +88,7 @@ def record_target_observation(
         # the one outcome this must never produce.
         change = update_config(
             config_path,
-            lambda text: ensure_external_dir(text, registered_dir or paths.skills_dir),
+            lambda text: ensure_external_dir(text, registered_dir or paths.skills_dir, hermes_home=config_path.parent),
             omh_home=paths.omh_home if own_config else None,
         )
         config_changed = change.written

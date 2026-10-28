@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 from _local_package import load_local_package
 
 load_local_package()
+from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
 from omh.targets import (
     build_target_change_notice,
@@ -96,6 +98,32 @@ class TargetRegistryTests(unittest.TestCase):
             self.assertEqual(applied_notice["action"], "target_change_applied")
             self.assertEqual(applied_notice["persistence"], "persisted")
             self.assertEqual(summarize_target_registry(paths)["mode"], "multi_agent_targets")
+
+    def test_an_observed_home_s_registration_is_read_from_that_home(self) -> None:
+        # The observed target is another Hermes home than the one `paths`
+        # resolved. Its config names the skills directory relative to
+        # itself; read from `paths.hermes_home` instead it names nothing, and
+        # the apply would add the directory a second time.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = resolve_paths(root / ".omh", root / ".hermes-a")
+            other = root / "b" / ".hermes"
+            other.mkdir(parents=True)
+            # Resolved on both sides: `relpath` across the macOS `/var` alias
+            # would climb out of the wrong prefix.
+            relative = Path(os.path.relpath(paths.skills_dir.resolve(), other.resolve())).as_posix()
+            config = other / "config.yaml"
+            config.write_text(f"skills:\n  external_dirs:\n    - {relative}\n", encoding="utf-8", newline="")
+
+            record_target_observation(
+                paths,
+                source="chat:slack",
+                source_metadata={"agent_ref": "agent-b", "hermes_home": str(other), "agent_count": "2"},
+                ensure_config=True,
+                registered_dir=paths.skills_dir,
+            )
+
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [relative])
 
 
 if __name__ == "__main__":

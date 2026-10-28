@@ -67,7 +67,14 @@ from urllib.parse import quote
 
 from .dag_core import layer_of
 from .dag_run import ADDED_ORIGIN_KINDS, HANDOFF_NOT_CHECKED, derive, handoff_unchecked, run_state, session_runs
-from .delegation_ledger import child_title, ledger_key, read_ledger, title_from_goal, with_unjoined_stop
+from .delegation_ledger import (
+    child_title,
+    ledger_key,
+    read_ledger,
+    title_from_goal,
+    valid_observed_route,
+    with_unjoined_stop,
+)
 from .live_session import conversation_segments
 from .subagent_graph import _roster_progress_fields as roster_progress_fields
 
@@ -80,6 +87,8 @@ TEAM_FILE_LIMIT: Final = 16
 TEAM_RECORD_BYTES: Final = 262_144
 TITLE_LIMIT: Final = 120
 OPENER_CHARS: Final = 400
+# A background unit's stored result is read for its per-task `route` only; one past this is not parsed.
+RESULT_JSON_BYTES: Final = 1_048_576
 COMPACTION_END_REASON: Final = "compression"
 GRAPH_CLAIM_BOUNDARY: Final = (
     "Delegation structure and states as Hermes' hooks, state.db and OMH's own records reported them. A category is "
@@ -338,8 +347,12 @@ def state_facts(
         delegations = [item for item in dict.fromkeys(delegation_ids) if item][:32]
         if delegations:
             try:
+                columns = {str(row[1]) for row in connection.execute('PRAGMA table_info("async_delegations")')}
+                # Hermes 0.22.5+ keeps each finished child's result, `route` included, in `result_json`.
+                results = (f"CASE WHEN length(result_json) <= {RESULT_JSON_BYTES} THEN result_json END"
+                           if "result_json" in columns else "NULL")
                 for row in connection.execute(
-                    "SELECT delegation_id, task_json FROM async_delegations WHERE delegation_id IN ("
+                    f"SELECT delegation_id, task_json, {results} FROM async_delegations WHERE delegation_id IN ("
                     + ",".join("?" for _ in delegations) + ")",
                     delegations,
                 ):
@@ -353,6 +366,7 @@ def state_facts(
                     facts["delegations"][str(row[0])] = {
                         "goals": [title_from_goal(goal) for goal in goals[:64]],
                         "model": _text(task.get("model")),
+                        "routes": _result_routes(row[2]),
                     }
             except sqlite3.Error:
                 pass
@@ -478,6 +492,28 @@ def _child_state(
     if usage.get("rows"):
         return "running", "running", max(0.0, now - started)
     return "dispatched", "dispatched", None
+
+
+def _result_routes(raw: object) -> dict[int, dict[str, Any]]:
+    """Per-task ``route`` from a background unit's stored result (a single task's own result is task 0)."""
+    try:
+        result = json.loads(raw) if isinstance(raw, str) else None
+    except (ValueError, RecursionError):
+        return {}
+    if not isinstance(result, dict):
+        return {}
+    listed = result.get("results")
+    entries: list[Any] = listed if isinstance(listed, list) else [result]
+    routes: dict[int, dict[str, Any]] = {}
+    for position, entry in enumerate(entries[:64]):
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("task_index")
+        index = index if isinstance(index, int) and not isinstance(index, bool) else position
+        route = valid_observed_route(entry.get("route"))
+        if route:
+            routes[index] = route
+    return routes
 
 
 def _observed_model(session: str, facts: Mapping[str, Any]) -> str:
@@ -638,13 +674,17 @@ def _build(
         session = child["child_session_id"]
         observed = _observed_model(session, facts)
         delegation = facts["delegations"].get(child.get("delegation_id", ""), {})
-        model = observed or delegation.get("model", "")
+        reported = child.get("observed_route") or (delegation.get("routes") or {}).get(child.get("task_index"), {})
+        model = observed or delegation.get("model", "") or reported.get("model", "")
         category, source = _category(child.get("route") or {}, observed, parent_model)
+        if reported and not (child.get("route") or {}).get("category"):
+            # Hermes' backend picked this child's model: not OMH's route, and not the parent's by inheritance.
+            category, source = "?", "backend_route"
         state, status, elapsed = _child_state(child, facts, now)
         stop = child.get("stop")
-        return {
+        row = {
             "model": model or "?",
-            "effort": (facts["sessions"].get(session) or {}).get("effort", ""),
+            "effort": (facts["sessions"].get(session) or {}).get("effort", "") or reported.get("reasoning_effort", ""),
             "category": category,
             "category_source": source,
             "state": state,
@@ -654,6 +694,13 @@ def _build(
             "ended_at": float(stop["observed_at"]) if isinstance(stop, Mapping) else None,
             "output_tokens": (facts["sessions"].get(session) or {}).get("output_tokens"),
         }
+        if reported:
+            row["route_backend"] = reported["backend"]
+            if reported.get("label"):
+                row["route_label"] = reported["label"]
+            if reported.get("fallback_activated"):
+                row["route_origin"] = "fallback"
+        return row
 
     def title_for(child: Mapping[str, Any]) -> str:
         title = titles(child["subagent_id"])
@@ -927,6 +974,15 @@ def _dag_nodes(
             # Once a child exists its category is the recorded route's, shown only where its model matches.
             entry.update({key: facts[key] for key in ("model", "effort", "category", "category_source",
                                                        "output_tokens")})
+            entry.update({key: facts[key] for key in ("route_backend", "route_label", "route_origin") if key in facts})
+            if facts["category_source"] == "backend_route":
+                # The plan's lane holds where Hermes ran the option this run handed out; any other option is not it.
+                attempts = node.get("attempts") if isinstance(node.get("attempts"), list) else []
+                handed = attempts[-1].get("option", "") if attempts and isinstance(attempts[-1], dict) else ""
+                if handed and handed == facts.get("route_label"):
+                    entry.update(category=_text(node.get("category"), 40) or "?", category_source="backend_option")
+                else:
+                    entry["category_source"] = "route_option_mismatch" if handed else "backend_route"
             entry["session_tail"] = session_tail(child["child_session_id"])
             if info["state"] == "running":
                 # The record says the node is out; only the child's own records say it is moving.

@@ -58,7 +58,7 @@ from ..config_adapter import (
     update_config,
 )
 from ..install.compression_defaults import ensure_compression_defaults
-from ..install.lifecycle_safety import command_runtime_owned, primary_hermes_home, store_removal_plan
+from ..install.lifecycle_safety import primary_hermes_home, store_removal_plan
 from ..install.config_reversal import (
     DISPLAY_KEYS,
     DISPLAY_RELEASED_FIELD,
@@ -79,9 +79,12 @@ from ..install.skill_registration import (
     external_dir_key,
     generation_pack_entries,
     hermes_profile_dirs,
+    managed_candidate_entries,
+    managed_command_runtime as _managed_command_runtime,
     managed_skill_dir_candidates,
     migrate_managed_registration,
     registered_managed_entries,
+    registered_skill_dir,
     registration_home_label,
 )
 from ..doctor import DEFAULT_DOCTOR_NEXT_ACTION, doctor_ok, recommended_next_action, run_doctor
@@ -109,7 +112,6 @@ from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
 from ..paths import (
     OmhPaths,
-    managed_command_venv_dir,
     managed_current_workflow_pack_dir,
     configured_omh_home,
 )
@@ -1020,6 +1022,7 @@ def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
             entries = registered_managed_entries(
                 read_config(home_paths.hermes_config_path),
                 _managed_workflow_dir_candidates(home_paths),
+                hermes_home=home_paths.hermes_home,
                 current=managed_current_workflow_pack_dir(),
             )
         except (OSError, UnicodeError, ValueError, OmhError) as exc:
@@ -1031,11 +1034,8 @@ def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
 
 
 def _registered_workflow_dir(paths: OmhPaths) -> Path:
-    """Keep installer consumers under the non-resolved shared pointer."""
-    current = managed_current_workflow_pack_dir()
-    if current is not None and current.is_dir() and _managed_command_runtime().get("managed"):
-        return current
-    return paths.skills_dir
+    """`registered_skill_dir` through this module's own bindings, the ones the managed-install fixtures stub."""
+    return registered_skill_dir(paths, current=managed_current_workflow_pack_dir(), runtime=_managed_command_runtime)
 
 
 def _registration_retires_older_entries(registered_dir: Path) -> bool:
@@ -1103,11 +1103,16 @@ def _home_names_managed_dir(config_text: str, paths: OmhPaths) -> bool:
     an unmanaged command would add its own path beside the pack and leave a
     working home with two managed directories.
     """
-    if any(_external_dir_registered(config_text, candidate) for candidate in _managed_workflow_dir_candidates(paths)):
+    if any(
+        _external_dir_registered(config_text, candidate, hermes_home=paths.hermes_home)
+        for candidate in _managed_workflow_dir_candidates(paths)
+    ):
         return True
     if not _registration_retires_older_entries(_registered_workflow_dir(paths)):
         return False
-    return bool(generation_pack_entries(config_text, managed_current_workflow_pack_dir()))
+    return bool(
+        generation_pack_entries(config_text, managed_current_workflow_pack_dir(), hermes_home=paths.hermes_home)
+    )
 
 
 def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigChange:
@@ -1126,7 +1131,8 @@ def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigCh
     """
     changed = False
     message = ""
-    for candidate in _managed_workflow_dir_candidates(paths):
+    candidates = _managed_workflow_dir_candidates(paths)
+    for candidate in candidates:
         change = remove_external_dir(config_text, candidate)
         config_text = change.text
         if change.changed and not changed:
@@ -1134,9 +1140,15 @@ def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigCh
             message = change.message
         elif not changed:
             message = change.message
-    # A generation's own pack is managed too, whichever generation it names.
+    # Any other spelling Hermes reads as a managed directory in this home
+    # (`${VAR}`, `~`, relative to the home), and a generation's own pack,
+    # whichever generation it names -- by the rule the migration retires by.
     change = remove_external_dir_entries(
-        config_text, generation_pack_entries(config_text, managed_current_workflow_pack_dir())
+        config_text,
+        [
+            *managed_candidate_entries(config_text, candidates, hermes_home=paths.hermes_home),
+            *generation_pack_entries(config_text, managed_current_workflow_pack_dir(), hermes_home=paths.hermes_home),
+        ],
     )
     if change.changed and not changed:
         changed = True
@@ -1219,12 +1231,12 @@ def _config_keys_kept(rows: list[dict[str, str]]) -> list[str]:
     return sorted(str(row.get("key", "")) for row in rows if row.get("status") in {"kept", "unrecorded"})
 
 
-def _external_dir_registered(config: str, path: Path) -> bool:
+def _external_dir_registered(config: str, path: Path, *, hermes_home: Path) -> bool:
     entries = external_dirs(config)
     wanted = _external_dir_key(path)
     if any(_external_dir_key(entry) == wanted for entry in entries):
         return True
-    return external_dir_registered(entries, path)
+    return external_dir_registered(entries, path, hermes_home=hermes_home)
 
 
 def _external_dir_key(path: str | Path) -> str:
@@ -1660,21 +1672,6 @@ def _reentry_argv_with_command_package_updated() -> list[str]:
     if "--command-package-updated" not in argv:
         argv.append("--command-package-updated")
     return argv
-
-
-def _managed_command_runtime() -> dict[str, object]:
-    venv_dir = managed_command_venv_dir()
-    if venv_dir is None:
-        return {"managed": False, "reason": "no home directory or OMH_VENV_DIR is available"}
-    executable = Path(sys.executable).expanduser()
-    if not command_runtime_owned(executable, venv_dir):
-        return {
-            "managed": False,
-            "reason": "current omh command is not running from the installer-managed OMH venv",
-            "python": str(executable.resolve()),
-            "venv_dir": str(venv_dir),
-        }
-    return {"managed": True, "reason": "", "python": str(executable), "venv_dir": str(venv_dir)}
 
 
 def _is_relative_to_without_resolving_symlinks(path: Path, parent: Path) -> bool:
@@ -2440,6 +2437,7 @@ def _apply_result(
             current,
             registered_dir,
             retire_candidates,
+            hermes_home=paths.hermes_home,
             current=managed_current_workflow_pack_dir() if retires else None,
         )
         change = ConfigChange(migration.added, migration.message, migration.text)
@@ -2551,6 +2549,7 @@ def _apply_result(
                 "external_dir_registered": _external_dir_registered(
                     read_config(paths.hermes_config_path),
                     registered_dir,
+                    hermes_home=paths.hermes_home,
                 ),
                 MANAGED_CONFIG_WRITES_STATE_KEY: config_writes,
             },
@@ -4195,7 +4194,7 @@ def _run_setup_wizard(args: argparse.Namespace, paths, language: str) -> None:
     print(f"{tr(language, 'hermes_home')}: {_color(str(paths.hermes_home), '36', use_color)}")
     if paths.hermes_config_path.exists():
         config_text = read_config(paths.hermes_config_path)
-        registered = external_dir_registered(external_dirs(config_text), paths.skills_dir)
+        registered = external_dir_registered(external_dirs(config_text), paths.skills_dir, hermes_home=paths.hermes_home)
         status = tr(language, "status_already_registered") if registered else tr(language, "status_will_register")
         print(f"{tr(language, 'hermes_config')}: {_color(str(paths.hermes_config_path), '36', use_color)} ({status})")
     else:

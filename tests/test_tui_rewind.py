@@ -90,7 +90,7 @@ class PickerTests(unittest.TestCase):
     def test_the_slot_names_what_picking_does(self) -> None:
         rows = lines_text(RewindPicker(rewind_rows(HISTORY)).lines(100, DEFAULT_THEME, 6, 1792006300.0))
         self.assertEqual(rows[0].rstrip(), " Rewind to a prompt (2)")  # its keys are the info line's
-        self.assertTrue(rows[1].startswith("❯ #2 Reply with exactly the word: two"), rows)
+        self.assertTrue(rows[2].startswith("❯ #2 Reply with exactly the word: two"), rows)  # under the header's rule
 
 
 class DoubleEscapeTests(unittest.TestCase):

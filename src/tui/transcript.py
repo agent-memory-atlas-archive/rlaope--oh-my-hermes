@@ -219,6 +219,7 @@ class NoticeBlock:
     level: str = NOTICE_INFO
     done: bool = True
     one_line: bool = False  # a background notice (`review_line`): one dim row, cut with `…`, never wrapped
+    mark: str = ""  # a catch row's `✦ OMH`, drawn before `text` in the launch look's colours (`Theme.catch_mark`)
 
 
 @dataclass
@@ -820,8 +821,23 @@ def _outcome_band(level: str, theme: Theme) -> Style | None:
     return band if band is not None and band.bg is not None else None
 
 
+def _catch_mark(mark: str, theme: Theme) -> tuple[Span, ...]:
+    """A catch row's mark and the space after it: each cell in turn through `theme.catch_mark` (the logo's colours),
+    or all in `brand` for a theme that carries none."""
+    steps = theme.catch_mark or (theme.brand,)
+    return tuple(Span(cell, steps[min(index, len(steps) - 1)]) for index, cell in enumerate(f"{mark} "))
+
+
+def _catch_words(theme: Theme) -> Style:
+    """What a catch row says: the launch look's label colour, or `muted` for a theme that carries none."""
+    return theme.catch_words if theme.catch_mark else theme.muted
+
+
 def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
     if block.one_line:
+        if block.mark:
+            words = Span(" ".join(block.text.split()), _catch_words(theme))
+            return [truncate_line((*_catch_mark(block.mark, theme), words), width)]
         return [truncate_line((Span(" ".join(block.text.split()), theme.faint),), width)]
     band = _outcome_band(block.level, theme)
     roles = on_band(theme, band) if band is not None else theme

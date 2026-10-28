@@ -1198,7 +1198,7 @@ def record_repeat_refusal(
     session_id: object,
     omh_home: str = "",
     now: float | None = None,
-) -> None:
+) -> dict[str, int] | None:
     """Count one call the repeat guard did not let through.
 
     Separate from ``record_tool_call`` because the two facts are
@@ -1214,12 +1214,17 @@ def record_repeat_refusal(
     a detected loop, so a row that no longer shows one means the caller
     and the ledger disagree and the safe reading is that there is nothing
     to count. Best-effort, like every writer here.
+
+    Returns what it counted -- the cycle's ``period`` and ``laps`` and the
+    streak's new ``intercepted`` -- or ``None`` when it counted nothing, so
+    the hook can tell the streak's first refusal (``intercepted == 1``) from
+    the ones after it without reading the ledger a second time.
     """
     name = _normalized_name(tool_name)
     session = _normalized_id(session_id)
     digest = str(args_digest or "")[:_MAX_DIGEST_CHARS]
     if not name or not session or not digest:
-        return
+        return None
     tick = float(now if now is not None else time.time())
     path = tool_bursts_path(omh_home)
     try:
@@ -1229,13 +1234,14 @@ def record_repeat_refusal(
             raw = streaks.get(session)
             current = _sanitized_repeat_streak_row(raw) if isinstance(raw, dict) else None
             if current is None:
-                return
+                return None
             history = _decided_history(_fresh_history(current["history"], now=tick))
             cycle = _detect_cycle(history)
             if cycle is None:
-                return
+                return None
             if not _call_is_in_cycle(history[-cycle[0] :], name, digest):
-                return
+                return None
+            intercepted = min(MAX_INTERCEPTED_COUNT, int(current["intercepted"]) + 1)
             streaks[session] = {
                 # The stored row, with two fields advanced: its history is
                 # carried through untouched, because a refused call never
@@ -1246,7 +1252,7 @@ def record_repeat_refusal(
                 # grow a field without bound in a file the hot path rewrites
                 # on every call; past the block stage the exact number stops
                 # meaning anything anyway.
-                "intercepted": min(MAX_INTERCEPTED_COUNT, int(current["intercepted"]) + 1),
+                "intercepted": intercepted,
                 # The loop is still live, so the row is too. Without this a
                 # long enough sequence of refused calls would age past the
                 # window and hand the model a fresh budget.
@@ -1271,7 +1277,8 @@ def record_repeat_refusal(
     except (OSError, ValueError, TypeError) as exc:
         # Same width, same failing-open contract; the drop is counted now.
         _note_write_failure(exc)
-        return
+        return None
+    return {"period": cycle[0], "laps": cycle[1], "intercepted": intercepted}
 
 
 def record_tool_call_close(

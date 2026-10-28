@@ -6,6 +6,16 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **The route hint stops saying the same thing twice.** Route hint text is
+  about 18% of the OMH text a model reads per session, and part of it repeated
+  other text in the same block: a hint's `adjacent_workflows=` line that equals
+  the block's top-level one, and a `fallback_action_label=` or
+  `next_action_label=` that only respells its action's underscores. Each one
+  now renders only when it differs from the text it would repeat. Rendered
+  before and after on the same 68 routing-intervention hints, the block went
+  from 106,957 to 98,121 characters (8.3%), and no hint grew. Selection, the payload, `first_response_shape=` and
+  `not_evidence_yet=` do not change, and the per-turn ratchets drop with the
+  render (`pre_llm_call` 5786 -> 5632, fallback 7338 -> 7184).
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character
   `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history
@@ -51,6 +61,21 @@ All notable changes will be documented here.
   archived only with its hash, version and catalog row read back, published
   only when the destination's own URL resolves to the same hash, and the
   final file is the one the person approved, never the newest mtime. (#2335)
+- **The OMH TUI says when OMH caught a model mistake.** OMH's catches
+  reached only the model, so an install looked like it did nothing. Now the
+  moment one happens the transcript gets one row, `✦ OMH` stepped through
+  the launch look's logo colours and the words in its label colour, so it
+  follows `/theme`: `✦ OMH 🔁 stopped a loop of N identical calls` (the
+  repeat guard's first refusal of a streak), `✦ OMH 📖 pointed the re-read
+  at line 1667` (the first note on a truncated read's refused re-read),
+  `✦ OMH 📋 kept going, plan has 2 open items` (a turn continued over an
+  open plan), and `✦ OMH ⏰ flagged a wait with nothing armed to wake it`
+  (the turn's unarmed remote-wait directive). Nothing prints otherwise, and a resumed
+  session does not replay earlier catches. The hooks record each catch
+  beside their unchanged decision in `<omh_home>/runtime/catches.json`
+  (`omh_catch_log/v1`): a kind from a closed set and small integers, never
+  model text, arguments or paths; the HUD payload carries the reading
+  session's newest few as `catches`.
 - **A generation's own skills pack is never registered, and a home left on
   one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
   the running generation's pack (`generations/<id>/skills`) beside the shared
@@ -64,6 +89,36 @@ All notable changes will be documented here.
   collected; only the installer-managed command, which retires the pack in
   the same write, counts it as a registration. A relative entry, which
   Hermes anchors at its own home, never matches.
+- **A skills entry spelled through `${VAR}` is matched the way Hermes reads
+  it.** Hermes expands `${VAR}` and `~` in `skills.external_dirs` before it
+  resolves an entry, but setup, update and `omh doctor` expanded only `~`,
+  so `${XDG_DATA_HOME}/omh/generations/<id>/skills` beside the pointer was
+  neither retired nor reported and the home lost every OMH skill once the
+  pointer moved. Such entries are now expanded first; one whose variable is
+  unset is left untouched, as Hermes leaves it. A Windows entry rooted
+  without a drive (`\omh\...`), which Hermes loads from its home's drive, is
+  matched on every Python version instead of through 3.12 only. A relative
+  entry, which Hermes reads under its own home, is no longer resolved
+  against the directory `omh` runs from, so update cannot retire it or read
+  the home as registered through it, and doctor cannot count it as a second
+  managed directory. Uninstall's
+  check for a store another Hermes home still names, `omh hermes
+  readiness` and the installed-skill weight advisory expand entries the same
+  way and read a relative one under the home that names it, so uninstall
+  keeps a store a home names as `../omh/skills`.
+- **Setup, update and doctor read every skills entry from the home that
+  names it.** The registration migration, the generation-pack retirement,
+  the two-directories finding and the registered check now read a relative
+  entry under that Hermes home and a Windows entry rooted without a drive
+  on the home's drive, as Hermes does, instead of skipping the first and
+  resolving the second on the drive `omh` runs from. So `../.omh/skills` or
+  `../omh/generations/<id>/skills` beside the pointer is retired and
+  reported, and `omh update` run from `D:` still retires `\omh\...` when the
+  home is on `C:`. Registration no longer adds the pointer beside an entry
+  that already names it another way (`C:\omh\current\skills` on Windows,
+  `${VAR}`, `~`, or relative to the home), and `omh uninstall
+  --registration-only` removes every spelling setup retires. Nothing is
+  retired or removed that Hermes does not read through that home.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
@@ -145,6 +200,33 @@ All notable changes will be documented here.
   sent prompt keeps the labels and lists each image under its echo
   (`⎿  [Image #1]`). A queued prompt goes with its own images, never with
   the ones in the draft. Typing the label yourself attaches nothing.
+- **The exit card is the session's title and how to resume it.** Leaving
+  the OMH TUI printed five lines: the title, a line of id, turns, messages
+  and duration, a line of tokens and model, `omh --resume <id>` and
+  `omh -c "<title>"`. It now prints the title (`untitled session` when
+  there is none) and, after a blank line, `resume: omh --resume <id>` with
+  the whole id, plus `-p <profile>` for a profile launch, then a blank
+  line so the shell prompt does not sit right under it. The
+  `-c "<title>"` line is gone with the counts, since the id always opens
+  this session and a title can be shadowed by a newer `<title> #N`.
+- **The `/sessions` picker reads as a table, and `/resume` is `/sessions`.**
+  The session you are in heads the list under `Current` (named `this
+  session` until it has a title), and the rest sit under a muted heading for
+  the day each started (Today, Yesterday, Previous 7 days, Earlier), in
+  Hermes' order inside a day. Age and message count are right-aligned in
+  columns of their own, and a rule sets the list off from its header and
+  its filter row, in the `/rewind` and `/model` pickers too. The arrows and
+  Page keys move past the headings, a heading never ends the visible list
+  with its sessions below, and a filter keeps only the headings with a
+  match. The `/` menu offers `/resume` under its own name once what you type
+  starts it and is not in `sessions`. `/res`, which highlighted Hermes'
+  `/compress`, now starts with `/resume`; every other short prefix keeps
+  the top row it had. On Hermes' shared gateway, which resumes ids only,
+  `/sessions <title>` and `/resume <title>` were refused `not_found`. A
+  refused title is now looked up through the gateway's exact-title
+  `session.list`, over the whole store, then among the listed sessions
+  ignoring case. The one session with it opens; several (titles that
+  differ only in case) or none open the picker filtered by the title.
 
 ## 4.0.3 - 2026-10-27
 

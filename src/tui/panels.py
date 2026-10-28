@@ -766,6 +766,53 @@ def plan_text(payload: Any) -> str:
     return "\n".join(rows)
 
 
+# ── catch rows ─────────────────────────────────────────────────────────────
+
+# The mark a catch row opens with, drawn through the launch look's logo colours by the transcript (`Theme.catch_mark`).
+CATCH_MARK = "✦ OMH"
+# One emoji per catch kind (`catch_log.CATCH_KINDS`), between the mark and the sentence. Each is a default-emoji
+# code point (no U+FE0F) two cells wide. A kind not listed here is not printed.
+CATCH_EMOJI = {"repeat_loop": "🔁", "truncated_read": "📖", "plan_continued": "📋", "unarmed_wait": "⏰"}
+
+
+def _catch_sentence(entry: Mapping[str, Any]) -> str:
+    """What OMH did, worded from the entry's kind and numbers; "" for a kind or number this cannot word."""
+    kind = entry.get("kind")
+    numbers = {key: value for key, value in entry.items() if isinstance(value, int) and not isinstance(value, bool)}
+    if kind == "repeat_loop" and numbers.get("laps", 0) > 0 and numbers.get("period", 0) > 0:
+        if numbers["period"] == 1:
+            return f"stopped a loop of {numbers['laps']} identical calls"
+        return f"stopped a loop of {numbers['period']} calls repeated {numbers['laps']} times"
+    if kind == "truncated_read" and numbers.get("offset", 0) > 0:
+        return f"pointed the re-read at line {numbers['offset']}"
+    if kind == "plan_continued" and numbers.get("open_items", 0) > 0:
+        count = numbers["open_items"]
+        return f"kept going, plan has {count} open item{'' if count == 1 else 's'}"
+    if kind == "unarmed_wait":
+        return "flagged a wait with nothing armed to wake it"
+    return ""
+
+
+def catch_lines(payload: Any) -> list[tuple[int, str]] | None:
+    """The payload's catches as `(seq, line)`, oldest first: `🔁 stopped a loop of 3 identical calls`, the mark
+    (`CATCH_MARK`) drawn before it apart. An entry this cannot word keeps its `seq` with the line "", so a reader
+    still counts it as seen; one without a usable `seq` is left out. None for a payload that is not a readable HUD
+    (an error, or not metadata-only): it says nothing about which catches exist, so a reader must not set a mark on it.
+    """
+    if not _valid(payload):
+        return None
+    catches = payload.get("catches")
+    rows: list[tuple[int, str]] = []
+    for entry in catches if isinstance(catches, list) else []:
+        seq = entry.get("seq") if isinstance(entry, Mapping) else None
+        if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+            continue
+        emoji = CATCH_EMOJI.get(str(entry.get("kind")))
+        sentence = _catch_sentence(entry) if emoji else ""
+        rows.append((seq, f"{emoji} {sentence}" if sentence else ""))
+    return rows
+
+
 def _plan_lines(
     plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True,
     fold_key: str = "", folded: bool = False,
@@ -979,7 +1026,13 @@ def _route_identity(row: Mapping[str, Any]) -> tuple[str, str]:
     category = _safe_text(row.get("category"))
     if origin == "exhausted_to_inherit" and route_category:
         category = route_category
-    if category == "inherit":
+    label = _safe_text(row.get("route_label"))
+    if label:
+        # Hermes' delegation backend ran this child on the user's option: a model that equals the parent's is not
+        # inheritance there, and the option is named beside whatever lane the model maps to.
+        lane = "" if category == "inherit" else category
+        text = f"{ROUTE_PREFIX}{lane}@{label}{f'({detail})' if detail else ''}"
+    elif category == "inherit":
         text = f"inherit{f'({model})' if model else ''}"
     elif category:
         text = f"{ROUTE_PREFIX}{category}{f'({detail})' if detail else ''}"

@@ -25,6 +25,7 @@ from _platform_support import requires_hermes_host, requires_posix, requires_sym
 load_local_package()
 
 from _legacy_display import brand_legacy_home, seed_legacy_skins, seed_legacy_widget
+from omh.commands import chat as _chat_module
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
@@ -2792,27 +2793,23 @@ class HermesProfileSyncTests(unittest.TestCase):
         is not what these tests exercise. `pack` is the running generation's
         own pack when it is not the pointer itself, as on a real install,
         where the pointer is `<root>/current/skills` and the pack
-        `<root>/generations/<id>/skills`.
+        `<root>/generations/<id>/skills`. `omh chat --auto-apply-target-change`
+        reads the pointer and the verdict through its own bindings, so they
+        are stubbed there too.
         """
+        runtime = {"managed": True, "reason": "", "python": sys.executable, "venv_dir": str(current.parent)}
         with (
             mock.patch.object(
                 _setup_module, "managed_current_workflow_pack_dir", return_value=current
             ),
+            mock.patch.object(_chat_module, "managed_current_workflow_pack_dir", return_value=current),
+            mock.patch.object(_chat_module, "managed_command_runtime", return_value=runtime),
             mock.patch.object(
                 sys.modules[resolve_paths.__module__],
                 "managed_workflow_pack_dir",
                 return_value=pack or current,
             ),
-            mock.patch.object(
-                _setup_module,
-                "_managed_command_runtime",
-                return_value={
-                    "managed": True,
-                    "reason": "",
-                    "python": sys.executable,
-                    "venv_dir": str(current.parent),
-                },
-            ),
+            mock.patch.object(_setup_module, "_managed_command_runtime", return_value=runtime),
             mock.patch.object(
                 _setup_module,
                 "_command_package_self_update_plan",
@@ -3276,6 +3273,45 @@ class HermesProfileSyncTests(unittest.TestCase):
                 )
             self.assertEqual(status, 0, stderr)
             self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [])
+
+    def test_a_profile_entry_is_read_from_the_profile_s_own_home(self) -> None:
+        # Each profile names its older directory relative to its own home:
+        # `kami` an older generation's pack, `nori` the pre-pointer copy.
+        # Read from the primary's home or the cwd they name nothing, so the
+        # registered predicate, the migration and the post-check must all
+        # read them from the profile; both end on the pointer alone.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kami = self._profile(root, "kami")
+            nori = self._profile(root, "nori")
+            pointer, first, second, _gone = self._generation_layout(root)
+            older_copy = root / ".omh" / "skills"
+            older_copy.mkdir(parents=True, exist_ok=True)
+            with self._managed_install(pointer, pack=first):
+                status, _, stderr = run_cli(self._base(root) + ["setup"], output_json=False)
+            self.assertEqual(status, 0, stderr)
+            for profile, older in ((kami, first), (nori, older_copy)):
+                # From the resolved paths on both sides: `relpath` across the
+                # macOS `/var` alias would climb out of the wrong prefix.
+                relative = Path(os.path.relpath(older.resolve(), profile.resolve())).as_posix()
+                (profile / "config.yaml").write_text(
+                    (profile / "config.yaml").read_text(encoding="utf-8").replace(pointer.as_posix(), relative),
+                    encoding="utf-8",
+                    newline="",
+                )
+                self.assertEqual(external_dirs((profile / "config.yaml").read_text(encoding="utf-8")), [relative])
+
+            with self._managed_install(pointer, pack=second):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("kami (refreshed)", stdout)
+            self.assertIn("nori (refreshed)", stdout)
+            for profile in (kami, nori):
+                self.assertEqual(
+                    external_dirs((profile / "config.yaml").read_text(encoding="utf-8")), [pointer.as_posix()], profile
+                )
+            self.assertNotIn("OMH-managed skills directories", stdout)
 
     @requires_symlinks
     def test_an_older_entry_spelled_through_a_link_is_retired_too(self) -> None:

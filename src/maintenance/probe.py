@@ -481,7 +481,7 @@ def _structural_search_capability(*, which: Callable[[str], str | None] | None =
 def probe_capabilities(paths: OmhPaths, *, include_parity: bool = False, include_roadmap: bool = False) -> dict:
     config_text = read_config(paths.hermes_config_path)
     configured_dirs = external_dirs(config_text)
-    skills_registered = external_dir_registered(configured_dirs, paths.skills_dir)
+    skills_registered = external_dir_registered(configured_dirs, paths.skills_dir, hermes_home=paths.hermes_home)
     capabilities: list[Capability] = []
     buzz = probe_buzz(paths)
     capabilities.append(

@@ -180,8 +180,10 @@ from .model_picker import ModelPicker, model_rows, typed_switch_value
 from . import dag_block
 from .dag_tree import TreeState
 from .panels import (
+    CATCH_MARK,
     HudPoller,
     HudSnapshot,
+    catch_lines,
     dag_page_lines,
     hud_chips,
     panel_lines,
@@ -255,6 +257,7 @@ from .theme import (
     Theme,
     aura_moves,
     build_theme,
+    with_catch_colours,
     with_prompt_band,
     is_light,
     launch_palette,
@@ -672,6 +675,17 @@ OSC52_COPY = "\x1b]52;c;{}\x07"
 # `omh-*` and `ulw-*` slugs) up to half the terminal; a name longer than that pushes only its own summary.
 MENU_NAME_CELLS = 16
 SESSION_LIST_LIMIT = 50
+# The owner's own refusal code (`attach/gateway_attach.py` REFUSED). Hermes' shared gateway answers it to a
+# `session.resume` of a title, which it does not resolve, so `/sessions <title>` looks the title up after it.
+RESUME_REFUSED = 4001
+# What `/sessions <title>` says when the listed sessions hold no one session with that title: the picker opens
+# filtered by it.
+TITLE_SHARED_NOTICE = '{count} sessions are titled "{title}": pick one.'
+TITLE_UNKNOWN_NOTICE = 'No session is titled "{title}": pick one, or change the filter.'
+# The shapes of Hermes' session ids: a stored one (`20261028_101538_a1b2c3`) and a canonical local one
+# (`local-` and hex, whole or as the 16-character hint). A typed target of that shape that no lookup finds is an id
+# the owner refused, so its refusal is said rather than a title notice.
+SESSION_ID_SHAPE = re.compile(r"\d{8}_\d{6}_[0-9a-f]+|local-[0-9a-f]{16,}")
 # `complete.path` goes out once the `@` token has held still this long.
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 # An image Hermes queued for a session the TUI has since left: the gateway holds it there, so no chip shows here.
@@ -1519,6 +1533,8 @@ class App(ModesMixin, AgentViewMixin):
         self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
         self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
         self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
+        # The session and the highest catch `seq` this transcript has accounted for (`_print_catches`).
+        self.catch_seen: tuple[str, int] | None = None
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
@@ -1913,9 +1929,11 @@ class App(ModesMixin, AgentViewMixin):
         return without_colour(theme) if self.color_depth == NO_COLOR else theme
 
     def _themed(self) -> Theme:
-        """The skin's theme against the background, with the shown launch look's band behind a sent prompt, painted."""
-        skin, surface = self._skin(), self._surface()
-        return self._painted(with_prompt_band(build_theme(skin, surface), skin, surface, self._shown_look()))
+        """The skin's theme against the background, with the shown launch look's band behind a sent prompt and its
+        catch-row colours, painted."""
+        skin, surface, look = self._skin(), self._surface(), self._shown_look()
+        banded = with_prompt_band(build_theme(skin, surface), skin, surface, look)
+        return self._painted(with_catch_colours(banded, skin, surface, look))
 
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
@@ -4633,7 +4651,7 @@ class App(ModesMixin, AgentViewMixin):
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         elif arg:
-            self._switch_session(arg)
+            self._switch_session(arg, by_title=True)
         else:
             self._request("session.list", {"limit": SESSION_LIST_LIMIT}, self._open_session_picker)
 
@@ -4655,9 +4673,10 @@ class App(ModesMixin, AgentViewMixin):
         if action.kind == PICK:
             self._switch_session(action.session_id)
 
-    def _switch_session(self, target: str, notice: str = "") -> None:
+    def _switch_session(self, target: str, notice: str = "", by_title: bool = False) -> None:
         """Resume `target` (a stored id or an exact title); the current session closes once that worked, and `notice`
-        is said on the redrawn screen."""
+        is said on the redrawn screen. `by_title`: the person typed `target`, so a refusal may be a title the gateway
+        does not resolve (`_on_resume_refused`)."""
         if target == self.stored_id:
             self.transcript.add_notice(f"Already in session {target}.")
             return
@@ -4665,7 +4684,7 @@ class App(ModesMixin, AgentViewMixin):
             "session.resume",
             {"session_id": target, "cols": self.size[0]},
             lambda result: self._on_session_resumed(target, result, notice),
-            lambda error: self._on_resume_refused(target, error),
+            lambda error: self._on_resume_refused(target, error, notice, by_title),
         )
 
     def _on_session_resumed(self, target: str, result: dict[str, Any], notice: str = "") -> None:
@@ -4689,12 +4708,80 @@ class App(ModesMixin, AgentViewMixin):
         self._redeliver(result.get("open_requests"))
         self._refresh_catalog()  # its workspace may hold project-local skills the last one did not
 
-    def _on_resume_refused(self, target: str, error: dict[str, Any]) -> bool:
+    def _on_resume_refused(self, target: str, error: dict[str, Any], notice: str = "", by_title: bool = False) -> bool:
+        """Say the refusal, and stay. A typed target the owner refused (`RESUME_REFUSED`) is looked up as a title
+        first (`_resume_looked_up`): Hermes' shared gateway resumes ids only, where its stdio entry also took an exact
+        title."""
+        if by_title and error.get("code") == RESUME_REFUSED:
+            self._request(
+                "session.list", {"title": target},
+                lambda result: self._resume_looked_up(target, error, result, notice),
+                lambda _lookup: self._scan_titles(target, error, notice),
+            )
+            return True
         message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
             f"Could not switch to {target} ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
         )
         return True
+
+    def _resume_looked_up(self, target: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
+        """The owner's exact-title lookup (`session.list` `title`, over its whole store), after it refused `target`
+        as an id.
+
+        The session that has `target` as its id was refused as itself, so the
+        refusal is said. One session titled exactly `target` (or whose lineage
+        is, `root_title`) is resumed by the id it answers with. Anything else,
+        a gateway that ignored `title` and listed as usual included, goes to
+        the listing's scan (`_scan_titles`).
+        """
+        rows = [row for row in result.get("sessions") or [] if isinstance(row, dict)]
+        if any(target in (row.get("id"), row.get("resolved_id")) for row in rows):
+            self._on_resume_refused(target, error)
+            return
+        titled = [row for row in rows if target in (row.get("title"), row.get("root_title"))]
+        found = as_text(titled[0].get("resolved_id")) or as_text(titled[0].get("id")) if len(titled) == 1 else ""
+        if found:
+            self._switch_session(found, notice)
+        else:
+            self._scan_titles(target, error, notice)
+
+    def _scan_titles(self, target: str, error: dict[str, Any], notice: str) -> None:
+        """Look `target` up among the listed sessions (`_resume_titled`); a listing that fails says the refusal."""
+        self._request(
+            "session.list", {"limit": SESSION_LIST_LIMIT},
+            lambda result: self._resume_titled(target, error, result, notice),
+            lambda _listing: self._on_resume_refused(target, error),
+        )
+
+    def _resume_titled(self, title: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
+        """`title` against the listed sessions, after the owner refused it as an id and found no one session with it.
+
+        A listed session with that id was refused as itself, so the refusal
+        is said. Otherwise the one session titled `title` is resumed by its
+        id, matching case first and then ignoring it. Several with that title
+        (they differ only in case: Hermes refuses an exact duplicate), or none,
+        open the picker filtered by `title` and say how many matched; with no
+        session listed at all, or none matching a target shaped as a session id
+        (`SESSION_ID_SHAPE`), the refusal is said.
+        """
+        rows = session_rows(result)
+        if not rows or any(row.id == title for row in rows):
+            self._on_resume_refused(title, error)
+            return
+        matched = [row for row in rows if row.title == title] or [
+            row for row in rows if row.title.casefold() == title.casefold()
+        ]
+        if len(matched) == 1:
+            self._switch_session(matched[0].id, notice)
+            return
+        if not matched and SESSION_ID_SHAPE.fullmatch(title):
+            self._on_resume_refused(title, error)
+            return
+        said = TITLE_SHARED_NOTICE if matched else TITLE_UNKNOWN_NOTICE
+        self.transcript.add_notice(said.format(count=len(matched), title=title), NOTICE_WARN)
+        self.picker = SessionPicker(rows, current=self.stored_id, query=title)
+        self._settle_list()
 
     # ── attachments ──
 
@@ -5225,6 +5312,32 @@ class App(ModesMixin, AgentViewMixin):
             self.roster.ingest_tokens(snapshot.output_tokens)
             self.dirty = True
             self._retire_finished_plan()
+            self._print_catches()
+
+    def _print_catches(self) -> None:
+        """One row per catch OMH made in this session since the last payload (`catch_lines`), as it happens.
+
+        The first payload of a session only sets the mark: a resumed or
+        attached session does not replay the catches it made before it was
+        opened here. The empty snapshot a switch delivers is no payload, and an
+        error payload says nothing about which catches exist, so the mark is set
+        by the first readable read of the session. A `seq` below the mark means
+        the ledger started over (deleted or unreadable): the mark moves down to
+        it, so new catches print again instead of waiting for the old count.
+        """
+        hud = self.hud
+        catches = catch_lines(hud.payload) if hud is not None else None
+        if hud is None or catches is None:
+            return
+        newest = max((seq for seq, _ in catches), default=-1)
+        if self.catch_seen is None or self.catch_seen[0] != hud.session_id or newest < self.catch_seen[1]:
+            self.catch_seen = (hud.session_id, newest)
+            return
+        seen = self.catch_seen[1]
+        for seq, line in catches:
+            if seq > seen and line:
+                self.transcript.add_aside(NoticeBlock(line, one_line=True, mark=CATCH_MARK))
+        self.catch_seen = (hud.session_id, max(seen, newest))
 
     def _retire_finished_plan(self) -> None:
         """Stop drawing a plan whose every item is done, once no turn runs, as Claude Code's list goes once done.
