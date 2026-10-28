@@ -161,6 +161,17 @@ All notable changes will be documented here.
   line so the shell prompt does not sit right under it. The
   `-c "<title>"` line is gone with the counts, since the id always opens
   this session and a title can be shadowed by a newer `<title> #N`.
+- **`omh uninstall` removes an OMH home under `/var` or `/tmp` on macOS
+  again (#2359, reported and fixed by @Kenmege).** The uninstall guard that
+  keeps a home configured through a symlink walked every ancestor of the
+  configured path, and on macOS `/var`, `/tmp` and `/etc` are themselves
+  root-owned links into `/private`. Every home under them, including the
+  per-user temporary roots in `/var/folders`, was therefore kept with
+  "passes through a symlink or directory junction". A root-owned link
+  directly under the filesystem root now counts as an OS alias; a link
+  anywhere below it, or one a user owns, still refuses, and Windows never
+  takes the exemption. The same rule applies to the menu-bar refresh that
+  `omh update` skips for a linked home.
 
 ## 4.0.3 - 2026-10-27
 
