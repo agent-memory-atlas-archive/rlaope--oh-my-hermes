@@ -359,6 +359,37 @@ class RegistrationOptOutTests(_Fixture):
             self.assertEqual(self._file_snapshot(directory), snapshots[directory])
 
 
+    def test_registration_only_removes_every_spelling_setup_retires_and_no_user_dir(self) -> None:
+        # Setup retires `../omh/skills` and `${VAR}/skills` as the managed
+        # store's skills; the opt-out must take them out as well, or the next
+        # update reads the home as registered again. A relative entry naming
+        # the person's own directory, and a foreign one, stay.
+        self._setup_primary()
+        personal = self.root / "personal" / "skills"
+        _write(personal / "mine" / "SKILL.md", "# not owned by OMH\n")
+        foreign = self.root / "foreign" / "skills"
+        _write(foreign / "theirs" / "SKILL.md", "# not owned by OMH\n")
+        config_path = self.hermes / "config.yaml"
+        text = config_path.read_text(encoding="utf-8")
+        managed = [entry for entry in external_dirs(text) if Path(entry).resolve() == (self.omh / "skills").resolve()]
+        self.assertEqual(len(managed), 1, external_dirs(text))
+        spelled = "    - ../omh/skills\n    - ${OMH_TEST_STORE}/skills/\n    - ../personal/skills\n" + f"    - {foreign}\n"
+        config_path.write_bytes(text.replace(f"    - {managed[0]}\n", spelled).encode("utf-8"))
+        self.assertEqual(
+            external_dirs(read_config(config_path)),
+            ["../omh/skills", "${OMH_TEST_STORE}/skills/", "../personal/skills", str(foreign)],
+        )
+
+        with mock.patch.dict(os.environ, {"OMH_TEST_STORE": self.omh.as_posix()}):
+            status, _, stderr = run_cli(
+                ["--hermes-home", str(self.hermes), "--omh-home", str(self.omh), "uninstall", "--registration-only"]
+            )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(external_dirs(read_config(config_path)), ["../personal/skills", str(foreign)])
+        self.assertTrue((personal / "mine" / "SKILL.md").is_file())
+
+
 class CorruptProfileUpdateTests(_Fixture):
     """F3: a bad profile is a named row, never an uncaught exception."""
 

@@ -79,6 +79,7 @@ from ..install.skill_registration import (
     external_dir_key,
     generation_pack_entries,
     hermes_profile_dirs,
+    managed_candidate_entries,
     managed_command_runtime as _managed_command_runtime,
     managed_skill_dir_candidates,
     migrate_managed_registration,
@@ -1130,7 +1131,8 @@ def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigCh
     """
     changed = False
     message = ""
-    for candidate in _managed_workflow_dir_candidates(paths):
+    candidates = _managed_workflow_dir_candidates(paths)
+    for candidate in candidates:
         change = remove_external_dir(config_text, candidate)
         config_text = change.text
         if change.changed and not changed:
@@ -1138,10 +1140,15 @@ def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigCh
             message = change.message
         elif not changed:
             message = change.message
-    # A generation's own pack is managed too, whichever generation it names.
+    # Any other spelling Hermes reads as a managed directory in this home
+    # (`${VAR}`, `~`, relative to the home), and a generation's own pack,
+    # whichever generation it names -- by the rule the migration retires by.
     change = remove_external_dir_entries(
         config_text,
-        generation_pack_entries(config_text, managed_current_workflow_pack_dir(), hermes_home=paths.hermes_home),
+        [
+            *managed_candidate_entries(config_text, candidates, hermes_home=paths.hermes_home),
+            *generation_pack_entries(config_text, managed_current_workflow_pack_dir(), hermes_home=paths.hermes_home),
+        ],
     )
     if change.changed and not changed:
         changed = True

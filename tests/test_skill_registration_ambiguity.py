@@ -322,6 +322,25 @@ class GenerationPackEntriesTests(unittest.TestCase):
             [written, "C:omh\\generations\\abc\\skills", "D:\\omh\\generations\\abc\\skills"],
         )
 
+    def test_on_windows_a_drive_relative_entry_on_another_drive_is_never_matched(self) -> None:
+        # The home is on C:, the managed root and this command on D:. Hermes
+        # resolves `D:omh\\...` against its own process's directory on D:,
+        # which this command cannot know; resolved against this command's
+        # D: directory it would read as the managed root and be retired.
+        written = "D:/omh/current/skills"
+        pointer = PureWindowsPath(written)
+        drive_relative = "D:omh\\generations\\abc\\skills"
+        text = f"skills:\n  external_dirs:\n    - {written}\n    - {drive_relative}\n"
+        windows = _windows_path(lambda path, *, strict=False: ntpath.normpath(ntpath.join("D:\\", path)))
+        with (
+            mock.patch.object(_registration_module, "os", SimpleNamespace(path=windows)),
+            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
+        ):
+            home = "C:\\Users\\u\\.hermes"
+            self.assertEqual(generation_pack_entries(text, pointer, hermes_home=home), [])
+            migration = migrate_managed_registration(text, written, [], current=pointer, hermes_home=home)
+        self.assertEqual((migration.text, migration.retired), (text, []))
+
     def test_on_windows_a_backslash_spelling_of_the_pointer_is_not_added_twice(self) -> None:
         # Registration writes `C:/omh/current/skills`; a config that already
         # names `C:\\omh\\current\\skills` names the same directory to Hermes,
@@ -640,6 +659,29 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             self.assertIn(old.as_posix(), row.message)
             self.assertIn(pointer.as_posix(), row.message)
 
+    def test_a_profile_relative_entry_is_read_from_the_profile_s_own_home(self) -> None:
+        # `../../../.omh/skills` in `profiles/miku` is the pre-pointer copy to
+        # Hermes; read from the primary's home or the cwd it names nothing,
+        # and the profile's ambiguity would go unreported.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            paths = _managed_paths(root, root / "gen" / "skills")
+            old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
+            paths.hermes_home.mkdir()
+            write_config(paths.hermes_config_path, _config_naming(pointer))
+            profile = paths.hermes_home / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            write_config(profile / "config.yaml", _config_naming(pointer) + "    - ../../../.omh/skills\n")
+
+            checks = self._checks(paths, pointer)
+
+            row = checks["external_dir_ambiguity:miku"]
+            self.assertEqual((row.ok, row.severity), (True, "warning"))
+            self.assertIn(f"({pointer.as_posix()} and ../../../.omh/skills)", row.message)
+
     def test_the_rows_group_under_hermes_registration(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -709,6 +751,27 @@ class UpdatePostCheckTests(unittest.TestCase):
                 # Entries are named the way the file spells them.
                 self.assertIn(f"({old.as_posix()} and {pointer.as_posix()})", line)
                 self.assertIn("so OMH skills fail to load by name", line)
+
+    def test_the_post_check_reads_a_profile_entry_from_the_profile_s_own_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            hermes_home = root / ".hermes"
+            old = root / ".omh" / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
+            hermes_home.mkdir()
+            write_config(hermes_home / "config.yaml", _config_naming(pointer))
+            profile = hermes_home / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            write_config(profile / "config.yaml", _config_naming(pointer) + "    - ../../../.omh/skills\n")
+            args = argparse.Namespace(omh_home=str(root / ".omh"), hermes_home=str(hermes_home))
+
+            with mock.patch.object(_setup_module, "managed_current_workflow_pack_dir", return_value=pointer):
+                lines = _setup_module._registration_ambiguity_lines(args)
+
+            self.assertEqual(len(lines), 1, lines)
+            self.assertTrue(lines[0].startswith(f"profile miku ({profile.resolve() / 'config.yaml'}) names 2 OMH-managed"))
 
     def test_the_post_check_is_quiet_for_homes_naming_one(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -829,6 +892,26 @@ class DoctorUnregisteredCopyCheckTests(unittest.TestCase):
                 f"pre-pointer skills copy at {copy} is still registered by profile miku ({profile / 'config.yaml'}); "
                 f"`omh update` migrates that registration to {generation}",
             )
+
+    def test_a_copy_a_profile_registers_relative_to_its_own_home_is_still_registered(self) -> None:
+        # Read from the primary's home, `../../../.omh/skills` names nothing,
+        # and doctor would call a copy the profile still loads safe to delete.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generation = root / "gen" / "skills"
+            pointer = root / "current" / "skills"
+            paths = _managed_paths(root, generation)
+            paths.hermes_home.mkdir()
+            write_config(paths.hermes_config_path, _config_naming(pointer))
+            profile = paths.hermes_home / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            copy = self._frozen_copy(paths)
+            write_config(profile / "config.yaml", _config_naming(pointer) + "    - ../../../.omh/skills\n")
+
+            check = self._check(paths, pointer)
+
+            self.assertEqual((check.ok, check.severity), (True, "ok"))
+            self.assertIn(f"skills copy at {copy} is still registered by profile miku ({profile / 'config.yaml'})", check.message)
 
     def test_an_unmanaged_install_serves_skills_from_that_directory(self) -> None:
         with TemporaryDirectory() as tmp:

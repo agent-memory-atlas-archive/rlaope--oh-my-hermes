@@ -2897,7 +2897,8 @@ Hermes lists no OMH skill at all. The installer-managed command's setup and
 update retire every such entry, from the primary home and every bot
 profile, whether the generation is still on disk or already collected, and
 a home naming only one is migrated to the pointer rather than read as the
-opt-out; `omh uninstall --registration-only` removes them too. Only
+opt-out; `omh uninstall --registration-only` removes them too, along with
+every spelling of an older managed directory the migration retires. Only
 entries that name a directory under the pointer's own managed root, read
 from the home that names them, match: a `skills` directory under some
 other `generations/` directory stays, and a relative entry matches only

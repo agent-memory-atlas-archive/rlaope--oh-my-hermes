@@ -185,17 +185,28 @@ def migrate_managed_registration(
     """
     change = ensure_external_dir(config_text, registered_dir, hermes_home=hermes_home)
     registered_real = _real_key(registered_dir)
-    candidate_reals = {_real_key(candidate) for candidate in candidates}
-    candidate_reals.discard(registered_real)
+    others = [candidate for candidate in candidates if _real_key(candidate) != registered_real]
+    named = set(managed_candidate_entries(change.text, others, hermes_home=hermes_home))
     packs = set(generation_pack_entries(change.text, current, hermes_home=hermes_home))
-    to_retire = [
-        entry
-        for entry in external_dirs(change.text)
-        if entry in packs or _anchored_real_key(entry, hermes_home) in candidate_reals
-    ]
+    to_retire = [entry for entry in external_dirs(change.text) if entry in packs or entry in named]
     removal = remove_external_dir_entries(change.text, to_retire)
     retired = list(to_retire) if removal.changed else []
     return RegistrationMigration(text=removal.text, added=change.changed, message=change.message, retired=retired)
+
+
+def managed_candidate_entries(config_text: str, candidates: Iterable[Path], *, hermes_home: Path) -> list[str]:
+    """The registered entries that name one of `candidates` to Hermes in `hermes_home`.
+
+    Matched by real path after anchoring each entry at the home
+    (`_anchored_real_key`), so every spelling Hermes reads as that directory
+    -- `${VAR}`, `~`, a trailing slash, a symlink, a path relative to the
+    home -- is one, and an entry Hermes reads as anything else, a directory
+    the person registered included, is not. The migration retires these and
+    the opt-out removes them, so the writer and uninstall cannot disagree
+    about a spelling. Config order is kept.
+    """
+    reals = {_real_key(candidate) for candidate in candidates}
+    return [entry for entry in external_dirs(config_text) if _anchored_real_key(entry, hermes_home) in reals]
 
 
 def generation_pack_entries(config_text: str, current: Path | None, *, hermes_home: Path) -> list[str]:
