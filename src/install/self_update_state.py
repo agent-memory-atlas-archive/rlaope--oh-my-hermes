@@ -247,7 +247,7 @@ def migrate_legacy(root: Path, state: dict[str, Any], paths: Any, platform: Self
         text = original
         for stale in (legacy_skills, default_skills, paths.omh_home / "skills"):
             text = remove_external_dir(text, stale).text
-        text = ensure_external_dir(text, root / "current" / "skills").text
+        text = ensure_external_dir(text, root / "current" / "skills", hermes_home=paths.hermes_home).text
         return ConfigChange(text != original, "retargeted skills.external_dirs", text)
 
     update_config(paths.hermes_config_path, _retarget_registration, omh_home=paths.omh_home)

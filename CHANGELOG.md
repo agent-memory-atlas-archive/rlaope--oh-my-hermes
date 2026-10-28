@@ -106,6 +106,19 @@ All notable changes will be documented here.
   readiness` and the installed-skill weight advisory expand entries the same
   way and read a relative one under the home that names it, so uninstall
   keeps a store a home names as `../omh/skills`.
+- **Setup, update and doctor read every skills entry from the home that
+  names it.** The registration migration, the generation-pack retirement,
+  the two-directories finding and the registered check now read a relative
+  entry under that Hermes home and a Windows entry rooted without a drive
+  on the home's drive, as Hermes does, instead of skipping the first and
+  resolving the second on the drive `omh` runs from. So `../.omh/skills` or
+  `../omh/generations/<id>/skills` beside the pointer is retired and
+  reported, and `omh update` run from `D:` still retires `\omh\...` when the
+  home is on `C:`. Registration no longer adds the pointer beside an entry
+  that already names it another way (`C:\omh\current\skills` on Windows,
+  `${VAR}`, `~`, or relative to the home), and `omh uninstall
+  --registration-only` removes every spelling setup retires. Nothing is
+  retired or removed that Hermes does not read through that home.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
