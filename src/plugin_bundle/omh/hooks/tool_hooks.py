@@ -10,6 +10,7 @@ from typing import Protocol, runtime_checkable
 
 from ..degradation import runtime_binding_degradation
 from ..approval_bypass import record_approval_bypass
+from ..catch_log import REPEAT_LOOP, record_catch
 from ..dag_define_gate import delegate_before_define_directive
 from ..delegation_route_restore import dispatch_route_directive
 from ..host_observation import host_session_id, observe_plugin_hook_call
@@ -285,12 +286,16 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         # streak from the block stage to the approval stage, and it is
         # deliberately not evidence that the call ran or that the person
         # denied it. OMH never observes how the host's gate was answered.
-        record_repeat_refusal(
+        counted = record_repeat_refusal(
             tool_name=kwargs.get("tool_name"),
             args_digest=args_digest,
             session_id=session_id,
             omh_home=omh_home,
         )
+        # The person sees the streak once, at its first refusal; the ones
+        # after it are the same loop (`catch_log`).
+        if counted is not None and counted["intercepted"] == 1:
+            record_catch(omh_home, session_id, REPEAT_LOOP, period=counted["period"], laps=counted["laps"])
         return _route_gated(repeat_directive, **route_gate)
     # The plan-stage gate sits here for the same reason the two guards above
     # it do: it intervenes on a call, so nothing that observes a dispatch may

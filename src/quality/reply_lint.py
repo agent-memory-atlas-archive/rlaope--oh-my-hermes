@@ -153,6 +153,7 @@ _SCHEMA_ID_TERMS: tuple[str, ...] = (
     "omh_capability_manifest/v1",
     "omh_capability_summary/v1",
     "omh_catalog_question_hint/v1",
+    "omh_catch_log/v1",
     "omh_code_mode_guidance/v1",
     "omh_context_brief/v1",
     "omh_context_brief_error/v1",

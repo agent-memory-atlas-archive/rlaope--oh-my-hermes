@@ -84,6 +84,7 @@ import threading
 from collections import OrderedDict
 from typing import Any, Final
 
+from .catch_log import TRUNCATED_READ, record_catch
 # The bound the plan record applies to a session reference, reused so a key
 # here and every other per-session map in this bundle describe the same string.
 from .todo_store import MAX_TODO_SESSION_REF_CHARS
@@ -122,7 +123,12 @@ MAX_RECORDED_PATH_CHARS: Final = 1024
 _NOTE_PREFIX: Final = "[OMH truncated read]"
 
 _records_lock = threading.Lock()
-# session -> (path, start) -> (start, last_line, total_lines, next_offset).
+# session -> (path, start) -> (start, last_line, total_lines, next_offset, noted).
+#
+# `noted` is whether a refusal of this window already carried the note, so the
+# catch is recorded for the person once per truncated window (`catch_log`)
+# while the model still gets the note on every refusal. A new truncated read
+# of the same window replaces the row and clears it.
 #
 # The START is half the key, not just payload. A truncated read is a statement
 # about ONE window: `read_file(path, offset=5000)` cut at line 6599 says
@@ -132,7 +138,7 @@ _records_lock = threading.Lock()
 # is annotated only when its own call asked for a window some truncated read
 # returned, which is the fact a literal "offset is 1" test was standing in for.
 # Both levels are insertion-ordered so eviction can take the oldest.
-_records: "OrderedDict[str, OrderedDict[tuple[str, int], tuple[int, int, int, int]]]" = (
+_records: "OrderedDict[str, OrderedDict[tuple[str, int], tuple[int, int, int, int, bool]]]" = (
     OrderedDict()
 )
 
@@ -143,6 +149,7 @@ def annotate_truncated_read_recovery(
     args: object,
     result: object,
     session_id: str = "",
+    omh_home: str = "",
 ) -> str | None:
     """Return *result* carrying the recovery note, or ``None`` to pass through.
 
@@ -176,7 +183,7 @@ def annotate_truncated_read_recovery(
 
     window_key = (path, _requested_offset(call_args))
     if _is_read_refusal(parsed):
-        return _note(parsed=parsed, session=session, window_key=window_key)
+        return _note(parsed=parsed, session=session, window_key=window_key, omh_home=omh_home)
     _record_if_truncated(parsed=parsed, session=session, window_key=window_key)
     return None
 
@@ -193,7 +200,8 @@ def truncated_read_window(
     if not session:
         return None
     with _records_lock:
-        return (_records.get(session) or {}).get((path, offset))
+        window = (_records.get(session) or {}).get((path, offset))
+    return window[:4] if window is not None else None
 
 
 def reset_truncated_read_records() -> None:
@@ -247,7 +255,7 @@ def _record_if_truncated(
         if windows is None:
             windows = OrderedDict()
         _ = windows.pop(window_key, None)
-        windows[window_key] = (start, last_line, total_lines, next_offset)
+        windows[window_key] = (start, last_line, total_lines, next_offset, False)
         while len(windows) > MAX_TRACKED_WINDOWS_PER_SESSION:
             _ = windows.popitem(last=False)
         _records[session] = windows
@@ -256,7 +264,7 @@ def _record_if_truncated(
 
 
 def _note(
-    *, parsed: dict[str, Any], session: str, window_key: tuple[str, int]
+    *, parsed: dict[str, Any], session: str, window_key: tuple[str, int], omh_home: str
 ) -> str | None:
     """Add the note when this refusal's own window was recorded truncated.
 
@@ -265,17 +273,26 @@ def _note(
     describes a window other than the one the refusal is about.
     """
     with _records_lock:
-        window = (_records.get(session) or {}).get(window_key)
-    if window is None:
-        return None
-    start, last_line, total_lines, next_offset = window
+        windows = _records.get(session) or {}
+        window = windows.get(window_key)
+        if window is None:
+            return None
+        # Read and marked under one hold, so two refusals of one window
+        # racing here record the catch once between them.
+        first = not window[4]
+        if first:
+            windows[window_key] = (*window[:4], True)
+    start, last_line, total_lines, next_offset, _noted = window
     parsed[TRUNCATED_READ_RECOVERY_KEY] = recovery_note_text(
         start=start, last_line=last_line, total_lines=total_lines, next_offset=next_offset
     )
     try:
-        return json.dumps(parsed, ensure_ascii=False)
+        annotated = json.dumps(parsed, ensure_ascii=False)
     except (TypeError, ValueError):
         return None
+    if first:
+        record_catch(omh_home, session, TRUNCATED_READ, offset=next_offset)
+    return annotated
 
 
 def recovery_note_text(

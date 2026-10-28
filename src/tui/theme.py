@@ -260,6 +260,9 @@ class Theme:
     aura: tuple[Style, ...] = ()  # a `dag-ulw` in the composer and the rules around it, bold, `AURA_STOPS` stepped
     aura_glint: tuple[Style, ...] = ()  # the same steps toward `AURA_GLINT`: the band that sweeps through them
     prompt_band: Style = Style()  # behind a prompt you sent, edge to edge (`with_prompt_band`); none until set
+    catch_mark: tuple[Style, ...] = ()  # a catch row's `✦ OMH`, cell by cell, bold, through the launch look's logo
+    catch_words: Style = Style()  # what a catch row says: the launch look's label colour (`with_catch_colours`);
+    # `build_theme` sets both from the default launch look, so no built theme leaves them unpainted
 
 
 def aura_moves(theme: Theme) -> bool:
@@ -403,7 +406,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         diff_add_word = Style(fg=c["diff_added_word"], bg=c["diff_added"])
         diff_remove = Style(fg=c["banner_text"], bg=c["diff_removed"])
         diff_remove_word = Style(fg=c["diff_removed_word"], bg=c["diff_removed"])
-    return Theme(
+    theme = Theme(
         name=skin.short_name,
         text=Style(),
         dim=Style(fg=grey("glyph", EDGE_CONTRAST)),
@@ -453,6 +456,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         aura=tuple(Style(fg=colour, bold=True) for colour in aura_steps) if moving else (Style(bold=True),),
         aura_glint=tuple(Style(fg=colour, bold=True) for colour in glint_steps) if moving else (Style(bold=True),),
     )
+    # A catch row's colours from the default launch look; `with_catch_colours` repaints them for the shown one.
+    return with_catch_colours(theme, skin, background, DEFAULT_LAUNCH)
 
 
 def launch_palette(name: str, surface: str) -> LogoPalette:
@@ -460,6 +465,29 @@ def launch_palette(name: str, surface: str) -> LogoPalette:
     unknown name."""
     dark, light = LAUNCH_PALETTES.get(name, LAUNCH_PALETTES[DEFAULT_LAUNCH])
     return light if is_light(surface) else dark
+
+
+# The cells of a catch row's mark (`panels.CATCH_MARK`, `✦ OMH`) the logo's colours are stepped across.
+CATCH_MARK_CELLS = 5
+
+
+def _logo_stops(palette: LogoPalette) -> list[str]:
+    """The colours a launch look's logo runs through, first to last: its sweep, its row faces, or graphite's white
+    HERMES into its coloured hyphens."""
+    if len(palette.sweep) > 1:
+        return list(palette.sweep)
+    if len(palette.faces) > 1:
+        return list(palette.faces)
+    return [palette.whites[0] if palette.whites else palette.label, palette.spark or palette.brand]
+
+
+def with_catch_colours(theme: Theme, skin: SkinTheme, background: str | None, look: str) -> Theme:
+    """`theme` with a catch row's colours from launch look `look` (owner's pick of 2026-10-28): the `✦ OMH` mark
+    stepped through the logo's colours (`CATCH_MARK_CELLS`), the words in the look's label colour, so the row reads
+    as OMH's own and changes with `/theme`."""
+    palette = launch_palette(look, surface_for(skin, background))
+    mark = tuple(Style(fg=colour, bold=True) for colour in _gradient(_logo_stops(palette), CATCH_MARK_CELLS))
+    return replace(theme, catch_mark=mark, catch_words=Style(fg=palette.label))
 
 
 def with_prompt_band(theme: Theme, skin: SkinTheme, background: str | None, look: str) -> Theme:
