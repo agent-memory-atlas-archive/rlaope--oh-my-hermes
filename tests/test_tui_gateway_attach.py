@@ -688,14 +688,19 @@ class ImageTests(AdapterCase):
         [(_, submit)] = adapter.from_client(_call(44, "prompt.submit", {"session_id": SID, "text": "y"}))
         self.assertNotIn("attachments", submit["params"])
 
-    def test_bytes_that_are_no_image_are_refused_before_the_owner_sees_them(self) -> None:
+    def test_empty_bytes_are_refused_and_bytes_the_owner_refuses_say_why(self) -> None:
         adapter = self.adapter()
         self.opened(adapter)
-        for content in ("not base64!", base64.b64encode(b"plain text").decode("ascii"), ""):
-            with self.subTest(content=content):
-                [(target, refusal)] = adapter.from_client(_call(45, "image.attach_bytes", {
-                    "session_id": SID, "filename": "x.png", "content_base64": content}))
-                self.assertEqual((target, refusal["error"]["code"]), (TO_CLIENT, attach.NOT_FOUND))
+        [(target, refusal)] = adapter.from_client(_call(45, "image.attach_bytes", {
+            "session_id": SID, "filename": "x.png", "content_base64": ""}))
+        self.assertEqual((target, refusal["error"]["code"]), (TO_CLIENT, attach.NOT_FOUND))
+        call = self.own_call(adapter.from_client(_call(46, "image.attach_bytes", {
+            "session_id": SID, "filename": "x.png", "content_base64": "bm90IGFuIGltYWdl"})), "image.attach_bytes")
+        self.assertEqual(call["params"]["content_base64"], "bm90IGFuIGltYWdl")  # as the TUI sent it
+        [(target, refusal)] = adapter.from_owner(_error(call["id"], "unsupported image extension"))
+        self.assertEqual((target, refusal["error"]["code"]), (TO_CLIENT, attach.REFUSED))
+        [(_, submit)] = adapter.from_client(_call(47, "prompt.submit", {"session_id": SID, "text": "x"}))
+        self.assertNotIn("attachments", submit["params"])
 
     def test_an_image_not_found_is_refused_with_its_reason(self) -> None:
         adapter = self.adapter()
