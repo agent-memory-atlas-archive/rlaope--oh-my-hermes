@@ -61,6 +61,21 @@ All notable changes will be documented here.
   archived only with its hash, version and catalog row read back, published
   only when the destination's own URL resolves to the same hash, and the
   final file is the one the person approved, never the newest mtime. (#2335)
+- **The OMH TUI says when OMH caught a model mistake.** OMH's catches
+  reached only the model, so an install looked like it did nothing. Now the
+  moment one happens the transcript gets one row, `✦ OMH` stepped through
+  the launch look's logo colours and the words in its label colour, so it
+  follows `/theme`: `✦ OMH 🔁 stopped a loop of N identical calls` (the
+  repeat guard's first refusal of a streak), `✦ OMH 📖 pointed the re-read
+  at line 1667` (the first note on a truncated read's refused re-read),
+  `✦ OMH 📋 kept going, plan has 2 open items` (a turn continued over an
+  open plan), and `✦ OMH ⏰ flagged a wait with nothing armed to wake it`
+  (the turn's unarmed remote-wait directive). Nothing prints otherwise, and a resumed
+  session does not replay earlier catches. The hooks record each catch
+  beside their unchanged decision in `<omh_home>/runtime/catches.json`
+  (`omh_catch_log/v1`): a kind from a closed set and small integers, never
+  model text, arguments or paths; the HUD payload carries the reading
+  session's newest few as `catches`.
 - **A generation's own skills pack is never registered, and a home left on
   one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
   the running generation's pack (`generations/<id>/skills`) beside the shared
