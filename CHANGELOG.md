@@ -373,6 +373,16 @@ All notable changes will be documented here.
   anywhere below it, or one a user owns, still refuses, and Windows never
   takes the exemption. The same rule applies to the menu-bar refresh that
   `omh update` skips for a linked home.
+- **Delegated agents no longer stop on a repository convention the brief
+  overrides.** The goal echo-back told an agent to stop whenever its brief
+  conflicted with anything, so a brief saying "do not create a branch" met
+  `AGENTS.md`'s "branch first" and the agent declined without making a
+  change. The brief now outranks repository workflow rules, and only a
+  brief that contradicts itself is stopped on.
+- **product-ab prices cached input once.** Hermes' usage file counts cache
+  reads inside `input_tokens` on the Codex route, and the lane priced them
+  again as cache reads, so one task read $35.77 instead of $4.98. The control
+  model moves from the retired `gpt-5.6-sol` to `gpt-6.1-sol`.
 
 ## 4.0.3 - 2026-10-27
 
