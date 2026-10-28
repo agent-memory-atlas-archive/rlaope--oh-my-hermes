@@ -120,7 +120,12 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # 5780 -> 5786: the pi-family runtime's profile was renamed, and the routed
 # coding handoff policy names it in its runtime list ("OMX/pi-family/OMC",
 # +6). Re-derived from the producer.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5786
+# 5786 -> 5632 (2026-10-28): the route hint stops repeating itself. A hint's
+# `adjacent_workflows=` line equal to the block's top-level one is dropped
+# (-81 on the routed request's largest role, `handoff-guide`), and a
+# fallback label that only respells the action's underscores is dropped
+# (-73). Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5632
 # The same scenario set on the fallback: a session the awareness section did
 # not render for (a restart resume, a legacy id-rotating compaction, a refused
 # section, an older host) still gets the primer in the fenced context, so its
@@ -150,7 +155,9 @@ PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5786
 # 7222 -> 7338: the primer's reply line gains its human-voice sentence (+116),
 # and it rides the fenced context on this fallback. The section-host limit
 # above does not move. Re-derived from the producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7338
+# 7338 -> 7184 (2026-10-28): the same route-hint dedup (-154). Re-derived
+# from the producer.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7184
 
 SLOT_LIMITS: dict[str, int] = {
     "primer": AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,

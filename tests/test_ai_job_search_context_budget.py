@@ -215,8 +215,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         expected = {
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
-            'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
-            'pre_llm_call_context_fallback_chars_max': 7338,  # The same rename (+6), then the human-voice primer sentence (+116).
+            'pre_llm_call_context_chars_max': 5632,  # The pi-family runtime rename (+6), then the route-hint dedup (-154).
+            'pre_llm_call_context_fallback_chars_max': 7184,  # The same rename (+6), the human-voice primer sentence (+116), then the route-hint dedup (-154).
             'awareness_primer_markdown_chars': 3630,  # Human-voice reply sentence (+110).
             'awareness_primer_context_chars': 1560,  # The same sentence (+120).
             'awareness_workflow_context_chars_max': 1500,
