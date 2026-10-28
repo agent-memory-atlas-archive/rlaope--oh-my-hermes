@@ -995,9 +995,9 @@ _DEEPSEEK_V41_FLASH: Final[dict[str, object]] = {
     "released": "2026-09-10",
     "rollout": (
         "generally available on the first-party API as `deepseek-flash`; `deepseek-v4-flash` and "
-        "`deepseek-v4-flash-vision-exp` are routed to it, and `deepseek-v4-pro` routes to it from "
-        "2026-09-14 12:00 Beijing time pending a V4.1 Pro release; a released id is not "
-        "account-level readiness evidence"
+        "`deepseek-v4-flash-vision-exp` are routed to it; `deepseek-v4-pro` stays a separately "
+        "priced model (pricing page re-read 2026-10-28); a released id is not account-level "
+        "readiness evidence"
     ),
     "served_ids": {
         "first_party": "deepseek-flash",

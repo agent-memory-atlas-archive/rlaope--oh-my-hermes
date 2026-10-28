@@ -6,6 +6,22 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Fourteen more models cost out at their vendors' list prices.** OMH
+  already recognized Grok 4.7, 4.6, 4.5 and 4.3, DeepSeek V4 Pro, Gemini
+  3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, GLM-5.3-FlashX, Qwen3.8-Max and
+  Qwen3.8-Flash, Solar Pro 4, MiniMax-M3 and MiniMax-M3.1-Flash, but it had
+  no price for them, so a run on one that the host recorded no cost for
+  showed no estimate. Each now
+  carries the first-party list price read on 2026-10-28, with its cached-input
+  rate where the vendor publishes one. The rows also note what the table
+  cannot represent: Grok's 200K whole-request tier, DeepSeek's off-peak half
+  rate, the Gemini Flash introductory price that doubles on 2027-01-01, and
+  MiniMax-M3's 512K tier. The xAI, DeepSeek, Gemini and Z.ai ids also get
+  provider checks; Qwen, Solar and MiniMax have no provider family to name.
+  No shipped chain names any of them. GLM-5.2 was costed at the GLM-4.x rate
+  (0.6/2.2) and now uses its own 1.4/4.4. Its Ultrafast serving moves from a
+  halved figure to the same base rate, as no separate tier rate is published.
+
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character
   `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history

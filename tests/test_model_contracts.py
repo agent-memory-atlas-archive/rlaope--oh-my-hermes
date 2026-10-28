@@ -418,8 +418,10 @@ class DeepSeekV41FlashTests(unittest.TestCase):
                 self.assertEqual(projection["provenance"], "declared_inheritance")
                 self.assertEqual(projection["requested_model"], form)
         self.assertNotIn("deepseek-flash", MODEL_CONTRACTS)
-        # The vendor routes these to V4.1 Flash on its own API; that is a
-        # wire concern, not an inheritance the catalog declares.
+        # The vendor routes `deepseek-v4-flash` to V4.1 Flash on its own API;
+        # that is a wire concern, not an inheritance the catalog declares.
+        # `deepseek-v4-pro` is a separately priced model and the others are
+        # other generations or the bare vendor word: none projects.
         for form in ("deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v3.2", "deepseek"):
             with self.subTest(form=form):
                 self.assertIsNone(model_contract_projection(form))
