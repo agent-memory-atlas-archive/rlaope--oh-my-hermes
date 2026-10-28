@@ -365,21 +365,15 @@ back:
 
 ```text
 omh · Fix the login bug
-  session 20261025_101530_ab12cd · 3 turns · 6 messages · 4m 12s
-  18200 tokens (in 12000, out 3000, cache 3000, reasoning 200) · moonshotai/kimi-k3.1-pro
-  omh --resume 20261025_101530_ab12cd
-  omh -c "Fix the login bug"
+
+  resume: omh --resume 20261025_101530_ab12cd
 ```
 
 The first line is the session's title (`untitled session` when Hermes has
-not named it). Then come its id, prompts, messages and how long this `omh`
-ran, and its tokens, split and summed over a `/branch` chain as Hermes does
-it, and its model. The last two lines reopen it by id, and by title when
-`-c <title>` would open this session: Hermes takes the newest `<title> #N`
-session over the exact title, so the line is left out when another session
-carries that name with a number, and for a title starting with `-`, which
-would read as options. With a profile both carry `-p <profile>`, since a profile has its own
-`state.db`. A session in which nothing was said gets one line instead, `omh:
+not named it). After a blank line, `resume:` reopens it by its whole id,
+which always resolves to this session, and a blank line closes the card so
+your shell prompt does not sit right under the command. With a profile it carries `-p <profile>`, since a profile
+has its own `state.db`. A session in which nothing was said gets one line instead, `omh:
 nothing was said in this session, so there is nothing to resume.`, unless
 an earlier session of the same launch (before a `/new` or a switch) has
 messages: then the card names the newest such one.
@@ -2888,7 +2882,9 @@ skill present in both failed to load by name in that bot. `omh setup` and
 `omh update` run from the installer-managed command migrate such a home in
 the same config write that registers the pointer: the older OMH-managed
 entry is retired, matched by real path the way Hermes resolves entries (a
-spelling through `~`, a trailing slash or a symlink is the same directory),
+spelling through `${VAR}`, `~`, a trailing slash or a symlink is the same
+directory; an unset variable stays as written, as it does in Hermes, and a
+relative entry, which Hermes reads under its own home, never matches),
 the home ends up naming exactly one managed directory, and the update
 prints the move (`Bot profile <name>: registration migrated from <old> to
 <new>.`; `Hermes registration migrated ...` for the primary home). Only
@@ -2909,7 +2905,10 @@ a home naming only one is migrated to the pointer rather than read as the
 opt-out; `omh uninstall --registration-only` removes them too. Only
 absolute entries under the pointer's own managed root match: a `skills`
 directory under some other `generations/` directory, and any relative
-entry (Hermes anchors those at its own home), stay.
+entry (Hermes anchors those at its own home), stay. On Windows an entry
+rooted without a drive, such as `\omh\...`, is not relative: Hermes loads it
+from its home's drive, and it matches. Entries are expanded in the running
+command's environment, which a Hermes service may not share.
 `omh doctor` reports a home that still names two managed directories on
 disk, an older generation's pack beside the pointer included, as
 `external_dir_ambiguity` (one row per affected profile) and

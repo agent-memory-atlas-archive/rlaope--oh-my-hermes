@@ -359,6 +359,30 @@ def _primer_already_in_api_history(conversation_history: object, primer: str) ->
     return False
 
 
+def _without_replayed_boundary(
+    route_hint_context: str, route_hint_payload: dict[str, object], conversation_history: object
+) -> str:
+    """The route hint without its closing `Boundary:` line once history already carries it.
+
+    The line is the same sentence on every hint, and Hermes replays each
+    turn's injection from `api_content`, so a session routed on several
+    turns kept one copy per turn (3,090 characters over 15 hints in one
+    owner's three days). The first hint of a session keeps it, and so does
+    any turn whose history the hook cannot read. The check reads only the
+    host-injected suffix (`_primer_already_in_api_history`), so a person
+    quoting the line cannot remove it. The route fingerprint is taken before
+    this, from the whole hint, so delivery dedupe is unchanged.
+    """
+    claim = str(route_hint_payload.get("claim_boundary", "") or "")
+    boundary = "Boundary: " + claim
+    suffix = "\n" + boundary
+    if not claim or not route_hint_context.endswith(suffix):
+        return route_hint_context
+    if not _primer_already_in_api_history(conversation_history, boundary):
+        return route_hint_context
+    return route_hint_context[: -len(suffix)]
+
+
 def _last_assistant_text(conversation_history: object) -> str:
     """The previous turn's closing text, or "" when the host replays none.
 
@@ -731,7 +755,11 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
             route_hint_payload=route_hint_payload,
         )
         if route_hint_context:
-            context_parts.append(route_hint_context)
+            context_parts.append(
+                _without_replayed_boundary(
+                    route_hint_context, rendered_route_hint, kwargs.get("conversation_history")
+                )
+            )
             helper_hint = search_helper_hint(rendered_route_hint, request_message)
             if helper_hint:
                 context_parts.append(helper_hint)

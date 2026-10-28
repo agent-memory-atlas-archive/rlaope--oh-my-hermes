@@ -1859,6 +1859,50 @@ def _scalar_value(value: str) -> str:
     return stripped
 
 
+def expand_external_dir_entry(entry: str) -> str:
+    """One `skills.external_dirs` entry with `${VAR}` and then `~` expanded, as Hermes reads it.
+
+    Hermes expands both before it resolves an entry (`_expand_path` in
+    `agent/skill_utils.py`), so `${XDG_DATA_HOME}/omh/current/skills` is the
+    pointer to Hermes. An unset variable stays as written, as it does there.
+    """
+    return os.path.expanduser(os.path.expandvars(entry))
+
+
+def anchor_external_dir_entry(entry: str, hermes_home: str | Path) -> Path:
+    """The directory Hermes reads for `entry` in the home `hermes_home`.
+
+    Expanded (`expand_external_dir_entry`), then joined onto the home, which
+    is Hermes' `_home_relative`: an absolute entry stands as written and any
+    other one lands under the home -- or, rooted without a drive on Windows,
+    on the home's drive -- never under this command's working directory.
+    """
+    return Path(hermes_home) / expand_external_dir_entry(entry)
+
+
+def external_dir_names_a_root(entry: str) -> bool:
+    """Whether Hermes reads `entry` from a root rather than from under its own home.
+
+    Hermes joins a non-absolute entry onto its home, and on Windows a join
+    with a rooted entry keeps only the home's drive: `\\omh\\generations\\<id>\\skills`
+    names `<home drive>:\\omh\\...`, not a directory under the home, and a
+    UNC or device drive (`\\\\server\\share`) is a root of its own. So the
+    question is whether the drive, or the part after it, starts at a
+    separator, which `os.path.splitdrive` answers alike on every Python
+    version; `os.path.isabs` called a drive-less rooted entry absolute
+    through 3.12 and relative from 3.13. A bare relative entry lands under
+    Hermes' home, and so does a drive-relative one (`C:omh\\...`) when the
+    home is on that drive; on another drive it is relative to that drive's
+    working directory, so it is not anchored at a root either. A reader that
+    is given the home anchors such an entry there
+    (`anchor_external_dir_entry`); one that is not skips it, and resolves a
+    drive-less rooted entry on this command's drive.
+    """
+    drive, tail = os.path.splitdrive(entry)
+    separators = {os.path.sep, os.path.altsep or os.path.sep}
+    return drive[:1] in separators or tail[:1] in separators
+
+
 def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     """Whether one registered entry names `skill_dir`, by text or by real path.
 
@@ -1866,6 +1910,10 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     entry survives generation switches, while a running command resolves its
     own generation directory. Comparing the two as strings reported every
     staged-update install as unregistered; the directories are the same one.
+    An entry is expanded the way Hermes expands it (`expand_external_dir_entry`),
+    and a relative one is never resolved: Hermes reads it under its own home,
+    so against this command's working directory it could read as the pointer
+    (`external_dir_names_a_root`).
     """
     wanted_text = _normalize(skill_dir)
     if wanted_text in dirs:
@@ -1875,8 +1923,11 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     except OSError:
         return False
     for entry in dirs:
+        expanded = expand_external_dir_entry(entry)
+        if not external_dir_names_a_root(expanded):
+            continue
         try:
-            if os.path.realpath(os.path.expanduser(entry)) == wanted_real:
+            if os.path.realpath(expanded) == wanted_real:
                 return True
         except OSError:
             continue

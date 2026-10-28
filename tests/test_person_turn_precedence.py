@@ -47,6 +47,7 @@ from omh.plugin_bundle.omh.hooks import nudge_budget, verify_hooks
 from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 from omh.plugin_bundle.omh.todo_reconciliation import (
     TODO_ANSWER_FIRST_RULE,
+    TODO_ANSWER_FIRST_RULE_SHORT,
     TODO_CONTINUATION_RULE,
     TODO_DEFERRED_RULE,
     TODO_RECONCILIATION_RULE,
@@ -474,6 +475,89 @@ class PlanLineForceTest(_PlanHomeTest):
                 ):
                     self.assertIn("reconcile the checklist:", line)
                     self.assertIn("keep exactly one item active", line)
+
+
+class AnswerFirstTurnBudgetTest(_PlanHomeTest):
+    """The answer-first rule spends the reconciliation budget, and only that one.
+
+    Before it did, the 445-character rule rode every person turn for the life
+    of a plan. One counter decides both lines, so a turn cannot carry the long
+    form of one and the short form of the other.
+    """
+
+    # Borrowed rather than inherited: inheriting would run every
+    # `PlanLineForceTest` case a second time under this class's name.
+    PRECEDENCE_CLAUSE = PlanLineForceTest.PRECEDENCE_CLAUSE
+    RESUME_BRANCH = PlanLineForceTest.RESUME_BRANCH
+    _turns = PlanLineForceTest._turns
+
+    def test_the_whole_rule_rides_the_turns_after_a_plan_write(self):
+        _ = self._open_plan()
+
+        lines = self._turns(
+            todo_reconciliation.TODO_RECONCILIATION_FULL_TURNS, user_message=A_QUESTION
+        )
+
+        for index, line in enumerate(lines):
+            with self.subTest(turn=index):
+                self.assertIn(TODO_ANSWER_FIRST_RULE, line)
+                self.assertIn(TODO_RECONCILIATION_RULE, line)
+
+    def test_past_the_budget_the_short_form_rides_with_the_first_clause(self):
+        _ = self._open_plan()
+        _ = self._turns(todo_reconciliation.TODO_RECONCILIATION_FULL_TURNS, user_message=A_QUESTION)
+
+        for index, line in enumerate(self._turns(3, user_message=A_QUESTION)):
+            with self.subTest(turn=index):
+                self.assertIn(TODO_ANSWER_FIRST_RULE_SHORT, line)
+                self.assertNotIn(TODO_ANSWER_FIRST_RULE, line)
+                self.assertNotIn("visible contradiction", line)
+                self.assertIn("reconcile the checklist:", line)
+
+    def test_the_short_form_keeps_the_incident_guards_and_the_order(self):
+        # The two phrases the incident wording pins, the precedence, and the
+        # record-first resume. The short form exists because these four carry
+        # the guard; the dropped sentences only elaborate them.
+        for phrase in (
+            "do not ask to be asked again",
+            "Do not agree with a claim you have not checked",
+            self.PRECEDENCE_CLAUSE,
+            "Then either record an omh_todo deferred_reason, if they steered "
+            "the work elsewhere, or resume the plan.",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, TODO_ANSWER_FIRST_RULE_SHORT)
+        self.assertLess(
+            TODO_ANSWER_FIRST_RULE_SHORT.index(self.RESUME_BRANCH),
+            TODO_ANSWER_FIRST_RULE_SHORT.index("resume the plan"),
+        )
+        self.assertLess(len(TODO_ANSWER_FIRST_RULE_SHORT), len(TODO_ANSWER_FIRST_RULE))
+
+    def test_a_write_to_the_plan_record_brings_the_whole_rule_back(self):
+        _ = self._open_plan()
+        _ = self._turns(todo_reconciliation.TODO_RECONCILIATION_FULL_TURNS + 1, user_message=A_QUESTION)
+
+        _ = self._write_plan([("land the fix", "done"), ("open the PR", "active"), ("ship", "pending")])
+
+        self.assertIn(TODO_ANSWER_FIRST_RULE, self._turns(1, user_message=A_QUESTION)[0])
+
+    def test_quiet_turns_spend_the_budget_the_person_turn_reads(self):
+        # One counter: turns no message opened count toward it too, so a
+        # question arriving after a long autonomous run gets the short form.
+        _ = self._open_plan()
+        _ = self._turns(todo_reconciliation.TODO_RECONCILIATION_FULL_TURNS)
+
+        line = self._turns(1, user_message=A_QUESTION)[0]
+
+        self.assertIn(TODO_ANSWER_FIRST_RULE_SHORT, line)
+
+    def test_a_caller_that_is_not_a_turn_renders_the_whole_rule(self):
+        # `open_todo_reminder` without `count_turn` is a pure read, and every
+        # way of not knowing fails toward the longer guard.
+        _ = self._open_plan()
+        _ = self._turns(todo_reconciliation.TODO_RECONCILIATION_FULL_TURNS + 2, user_message=A_QUESTION)
+
+        self.assertIn(TODO_ANSWER_FIRST_RULE, self._reminder(A_QUESTION))
 
 
 class TurnEndDirectiveUnaffectedTest(_PlanHomeTest):

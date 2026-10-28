@@ -1086,5 +1086,77 @@ class TurnAuthorshipHasOneHomeTest(unittest.TestCase):
         self.assertIs(llm_hooks.host_synthesized_turn, turn_authorship.host_synthesized_turn)
 
 
+
+ROUTE_BOUNDARY_LINE = (
+    "Boundary: OMH route hints are local deterministic prompt context only. They are not "
+    "workflow execution, tool invocation, generated output, verification, review, CI, merge, "
+    "or proof that routing was correct."
+)
+A_SECOND_REQUEST = "Review this pull request for bugs before we merge it."
+
+
+class RouteHintBoundaryOnceTest(_InjectionTestCase):
+    """The route hint's closing boundary rides once per replayed history, not once per hint.
+
+    Hermes replays each turn's injection, so the same sentence on every routed
+    turn stays in the prompt once per hint until compaction.
+    """
+
+    def _turn(self, text, *, session, history):
+        payload = pre_llm_call(
+            omh_home=str(self.home),
+            hermes_home=str(self.hermes),
+            session_id=session,
+            user_message=text,
+            conversation_history=history,
+        )
+        return str((payload or {}).get("context", ""))
+
+    def test_the_first_hint_of_a_session_keeps_the_boundary(self):
+        context = self._turn(
+            A_PERSON_ASKING, session="first", history=[{"role": "user", "content": A_PERSON_ASKING}]
+        )
+
+        self.assertIn("[OMH Route Hint]", context)
+        self.assertIn(ROUTE_BOUNDARY_LINE, context)
+
+    def test_a_later_hint_drops_the_boundary_the_host_is_replaying(self):
+        first = self._turn(
+            A_PERSON_ASKING, session="later", history=[{"role": "user", "content": A_PERSON_ASKING}]
+        )
+        self.assertIn(ROUTE_BOUNDARY_LINE, first)
+        history = [
+            {"role": "user", "content": A_PERSON_ASKING, "api_content": A_PERSON_ASKING + "\n\n" + first},
+            {"role": "assistant", "content": "done"},
+            {"role": "user", "content": A_SECOND_REQUEST},
+        ]
+
+        second = self._turn(A_SECOND_REQUEST, session="later", history=history)
+
+        self.assertIn("[OMH Route Hint]", second)
+        self.assertNotIn(ROUTE_BOUNDARY_LINE, second)
+        self.assertNotIn("Boundary: OMH route hints", second)
+
+    def test_a_person_quoting_the_boundary_does_not_remove_it(self):
+        # Only the host-injected suffix of a row counts; the person's own words
+        # never stand in for guidance the host did not send.
+        quoted = A_PERSON_ASKING + "\n" + ROUTE_BOUNDARY_LINE
+        history = [
+            {"role": "user", "content": quoted, "api_content": quoted},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": A_SECOND_REQUEST},
+        ]
+
+        context = self._turn(A_SECOND_REQUEST, session="quoted", history=history)
+
+        self.assertIn("[OMH Route Hint]", context)
+        self.assertIn(ROUTE_BOUNDARY_LINE, context)
+
+    def test_a_history_the_hook_cannot_read_keeps_the_boundary(self):
+        for index, history in enumerate((None, "not a list", [])):
+            with self.subTest(history=history):
+                context = self._turn(A_PERSON_ASKING, session=f"unread-{index}", history=history)
+                self.assertIn(ROUTE_BOUNDARY_LINE, context)
+
 if __name__ == "__main__":  # pragma: no cover - module entry point
     unittest.main()

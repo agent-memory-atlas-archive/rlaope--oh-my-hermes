@@ -34,6 +34,7 @@ from omh.commands.setup import _sync_hermes_profiles, read_config  # noqa: E402
 from omh.commands import setup as setup_module  # noqa: E402
 from omh.install.config_adapter import external_dirs, plugin_omh_home_setting  # noqa: E402
 from omh.install.installer import uninstall_skill_pack  # noqa: E402
+from omh.install.lifecycle_safety import store_removal_plan  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
 
 
@@ -181,6 +182,43 @@ class SharedStoreUninstallTests(_Fixture):
         self.assertEqual((self.hermes / "config.yaml").read_bytes(), before)
         self.assertNotIn(self.omh.resolve(),
                          {Path(value).resolve() for value in json.loads(stdout)["removed_paths"]})
+
+    def test_a_skills_reference_spelled_through_a_variable_still_protects_a_shared_store(self) -> None:
+        # Hermes expands `${VAR}` in `skills.external_dirs`, so the primary
+        # still loads skills from this store and the profile's uninstall
+        # must keep it. Read with `~` only, the entry named nothing.
+        bot = self.hermes / "profiles" / "bot"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        config_path = self.hermes / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ${OMH_TEST_SHARED_STORE}/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with mock.patch.dict(os.environ, {"OMH_TEST_SHARED_STORE": self.omh.as_posix()}):
+            plan = store_removal_plan(paths, remove_profiles=False)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
+
+    def test_a_skills_reference_relative_to_its_home_still_protects_a_shared_store(self) -> None:
+        # Hermes anchors a relative entry at its own home, so `../omh/skills`
+        # in the primary names this store whatever directory uninstall runs
+        # from. Resolved against an unrelated cwd it named nothing.
+        bot = self.hermes / "profiles" / "bot"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        config_path = self.hermes / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ../omh/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with TemporaryDirectory() as unrelated:
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                plan = store_removal_plan(paths, remove_profiles=False)
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
 
     def test_shared_store_dry_run_does_not_delete_or_rewrite_files(self) -> None:
         """Mutation control, independently of whether the proposed plan is safe."""

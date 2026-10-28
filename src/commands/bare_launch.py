@@ -336,15 +336,14 @@ def _print_exit_card(
     returncode: int,
     closed: tuple[str, str, tuple[str, ...]] = ("", "", ()),
 ) -> None:
-    """Print the OMH exit card after the TUI's own epilogue: the session, its counts, and the `omh` way back.
+    """Print the OMH exit card after the TUI's own epilogue: the session's title and the `omh` way back.
 
     When the OMH TUI closed the session it exited `CLOSED_EXIT`, so Hermes'
-    launcher printed no exit summary and the card is the only one; it carries
-    what Hermes' summary did (`hermes_resume.exit_card_lines`) and only the
-    `omh` way back. Hermes' own terminal (the fallback) still prints its
-    summary first, naming `hermes --tui --resume <id>`, and the card follows
-    it. A session nothing was said in gets one line saying there is nothing
-    to resume.
+    launcher printed no exit summary and the card is the only one: the title
+    and `omh --resume <id>` (`hermes_resume.exit_card_lines`). Hermes' own
+    terminal (the fallback) still prints its summary first, naming
+    `hermes --tui --resume <id>`, and the card follows it. A session nothing
+    was said in gets one line saying there is nothing to resume.
 
     `closed` is the session id and Hermes home the OMH TUI recorded, with the
     sessions it had open before that one (`tui.launch.closed_session`); when
@@ -383,9 +382,9 @@ def _print_exit_card(
         else:
             db_path = hermes_state_db_path(paths.hermes_home, profile)
             session_id = resumable_session_id(db_path, started_at, ended_at) or ""
-        lines = exit_card_lines(db_path, session_id, ended_at - started_at, profile)
+        lines = exit_card_lines(db_path, session_id, profile)
         for opened in reversed(earlier) if lines == [NOTHING_SAID_LINE] else ():
-            said = exit_card_lines(db_path, opened, ended_at - started_at, profile)
+            said = exit_card_lines(db_path, opened, profile)
             if said and said != [NOTHING_SAID_LINE]:
                 lines = said
                 break
