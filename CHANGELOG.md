@@ -6,6 +6,21 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Fourteen more models cost out at their vendors' list prices.** OMH
+  already recognized Grok 4.7, 4.6, 4.5 and 4.3, DeepSeek V4 Pro, Gemini
+  3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, GLM-5.3-FlashX, Qwen3.8-Max and
+  Qwen3.8-Flash, Solar Pro 4, MiniMax-M3 and MiniMax-M3.1-Flash, but it had
+  no price for them, so a run on one that the host recorded no cost for
+  showed no estimate. Each now
+  carries the first-party list price read on 2026-10-28, with its cached-input
+  rate where the vendor publishes one. The rows also note what the table
+  cannot represent: Grok's 200K whole-request tier, DeepSeek's off-peak half
+  rate, the Gemini Flash introductory price that doubles on 2027-01-01, and
+  MiniMax-M3's 512K tier. The xAI, DeepSeek, Gemini and Z.ai ids also get
+  provider checks; Qwen, Solar and MiniMax have no provider family to name.
+  No shipped chain names any of them. GLM-5.2 was costed at the GLM-4.x rate
+  (0.6/2.2) and now uses its own 1.4/4.4. Its Ultrafast serving moves from a
+  halved figure to the same base rate, as no separate tier rate is published.
 - **The route hint stops saying the same thing twice.** Route hint text is
   about 18% of the OMH text a model reads per session, and part of it repeated
   other text in the same block: a hint's `adjacent_workflows=` line that equals
@@ -106,6 +121,20 @@ All notable changes will be documented here.
   readiness` and the installed-skill weight advisory expand entries the same
   way and read a relative one under the home that names it, so uninstall
   keeps a store a home names as `../omh/skills`.
+- **Setup, update and doctor read every skills entry from the home that
+  names it.** The registration migration, the generation-pack retirement,
+  the two-directories finding and the registered check now read a relative
+  entry under that Hermes home and a Windows entry rooted without a drive
+  on the home's drive, as Hermes does, instead of skipping the first and
+  resolving the second on the drive `omh` runs from. So `../.omh/skills` or
+  `../omh/generations/<id>/skills` beside the pointer is retired and
+  reported, and `omh update` run from `D:` still retires `\omh\...` when the
+  home is on `C:`. Registration no longer adds the pointer beside an entry
+  that already names it another way (`C:\omh\current\skills` on Windows,
+  `${VAR}`, `~`, or relative to the home), and `omh uninstall
+  --registration-only` removes every spelling setup retires (`${VAR}`, `~`,
+  relative to the home, or through a symlink). Nothing is retired or
+  removed that Hermes does not read through that home.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
@@ -215,6 +244,24 @@ All notable changes will be documented here.
   line so the shell prompt does not sit right under it. The
   `-c "<title>"` line is gone with the counts, since the id always opens
   this session and a title can be shadowed by a newer `<title> #N`.
+- **The `/sessions` picker reads as a table, and `/resume` is `/sessions`.**
+  The session you are in heads the list under `Current` (named `this
+  session` until it has a title), and the rest sit under a muted heading for
+  the day each started (Today, Yesterday, Previous 7 days, Earlier), in
+  Hermes' order inside a day. Age and message count are right-aligned in
+  columns of their own, and a rule sets the list off from its header and
+  its filter row, in the `/rewind` and `/model` pickers too. The arrows and
+  Page keys move past the headings, a heading never ends the visible list
+  with its sessions below, and a filter keeps only the headings with a
+  match. The `/` menu offers `/resume` under its own name once what you type
+  starts it and is not in `sessions`. `/res`, which highlighted Hermes'
+  `/compress`, now starts with `/resume`; every other short prefix keeps
+  the top row it had. On Hermes' shared gateway, which resumes ids only,
+  `/sessions <title>` and `/resume <title>` were refused `not_found`. A
+  refused title is now looked up through the gateway's exact-title
+  `session.list`, over the whole store, then among the listed sessions
+  ignoring case. The one session with it opens; several (titles that
+  differ only in case) or none open the picker filtered by the title.
 
 ## 4.0.3 - 2026-10-27
 

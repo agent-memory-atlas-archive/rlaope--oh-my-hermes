@@ -777,11 +777,14 @@ class Adapter:
         return [self._forward(request_id, "shell.exec", params, translated=False)]
 
     def _list(self, request_id: object, params: dict[str, Any]) -> list[Action]:
-        """The owner's live sessions, then its stored ones, as one answer (Ink's resume picker reads both)."""
+        """The owner's live sessions, then its stored ones, as one answer (Ink's resume picker reads both).
+
+        A `title` lookup is one call: the owner answers it from its whole store, and refuses it with a scope.
+        """
         limit = params.get("limit")
 
         def on_live(live: dict[str, Any]) -> list[Action]:
-            if not isinstance(live.get("result"), dict):
+            if not isinstance(live.get("result"), dict) or "title" in params:
                 return [(TO_CLIENT, {**live, "id": request_id})]
             rows = [row for row in live["result"].get("sessions") or [] if isinstance(row, dict)]
 

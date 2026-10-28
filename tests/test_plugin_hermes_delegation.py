@@ -473,6 +473,104 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
             mixture_category_for("gpt-6.1-terra", "medium", parent_model="gpt-6.1-sol", chains=chains), "writing"
         )
 
+    # Catalog sync, 2026-10-28: (input, output, cached input) per MTok as the
+    # vendor's own page lists it. Every id is recognition-only.
+    _CATALOG_SYNC_RATES = {
+        "grok-4.7": (2.0, 6.0, 0.50),
+        "grok-4.6": (2.0, 6.0, 0.50),
+        "grok-4.5": (2.0, 6.0, 0.30),
+        "grok-4.3": (1.25, 2.50, 0.20),
+        "deepseek-v4-pro": (1.32, 3.96, 0.044),
+        "gemini-3.8-flash": (0.75, 3.75, 0.075),
+        "gemini-3.6-flash": (0.75, 3.75, 0.075),
+        "gemini-3.5-flash-lite": (0.30, 2.50, 0.03),
+        "glm-5.3-flashx": (0.37, 1.25, 0.075),
+        # Alibaba publishes no per-model cache-hit rate: the default tenth.
+        "qwen3.8-max": (2.0, 6.0, 0.20),
+        "qwen3.8-flash": (0.15, 0.47, 0.015),
+        "solar-pro4": (0.30, 1.20, 0.06),
+        "minimax-m3": (0.30, 1.20, 0.06),
+        "minimax-m3.1-flash": (0.15, 0.60, 0.015),
+        # Corrected the same day (the old figures were GLM-4.x rates and a
+        # halved ballpark of them); the tier carries its base's rate.
+        "glm-5.2": (1.4, 4.4, 0.26),
+        "glm-5.2-ultrafast": (1.4, 4.4, 0.26),
+    }
+
+    def test_catalog_sync_rows_cost_out_at_the_vendor_list_price(self):
+        cost = hermes_delegation_module._approximate_cost_usd
+        for model_id, (input_rate, output_rate, cached_rate) in self._CATALOG_SYNC_RATES.items():
+            with self.subTest(model_id=model_id):
+                self.assertEqual(
+                    hermes_delegation_module.APPROX_PRICE_PER_MTOK[model_id], (input_rate, output_rate)
+                )
+                self.assertAlmostEqual(cost(model_id, 1_000_000, 1_000_000, 0), input_rate + output_rate)
+                # Cached input lands on the vendor's cached rate to within the
+                # table's three-significant-figure ratio (relative, so the
+                # smallest cached rates are held as tightly as the largest).
+                # One output token keeps the call non-empty (an empty call
+                # returns no cost); its price is subtracted again.
+                cached_cost = cost(model_id, 0, 1, 1_000_000) - output_rate / 1_000_000
+                self.assertLessEqual(abs(cached_cost - cached_rate) / cached_rate, 0.005)
+                # A provider-qualified spelling prices the same.
+                self.assertEqual(
+                    cost(f"vendor/{model_id}", 1_000, 1_000, 1_000), cost(model_id, 1_000, 1_000, 1_000)
+                )
+                # None of them borrows a category label from a chain.
+                self.assertEqual(mixture_category_for(model_id, "high", parent_model="gpt-6.1-sol"), "")
+
+    def test_mixed_case_served_ids_meet_the_lower_case_price_rows(self):
+        # MiniMax serves `MiniMax-M3` and `MiniMax-M3.1-Flash`; cost lookup
+        # casefolds the id (and drops a provider segment) before it reads the
+        # table, so the lower-case keys price the vendor's own spelling.
+        cost = hermes_delegation_module._approximate_cost_usd
+        for served, key in (
+            ("MiniMax-M3", "minimax-m3"),
+            ("minimax/MiniMax-M3", "minimax-m3"),
+            ("MiniMax-M3.1-Flash", "minimax-m3.1-flash"),
+        ):
+            with self.subTest(served=served):
+                self.assertNotIn(served, hermes_delegation_module.APPROX_PRICE_PER_MTOK)
+                self.assertIsNotNone(cost(served, 1_000, 1_000, 1_000))
+                self.assertEqual(cost(served, 1_000, 1_000, 1_000), cost(key, 1_000, 1_000, 1_000))
+
+    def test_catalog_sync_provider_rows_answer_for_their_own_families_only(self):
+        mapped = {
+            "grok-4.7": "xai",
+            "grok-4.6": "xai",
+            "grok-4.5": "xai",
+            "grok-4.3": "xai",
+            "deepseek-v4-pro": "deepseek",
+            "gemini-3.8-flash": "google",
+            "gemini-3.6-flash": "gemini",
+            "gemini-3.5-flash-lite": "google",
+            "glm-5.3-flashx": "zai",
+        }
+        for model_id, family in mapped.items():
+            with self.subTest(model_id=model_id):
+                self.assertIs(provider_serves_alias(model_id, family), True)
+                self.assertIs(provider_serves_alias(model_id, "anthropic"), False)
+                # A multi-vendor relay serves everything, so its verdict stays
+                # unknown rather than a claim either way.
+                self.assertIsNone(provider_serves_alias(model_id, "openrouter"))
+        # No OpenCode serving was observed for these two, so OpenCode is not
+        # claimed in their rows (it is a relay, so its own verdict is unknown).
+        for model_id in ("deepseek-v4-pro", "glm-5.3-flashx"):
+            with self.subTest(model_id=model_id):
+                self.assertNotIn(
+                    "opencode", hermes_delegation_module.HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES[model_id]
+                )
+        # Qwen 3.8, Solar Pro 4, and MiniMax have no first-party family in the
+        # vocabulary that was observed serving them. OpenRouter lists some of
+        # these ids, but a relay-only row would turn every first-party
+        # provider's verdict into False, so there is no row and the verdict
+        # stays unknown.
+        for model_id in ("qwen3.8-max", "qwen3.8-flash", "solar-pro4", "minimax-m3", "minimax-m3.1-flash"):
+            with self.subTest(model_id=model_id):
+                self.assertNotIn(model_id, hermes_delegation_module.HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES)
+                self.assertIsNone(provider_serves_alias(model_id, "qwen-oauth"))
+                self.assertIsNone(provider_serves_alias(model_id, "anthropic"))
+
     def test_the_served_ultrafast_tiers_are_priced_without_a_provider_claim(self):
         # Observed 2026-09-24 on the OpenGateway route: the V4.1 Flash and GLM
         # 5.3 generations are served through Ultrafast tiers next to the base ids

@@ -454,7 +454,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
   `/model` picker) or search the history with Ctrl+R, the
   composer and its rules are not drawn and the list or the search stands in
-  their place, right above the info line. While the agent list or the dag
+  their place, right above the info line. A `/sessions`, `/rewind` or
+  `/model` picker sets its list off from its header and its filter row with
+  a muted rule, set in by one cell (the header's first, then the filter
+  row's), while the list keeps at least three rows. While the agent list or the dag
   tree has the keys the composer keeps its rules and its row says
   `↑↓ browsing · esc to type` instead of the prompt, so nothing moves. A question and the agent list show
   no caret; a picker shows it at the end of its filter row and the search at
@@ -1040,11 +1043,24 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Esc twice with text clears it, keeping it in this session's input history
   (not in Hermes' history file, since it was never sent).
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
-  sessions in the slot, newest first, with the current one marked; type to
-  filter (what you type shows on the list's last row, where the composer
-  was, with the caret), Up/Down or PageUp/PageDown to move, Enter to switch,
-  Esc to close.
-  `/sessions <id or exact title>` switches directly. The screen is redrawn as
+  sessions in the slot, most recently active first: the one you are in
+  heads the list under `Current` (`this session` until it has a title),
+  and the rest sit under a heading for the day each started (Today,
+  Yesterday, Previous 7 days, Earlier), each session's age and message
+  count in columns of their own. Type to filter (what you type shows on
+  the list's last row, where the composer was, with the caret, and only the
+  headings with a match stay), Up/Down or PageUp/PageDown to move from
+  session to session, Enter to switch, Esc to close. Each alias runs
+  exactly as `/sessions` does, and the `/` menu offers `/resume` under its
+  own name once what you type starts it: `/res` and `/resu` complete to
+  `/resume`.
+  `/sessions <id or exact title>` (or `/resume <id or exact title>`)
+  switches directly. A title Hermes' shared gateway does not resolve as an
+  id is looked up by its exact title over all your sessions, then among
+  the listed ones ignoring case: one session with that title is opened,
+  and when several (titles that differ only in case) or none have it the
+  picker opens filtered by what you typed and says how many matched. The
+  screen is redrawn as
   the session you picked, with its earlier turns; the one you left closes only
   after the new one opened, so a session that cannot be opened (for example
   one another process holds) leaves you where you were.
@@ -2892,7 +2908,9 @@ the same config write that registers the pointer: the older OMH-managed
 entry is retired, matched by real path the way Hermes resolves entries (a
 spelling through `${VAR}`, `~`, a trailing slash or a symlink is the same
 directory; an unset variable stays as written, as it does in Hermes, and a
-relative entry, which Hermes reads under its own home, never matches),
+relative entry is read under the home that names it, as Hermes reads it,
+so `../.omh/skills` in `~/.hermes` is the older entry and the directory
+the command runs from never matters),
 the home ends up naming exactly one managed directory, and the update
 prints the move (`Bot profile <name>: registration migrated from <old> to
 <new>.`; `Hermes registration migrated ...` for the primary home). Only
@@ -2910,12 +2928,15 @@ Hermes lists no OMH skill at all. The installer-managed command's setup and
 update retire every such entry, from the primary home and every bot
 profile, whether the generation is still on disk or already collected, and
 a home naming only one is migrated to the pointer rather than read as the
-opt-out; `omh uninstall --registration-only` removes them too. Only
-absolute entries under the pointer's own managed root match: a `skills`
-directory under some other `generations/` directory, and any relative
-entry (Hermes anchors those at its own home), stay. On Windows an entry
-rooted without a drive, such as `\omh\...`, is not relative: Hermes loads it
-from its home's drive, and it matches. Entries are expanded in the running
+opt-out; `omh uninstall --registration-only` removes them too, along with
+every spelling of an older managed directory the migration retires
+(`${VAR}`, `~`, relative to the home, or through a symlink). Only
+entries that name a directory under the pointer's own managed root, read
+from the home that names them, match: a `skills` directory under some
+other `generations/` directory stays, and a relative entry matches only
+when it reaches the managed root from that home. On Windows an entry
+rooted without a drive, such as `\omh\...`, is read on the home's drive,
+whichever drive the command runs from. Entries are expanded in the running
 command's environment, which a Hermes service may not share.
 `omh doctor` reports a home that still names two managed directories on
 disk, an older generation's pack beside the pointer included, as

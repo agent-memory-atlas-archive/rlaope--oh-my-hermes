@@ -487,8 +487,9 @@ vendor publishes no separate tier rate may carry the base model's documented
 list price, never an invented discount, with a comment naming the base source
 and saying the tier rate is unpublished; `glm-5.3-ultrafast` and
 `deepseek-v4.1-flash-ultrafast` take this shape, and `kimi-k3-ultrafast`
-moved to it on 2026-10-01 along with the corrected K3 base rate. The older
-halved `glm-5.2-ultrafast` row predates this rule. A new price
+moved to it on 2026-10-01 along with the corrected K3 base rate;
+`glm-5.2-ultrafast` left its older halved ballpark for this shape on
+2026-10-28, when the GLM-5.2 base rate was corrected. A new price
 row also widens what `omh model-chains interview` offers, since it proposes a
 member's `-ultrafast` variant only when that id is priced. For an explicitly declared alias,
 an exact user `model-prices.json` row wins first, then a base-contract row may

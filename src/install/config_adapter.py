@@ -1869,15 +1869,23 @@ def expand_external_dir_entry(entry: str) -> str:
     return os.path.expanduser(os.path.expandvars(entry))
 
 
-def anchor_external_dir_entry(entry: str, hermes_home: str | Path) -> Path:
-    """The directory Hermes reads for `entry` in the home `hermes_home`.
+def anchored_external_dir(entry: str, hermes_home: str | Path) -> str:
+    """The directory Hermes reads for `entry` in the home `hermes_home`, as text.
 
     Expanded (`expand_external_dir_entry`), then joined onto the home, which
     is Hermes' `_home_relative`: an absolute entry stands as written and any
     other one lands under the home -- or, rooted without a drive on Windows,
     on the home's drive -- never under this command's working directory.
+    `os.path.join` answers every spelling the way Hermes' pathlib join does,
+    a drive-relative entry on another drive included, which stays relative
+    to that drive (`external_dir_names_a_root` then rejects it).
     """
-    return Path(hermes_home) / expand_external_dir_entry(entry)
+    return os.path.join(str(hermes_home), expand_external_dir_entry(entry))
+
+
+def anchor_external_dir_entry(entry: str, hermes_home: str | Path) -> Path:
+    """`anchored_external_dir` as a path."""
+    return Path(anchored_external_dir(entry, hermes_home))
 
 
 def external_dir_names_a_root(entry: str) -> bool:
@@ -1893,27 +1901,27 @@ def external_dir_names_a_root(entry: str) -> bool:
     through 3.12 and relative from 3.13. A bare relative entry lands under
     Hermes' home, and so does a drive-relative one (`C:omh\\...`) when the
     home is on that drive; on another drive it is relative to that drive's
-    working directory, so it is not anchored at a root either. A reader that
-    is given the home anchors such an entry there
-    (`anchor_external_dir_entry`); one that is not skips it, and resolves a
-    drive-less rooted entry on this command's drive.
+    working directory, so it is not anchored at a root either. Every reader
+    is given the home and anchors an entry there first
+    (`anchored_external_dir`); this answers whether the result is rooted at
+    all.
     """
     drive, tail = os.path.splitdrive(entry)
     separators = {os.path.sep, os.path.altsep or os.path.sep}
     return drive[:1] in separators or tail[:1] in separators
 
 
-def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
+def external_dir_registered(dirs: list[str], skill_dir: str | Path, *, hermes_home: str | Path | None = None) -> bool:
     """Whether one registered entry names `skill_dir`, by text or by real path.
 
     The installer registers the managed pack under the `current` pointer so the
     entry survives generation switches, while a running command resolves its
     own generation directory. Comparing the two as strings reported every
     staged-update install as unregistered; the directories are the same one.
-    An entry is expanded the way Hermes expands it (`expand_external_dir_entry`),
-    and a relative one is never resolved: Hermes reads it under its own home,
-    so against this command's working directory it could read as the pointer
-    (`external_dir_names_a_root`).
+    An entry is read the way Hermes reads it in `hermes_home`
+    (`anchored_external_dir`). Without the home, a relative entry is never
+    resolved: against this command's working directory it could read as the
+    pointer (`external_dir_names_a_root`).
     """
     wanted_text = _normalize(skill_dir)
     if wanted_text in dirs:
@@ -1923,7 +1931,7 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     except OSError:
         return False
     for entry in dirs:
-        expanded = expand_external_dir_entry(entry)
+        expanded = expand_external_dir_entry(entry) if hermes_home is None else anchored_external_dir(entry, hermes_home)
         if not external_dir_names_a_root(expanded):
             continue
         try:
@@ -1934,19 +1942,45 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     return False
 
 
-def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange:
+def _names_directory(entries: list[str], skill_dir: str | Path, hermes_home: str | Path) -> bool:
+    """Whether an entry names `skill_dir` itself to Hermes in `hermes_home`.
+
+    Compared as anchored, normalized paths, not real ones: the pointer
+    resolves to the generation it points at, so a real-path match would
+    take an entry naming that generation's pack for the pointer, and the
+    migration that retires the pack would then leave the home with neither.
+    """
+    wanted = os.path.normcase(os.path.normpath(os.path.expanduser(str(skill_dir))))
+    for entry in entries:
+        anchored = anchored_external_dir(entry, hermes_home)
+        if external_dir_names_a_root(anchored) and os.path.normcase(os.path.normpath(anchored)) == wanted:
+            return True
+    return False
+
+
+def ensure_external_dir(
+    config_text: str, skill_dir: str | Path, *, hermes_home: str | Path | None = None
+) -> ConfigChange:
+    """Register `skill_dir` unless the file already names it.
+
+    By its normalized text, and with `hermes_home` also by the directory an
+    entry names to Hermes in that home (`_names_directory`), so the pointer
+    spelled with backslashes on Windows, through `${VAR}` or `~`, or relative
+    to the home is not added a second time.
+    """
     # A stream BOM is not part of the first key; carry it outside the editor.
     if config_text.startswith("\ufeff"):
-        change = ensure_external_dir(config_text[1:], skill_dir)
+        change = ensure_external_dir(config_text[1:], skill_dir, hermes_home=hermes_home)
         return ConfigChange(change.changed, change.message, "\ufeff" + change.text)
     prefix, body, suffix = _skills_document_parts(config_text)
     if prefix or suffix:
-        change = ensure_external_dir(body, skill_dir)
+        change = ensure_external_dir(body, skill_dir, hermes_home=hermes_home)
         text = prefix + change.text + suffix if change.changed else config_text
         return ConfigChange(change.changed, change.message, text)
     _validate_external_dirs_mutation_shape(config_text)
     target = _normalize(skill_dir)
-    if target in external_dirs(config_text):
+    present = external_dirs(config_text)
+    if target in present or (hermes_home is not None and _names_directory(present, skill_dir, hermes_home)):
         return ConfigChange(False, "external dir already present", config_text)
 
     lines = config_text.splitlines()
@@ -1955,7 +1989,7 @@ def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
         # An empty flow mapping has no entries to preserve, but appending a
         # block mapping after the closed {} node would produce invalid YAML.
         lines[empty_root] = lines[empty_root][2:]
-        return ensure_external_dir("\n".join(lines) + "\n", skill_dir)
+        return ensure_external_dir("\n".join(lines) + "\n", skill_dir, hermes_home=hermes_home)
     if not lines:
         text = f"skills:\n  external_dirs:\n    - {target}\n"
         return ConfigChange(True, "created skills.external_dirs", text)

@@ -81,12 +81,12 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             pointer.mkdir(parents=True)
             candidates = managed_skill_dir_candidates(paths, current=pointer)
 
-            migration = migrate_managed_registration(_config_naming(root / "mine", old), pointer, candidates)
+            migration = migrate_managed_registration(_config_naming(root / "mine", old), pointer, candidates, hermes_home=root / ".hermes")
 
             self.assertEqual(external_dirs(migration.text), [(root / "mine").as_posix(), pointer.as_posix()])
             self.assertEqual((migration.added, migration.retired), (True, [old.as_posix()]))
             self.assertEqual(migration.registration, "migrated")
-            self.assertEqual(registered_managed_entries(migration.text, candidates), [pointer.as_posix()])
+            self.assertEqual(registered_managed_entries(migration.text, candidates, hermes_home=root / ".hermes"), [pointer.as_posix()])
 
     def test_an_older_entry_is_retired_however_the_file_spells_it(self) -> None:
         # Hermes expands `${VAR}` and `~` and resolves every entry, so a
@@ -119,10 +119,10 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
                         # spelling away through `Path`, which is the point.
                         before = f"skills:\n  external_dirs:\n    - {spelled}\n    - {pointer.as_posix()}\n"
                         self.assertEqual(external_dirs(before), [spelled, pointer.as_posix()])
-                        migration = migrate_managed_registration(before, pointer, candidates)
+                        migration = migrate_managed_registration(before, pointer, candidates, hermes_home=root / ".hermes")
                         self.assertEqual(migration.retired, [spelled])
                         self.assertEqual(external_dirs(migration.text), [pointer.as_posix()])
-                        self.assertEqual(registered_managed_entries(migration.text, candidates), [pointer.as_posix()])
+                        self.assertEqual(registered_managed_entries(migration.text, candidates, hermes_home=root / ".hermes"), [pointer.as_posix()])
 
     @requires_symlinks
     def test_an_older_entry_spelled_through_a_link_is_retired(self) -> None:
@@ -138,7 +138,7 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             linked = (link / "skills").as_posix()
 
             migration = migrate_managed_registration(
-                _config_naming(linked, pointer), pointer, managed_skill_dir_candidates(paths, current=pointer)
+                _config_naming(linked, pointer), pointer, managed_skill_dir_candidates(paths, current=pointer), hermes_home=root / ".hermes"
             )
 
             self.assertEqual((migration.retired, migration.registration), ([linked], "migrated"))
@@ -154,7 +154,7 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
             own = paths.omh_home / "skills"
 
-            migration = migrate_managed_registration(_config_naming(pointer), own, [])
+            migration = migrate_managed_registration(_config_naming(pointer), own, [], hermes_home=root / ".hermes")
 
             self.assertEqual(external_dirs(migration.text), [pointer.as_posix(), own.as_posix()])
             self.assertEqual((migration.retired, migration.registration), ([], "added"))
@@ -166,7 +166,7 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             paths = _managed_paths(root, root / "gen" / "skills")
             before = _config_naming(pointer)
 
-            migration = migrate_managed_registration(before, pointer, managed_skill_dir_candidates(paths, current=pointer))
+            migration = migrate_managed_registration(before, pointer, managed_skill_dir_candidates(paths, current=pointer), hermes_home=root / ".hermes")
 
             self.assertEqual((migration.text, migration.added, migration.retired), (before, False, []))
             self.assertEqual(migration.registration, "unchanged")
@@ -180,7 +180,7 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
             paths = _managed_paths(root, root / "gen" / "skills")
 
             migration = migrate_managed_registration(
-                _config_naming(root / "mine"), pointer, managed_skill_dir_candidates(paths, current=pointer)
+                _config_naming(root / "mine"), pointer, managed_skill_dir_candidates(paths, current=pointer), hermes_home=root / ".hermes"
             )
 
             self.assertEqual(external_dirs(migration.text), [(root / "mine").as_posix(), pointer.as_posix()])
@@ -220,11 +220,11 @@ class GenerationPackEntriesTests(unittest.TestCase):
                 cwd = os.getcwd()
                 os.chdir(root)
                 try:
-                    entries = generation_pack_entries(text, pointer)
+                    entries = generation_pack_entries(text, pointer, hermes_home=root / ".hermes")
                 finally:
                     os.chdir(cwd)
                 self.assertEqual(entries, [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"])
-            self.assertEqual(generation_pack_entries(text, None), [])
+            self.assertEqual(generation_pack_entries(text, None, hermes_home=root / ".hermes"), [])
 
     def test_a_pack_spelled_through_a_variable_is_named_and_retired_and_an_unset_one_is_left(self) -> None:
         # Hermes expands `${VAR}` before `~`, so the first entry is the older
@@ -241,11 +241,11 @@ class GenerationPackEntriesTests(unittest.TestCase):
                 text = _config_naming(pointer) + f"    - {spelled}\n    - {unset}\n"
                 self.assertEqual(external_dirs(text), [pointer.as_posix(), spelled, unset])
 
-                self.assertEqual(generation_pack_entries(text, pointer), [spelled])
+                self.assertEqual(generation_pack_entries(text, pointer, hermes_home=root / ".hermes"), [spelled])
                 self.assertEqual(
-                    registered_managed_entries(text, [pointer], current=pointer), [pointer.as_posix(), spelled]
+                    registered_managed_entries(text, [pointer], current=pointer, hermes_home=root / ".hermes"), [pointer.as_posix(), spelled]
                 )
-                migration = migrate_managed_registration(text, pointer, [pointer], current=pointer)
+                migration = migrate_managed_registration(text, pointer, [pointer], current=pointer, hermes_home=root / ".hermes")
 
             self.assertEqual((migration.retired, migration.registration), ([spelled], "migrated"))
             self.assertEqual(external_dirs(migration.text), [pointer.as_posix(), unset])
@@ -284,41 +284,80 @@ class GenerationPackEntriesTests(unittest.TestCase):
                 with self.subTest(entry):
                     self.assertIs(_config_adapter_module.external_dir_names_a_root(entry), rooted)
 
-    def test_on_windows_a_rooted_pack_without_a_drive_is_named_and_retired(self) -> None:
+    def test_on_windows_a_rooted_pack_without_a_drive_is_retired_from_the_home_s_drive(self) -> None:
         # Hermes loads `\\omh\\generations\\abc\\skills` from its home's drive,
         # so beside the pointer it is the #1857 ambiguity once the pointer
-        # moves. This module's path functions as a Windows host whose
-        # command runs on C: sees them; a pack on another drive and a
-        # drive-relative entry are not the managed root.
+        # moves. The command runs on D: here, as a CI runner's checkout does,
+        # while the home and the managed root are on C:: the entry must still
+        # be read on C:. A home-relative spelling of the same pack is one too;
+        # a pack on another drive and a drive-relative entry, which lands
+        # under the home, are not the managed root.
         # The pointer is spelled the way registration writes it, with POSIX
-        # separators (`_normalize`): `ensure_external_dir` compares text, and
-        # on a Windows host `C:\\omh\\...` would not equal what it writes, so
-        # it would add the pointer a second time.
+        # separators (`_normalize`).
         written = "C:/omh/current/skills"
         pointer = PureWindowsPath(written)
+        home = "C:\\Users\\u\\.hermes"
         rooted = "\\omh\\generations\\abc\\skills"
+        relative = "..\\..\\..\\omh\\generations\\abc\\skills"
         text = (
             "skills:\n  external_dirs:\n"
-            f"    - {written}\n    - {rooted}\n"
+            f"    - {written}\n    - {rooted}\n    - {relative}\n"
             "    - C:omh\\generations\\abc\\skills\n    - D:\\omh\\generations\\abc\\skills\n"
         )
 
         def realpath(path: str, *, strict: bool = False) -> str:
-            return ntpath.normpath(ntpath.join("C:\\", path))
+            return ntpath.normpath(ntpath.join("D:\\", path))
 
         windows = _windows_path(realpath)
         with (
             mock.patch.object(_registration_module, "os", SimpleNamespace(path=windows)),
             mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
         ):
-            self.assertEqual(generation_pack_entries(text, pointer), [rooted])
-            migration = migrate_managed_registration(text, written, [], current=pointer)
+            self.assertEqual(generation_pack_entries(text, pointer, hermes_home=home), [rooted, relative])
+            migration = migrate_managed_registration(text, written, [], current=pointer, hermes_home=home)
 
-        self.assertEqual((migration.added, migration.retired), (False, [rooted]))
+        self.assertEqual((migration.added, migration.retired), (False, [rooted, relative]))
         self.assertEqual(
             external_dirs(migration.text),
             [written, "C:omh\\generations\\abc\\skills", "D:\\omh\\generations\\abc\\skills"],
         )
+
+    def test_on_windows_a_drive_relative_entry_on_another_drive_is_never_matched(self) -> None:
+        # The home is on C:, the managed root and this command on D:. Hermes
+        # resolves `D:omh\\...` against its own process's directory on D:,
+        # which this command cannot know; resolved against this command's
+        # D: directory it would read as the managed root and be retired.
+        written = "D:/omh/current/skills"
+        pointer = PureWindowsPath(written)
+        drive_relative = "D:omh\\generations\\abc\\skills"
+        text = f"skills:\n  external_dirs:\n    - {written}\n    - {drive_relative}\n"
+        windows = _windows_path(lambda path, *, strict=False: ntpath.normpath(ntpath.join("D:\\", path)))
+        with (
+            mock.patch.object(_registration_module, "os", SimpleNamespace(path=windows)),
+            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
+        ):
+            home = "C:\\Users\\u\\.hermes"
+            self.assertEqual(generation_pack_entries(text, pointer, hermes_home=home), [])
+            migration = migrate_managed_registration(text, written, [], current=pointer, hermes_home=home)
+        self.assertEqual((migration.text, migration.retired), (text, []))
+
+    def test_on_windows_a_backslash_spelling_of_the_pointer_is_not_added_twice(self) -> None:
+        # Registration writes `C:/omh/current/skills`; a config that already
+        # names `C:\\omh\\current\\skills` names the same directory to Hermes,
+        # so the migration leaves it alone instead of adding a second line.
+        written = "C:/omh/current/skills"
+        spelled = "C:\\omh\\current\\skills"
+        text = f"skills:\n  external_dirs:\n    - {spelled}\n"
+        windows = _windows_path(lambda path, *, strict=False: ntpath.normpath(ntpath.join("C:\\", path)))
+        with (
+            mock.patch.object(_registration_module, "os", SimpleNamespace(path=windows)),
+            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
+            mock.patch.object(_config_adapter_module, "_normalize", lambda value: PureWindowsPath(str(value)).as_posix()),
+        ):
+            migration = migrate_managed_registration(
+                text, written, [], current=PureWindowsPath(written), hermes_home="C:\\Users\\u\\.hermes"
+            )
+        self.assertEqual((migration.text, migration.added, migration.registration), (text, False, "unchanged"))
 
     def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:
         # Including the pack the pointer resolves to today: it is the same
@@ -330,12 +369,12 @@ class GenerationPackEntriesTests(unittest.TestCase):
             before = _config_naming(root / "mine", pointer, gone, older)
             candidates = managed_skill_dir_candidates(paths, current=pointer)
 
-            migration = migrate_managed_registration(before, pointer, candidates, current=pointer)
+            migration = migrate_managed_registration(before, pointer, candidates, current=pointer, hermes_home=root / ".hermes")
 
             self.assertEqual(external_dirs(migration.text), [(root / "mine").as_posix(), pointer.as_posix()])
             self.assertEqual((migration.retired, migration.registration), ([gone.as_posix(), older.as_posix()], "migrated"))
             # Without the pointer the caller stays additive about generations.
-            additive = migrate_managed_registration(before, pointer, [])
+            additive = migrate_managed_registration(before, pointer, [], hermes_home=root / ".hermes")
             self.assertEqual((additive.text, additive.retired), (before, []))
 
     def test_an_older_pack_on_disk_is_a_second_managed_entry_and_a_gone_one_is_not(self) -> None:
@@ -345,9 +384,9 @@ class GenerationPackEntriesTests(unittest.TestCase):
             paths = _managed_paths(root, root / "generations" / "20261027" / "skills")
             candidates = managed_skill_dir_candidates(paths, current=pointer)
             text = _config_naming(pointer, gone, older)
-            self.assertEqual(registered_managed_entries(text, candidates), [pointer.as_posix()])
+            self.assertEqual(registered_managed_entries(text, candidates, hermes_home=root / ".hermes"), [pointer.as_posix()])
             self.assertEqual(
-                registered_managed_entries(text, candidates, current=pointer), [pointer.as_posix(), older.as_posix()]
+                registered_managed_entries(text, candidates, current=pointer, hermes_home=root / ".hermes"), [pointer.as_posix(), older.as_posix()]
             )
 
     @requires_symlinks
@@ -367,9 +406,9 @@ class GenerationPackEntriesTests(unittest.TestCase):
             text = _config_naming(pointer, older, running)
 
             self.assertEqual(
-                registered_managed_entries(text, candidates, current=pointer), [pointer.as_posix(), older.as_posix()]
+                registered_managed_entries(text, candidates, current=pointer, hermes_home=root / ".hermes"), [pointer.as_posix(), older.as_posix()]
             )
-            migration = migrate_managed_registration(text, pointer, candidates, current=pointer)
+            migration = migrate_managed_registration(text, pointer, candidates, current=pointer, hermes_home=root / ".hermes")
             self.assertEqual(external_dirs(migration.text), [pointer.as_posix()])
             self.assertEqual(migration.retired, [older.as_posix(), running.as_posix()])
 
@@ -428,6 +467,7 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             entries = registered_managed_entries(
                 _config_naming(old, root / "mine", pointer),
                 managed_skill_dir_candidates(paths, current=pointer),
+                hermes_home=root / ".hermes",
             )
             self.assertEqual(entries, [old.as_posix(), pointer.as_posix()])
 
@@ -445,6 +485,7 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             entries = registered_managed_entries(
                 _config_naming(pointer / "skills", generation),
                 managed_skill_dir_candidates(paths, current=pointer / "skills"),
+                hermes_home=root / ".hermes",
             )
             self.assertEqual(entries, [(pointer / "skills").as_posix()])
 
@@ -458,7 +499,7 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             paths = _managed_paths(root, root / "gen" / "skills")
             gone = paths.omh_home / "skills"
             entries = registered_managed_entries(
-                _config_naming(gone, pointer), managed_skill_dir_candidates(paths, current=pointer)
+                _config_naming(gone, pointer), managed_skill_dir_candidates(paths, current=pointer), hermes_home=root / ".hermes"
             )
             self.assertEqual(entries, [pointer.as_posix()])
 
@@ -479,12 +520,47 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             cwd = os.getcwd()
             os.chdir(root)
             try:
-                migration = migrate_managed_registration(text, pointer, candidates, current=pointer)
-                entries = registered_managed_entries(text, candidates, current=pointer)
+                migration = migrate_managed_registration(text, pointer, candidates, current=pointer, hermes_home=root / ".hermes")
+                entries = registered_managed_entries(text, candidates, current=pointer, hermes_home=root / ".hermes")
             finally:
                 os.chdir(cwd)
             self.assertEqual((migration.text, migration.retired, migration.registration), (text, [], "unchanged"))
             self.assertEqual(entries, [pointer.as_posix()])
+
+    def test_a_home_relative_spelling_of_a_managed_directory_is_read_from_the_home(self) -> None:
+        # Hermes reads `../.omh/skills` in `<root>/.hermes` as the pre-pointer
+        # `<root>/.omh/skills`, and `../m/generations/<id>/skills` as a
+        # generation's pack under the managed root `<root>/m`. Run from an
+        # unrelated directory, both are still those directories: the
+        # migration retires them, the ambiguity reader counts them, and an
+        # entry naming the pointer from the home is not added beside.
+        with TemporaryDirectory() as tmp, TemporaryDirectory() as unrelated:
+            root = Path(tmp)
+            home = root / ".hermes"
+            pointer = root / "m" / "current" / "skills"
+            pack = root / "m" / "generations" / "20261025" / "skills"
+            older = root / ".omh" / "skills"
+            for directory in (home, pointer, pack, older):
+                directory.mkdir(parents=True)
+            candidates = [pointer, older]
+            spelled_older = "../.omh/skills"
+            spelled_pack = "../m/generations/20261025/skills"
+            spelled_pointer = "../m/current/skills"
+            text = f"skills:\n  external_dirs:\n    - {spelled_pointer}\n    - {spelled_older}\n    - {spelled_pack}\n"
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                self.assertEqual(generation_pack_entries(text, pointer, hermes_home=home), [spelled_pack])
+                entries = registered_managed_entries(text, candidates, current=pointer, hermes_home=home)
+                migration = migrate_managed_registration(text, pointer, candidates, current=pointer, hermes_home=home)
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(entries, [spelled_pointer, spelled_older, spelled_pack])
+            self.assertEqual(
+                (migration.added, migration.retired, migration.registration),
+                (False, [spelled_older, spelled_pack], "migrated"),
+            )
+            self.assertEqual(external_dirs(migration.text), [spelled_pointer])
 
     def test_a_foreign_directory_is_never_a_managed_entry(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -493,6 +569,7 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             entries = registered_managed_entries(
                 _config_naming(root / "mine", root / "theirs"),
                 managed_skill_dir_candidates(paths, current=None),
+                hermes_home=root / ".hermes",
             )
             self.assertEqual(entries, [])
 
@@ -582,6 +659,29 @@ class DoctorAmbiguityCheckTests(unittest.TestCase):
             self.assertIn(old.as_posix(), row.message)
             self.assertIn(pointer.as_posix(), row.message)
 
+    def test_a_profile_relative_entry_is_read_from_the_profile_s_own_home(self) -> None:
+        # `../../../.omh/skills` in `profiles/miku` is the pre-pointer copy to
+        # Hermes; read from the primary's home or the cwd it names nothing,
+        # and the profile's ambiguity would go unreported.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            paths = _managed_paths(root, root / "gen" / "skills")
+            old = paths.omh_home / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
+            paths.hermes_home.mkdir()
+            write_config(paths.hermes_config_path, _config_naming(pointer))
+            profile = paths.hermes_home / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            write_config(profile / "config.yaml", _config_naming(pointer) + "    - ../../../.omh/skills\n")
+
+            checks = self._checks(paths, pointer)
+
+            row = checks["external_dir_ambiguity:miku"]
+            self.assertEqual((row.ok, row.severity), (True, "warning"))
+            self.assertIn(f"({pointer.as_posix()} and ../../../.omh/skills)", row.message)
+
     def test_the_rows_group_under_hermes_registration(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -651,6 +751,27 @@ class UpdatePostCheckTests(unittest.TestCase):
                 # Entries are named the way the file spells them.
                 self.assertIn(f"({old.as_posix()} and {pointer.as_posix()})", line)
                 self.assertIn("so OMH skills fail to load by name", line)
+
+    def test_the_post_check_reads_a_profile_entry_from_the_profile_s_own_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            hermes_home = root / ".hermes"
+            old = root / ".omh" / "skills"
+            old.mkdir(parents=True)
+            pointer.mkdir(parents=True)
+            hermes_home.mkdir()
+            write_config(hermes_home / "config.yaml", _config_naming(pointer))
+            profile = hermes_home / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            write_config(profile / "config.yaml", _config_naming(pointer) + "    - ../../../.omh/skills\n")
+            args = argparse.Namespace(omh_home=str(root / ".omh"), hermes_home=str(hermes_home))
+
+            with mock.patch.object(_setup_module, "managed_current_workflow_pack_dir", return_value=pointer):
+                lines = _setup_module._registration_ambiguity_lines(args)
+
+            self.assertEqual(len(lines), 1, lines)
+            self.assertTrue(lines[0].startswith(f"profile miku ({profile.resolve() / 'config.yaml'}) names 2 OMH-managed"))
 
     def test_the_post_check_is_quiet_for_homes_naming_one(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -771,6 +892,26 @@ class DoctorUnregisteredCopyCheckTests(unittest.TestCase):
                 f"pre-pointer skills copy at {copy} is still registered by profile miku ({profile / 'config.yaml'}); "
                 f"`omh update` migrates that registration to {generation}",
             )
+
+    def test_a_copy_a_profile_registers_relative_to_its_own_home_is_still_registered(self) -> None:
+        # Read from the primary's home, `../../../.omh/skills` names nothing,
+        # and doctor would call a copy the profile still loads safe to delete.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generation = root / "gen" / "skills"
+            pointer = root / "current" / "skills"
+            paths = _managed_paths(root, generation)
+            paths.hermes_home.mkdir()
+            write_config(paths.hermes_config_path, _config_naming(pointer))
+            profile = paths.hermes_home / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            copy = self._frozen_copy(paths)
+            write_config(profile / "config.yaml", _config_naming(pointer) + "    - ../../../.omh/skills\n")
+
+            check = self._check(paths, pointer)
+
+            self.assertEqual((check.ok, check.severity), (True, "ok"))
+            self.assertIn(f"skills copy at {copy} is still registered by profile miku ({profile / 'config.yaml'})", check.message)
 
     def test_an_unmanaged_install_serves_skills_from_that_directory(self) -> None:
         with TemporaryDirectory() as tmp:
