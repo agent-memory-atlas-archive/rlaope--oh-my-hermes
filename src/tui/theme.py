@@ -491,7 +491,10 @@ def launch_palette(name: str, surface: str) -> LogoPalette:
     return light if is_light(surface) else dark
 
 
-# The cells of a catch row's mark (`panels.CATCH_MARK`, `✦ OMH`) the logo's colours are stepped across.
+# The mark a catch row opens with, drawn through the launch look's logo colours by the transcript (`Theme.catch_mark`).
+# It lives here, not in `panels`, so the approval slot (`prompts`) can draw it without importing `panels`.
+CATCH_MARK = "✦ OMH"
+# The cells of a catch row's mark (`CATCH_MARK`) the logo's colours are stepped across.
 CATCH_MARK_CELLS = 5
 
 

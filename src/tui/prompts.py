@@ -61,9 +61,8 @@ from . import command_risk
 from . import gateway_contract as contract
 from .keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from .markdown import wrap_prefixed
-from .panels import CATCH_MARK
 from .style import Line, Span, Style, fill, is_fill
-from .theme import Theme
+from .theme import CATCH_MARK, Theme
 from .width import cell_width, line_width, truncate, truncate_line, wrap_line
 
 # The order is the distance from safe: deny first (and selected), then the

@@ -59,6 +59,7 @@ from ..plugin_bundle.omh.hud_text import elapsed_text, todo_unchanged_text
 from ..version import __version__
 from .escapes import strip_escapes
 from .style import NO_COLOR, TRUECOLOR, Line, Span, Style
+from .theme import CATCH_MARK as CATCH_MARK  # re-exported: app and tests read the mark from here
 from .theme import Theme
 from .width import cell_width, clusters, line_width, truncate, truncate_line
 from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
@@ -768,8 +769,6 @@ def plan_text(payload: Any) -> str:
 
 # ── catch rows ─────────────────────────────────────────────────────────────
 
-# The mark a catch row opens with, drawn through the launch look's logo colours by the transcript (`Theme.catch_mark`).
-CATCH_MARK = "✦ OMH"
 # One emoji per catch kind (`catch_log.CATCH_KINDS`), between the mark and the sentence. Each is a default-emoji
 # code point (no U+FE0F) two cells wide. A kind not listed here is not printed.
 CATCH_EMOJI = {"repeat_loop": "🔁", "truncated_read": "📖", "plan_continued": "📋", "unarmed_wait": "⏰"}
