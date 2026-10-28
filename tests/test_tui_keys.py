@@ -542,6 +542,10 @@ class ProtocolReportedTests(unittest.TestCase):
         self.assertEqual(decode(b"\x1bPx"), [Key("char", "P", alt=True), char("x")])
         decoder = KeyDecoder()
         self.assertEqual(decoder.feed(b"\x1bP") + decoder.flush(), [Key("char", "P", alt=True)])
+        # An answer split right after its ESC: the next read goes on with it, so none of its bytes are typed.
+        decoder = KeyDecoder()
+        events = decoder.feed(b"\x1b") + decoder.feed(b"P>|kitty(0.35.2)\x1b\\") + decoder.flush()
+        self.assertEqual(events, [Key("unknown")])
 
     def test_a_report_that_decodes_to_no_key_says_nothing(self) -> None:
         decoder = KeyDecoder()
