@@ -57,8 +57,9 @@ the stdio entry's in a closed set of places. `Adapter` translates those, after
 * `image.attach`, an image `input.detect_drop` and `clipboard.paste` stage
   the image with Hermes' own `image.attach_bytes` (or Hermes' clipboard
   helper, into Hermes' image staging directory) and queue it for the
-  session's next prompt, as the stdio entry queued it; `image.detach` takes it
-  out of that queue. A drop that is not an image is answered as no drop, as
+  session's next prompt, as the stdio entry queued it; `image.attach_bytes`
+  stages the bytes the TUI sends the same way; `image.detach` takes one out
+  of that queue by the path it was answered with. A drop that is not an image is answered as no drop, as
   Ink answers it, so the TUI pastes the text.
 * `slash.exec` goes as sent; when the owner refuses a command in
   `SLASH_VERBS` with `unsupported_command` (`/compress`, `/branch`,
@@ -553,6 +554,7 @@ class Adapter:
             "shell.exec": self._shell,
             "session.list": self._list,
             "image.attach": self._attach,
+            "image.attach_bytes": self._attach_bytes,
             "image.detach": self._detach_image,
             "input.detect_drop": self._drop,
             "clipboard.paste": self._paste,
@@ -1133,6 +1135,22 @@ class Adapter:
         return [self._stage(request_id, params.get("session_id"), image, lambda staged: {
             "attached": True, "remainder": image.remainder,
             "text": image.remainder or f"[User attached image: {image.path.name}]", **staged})]
+
+    def _attach_bytes(self, request_id: object, params: dict[str, Any]) -> list[Action]:
+        """The bytes the TUI keeps for an image, staged with the owner's `image.attach_bytes` and queued for the
+        session's next prompt, as `image.attach` stages a file."""
+        try:
+            data = base64.b64decode(str(params.get("content_base64") or ""), validate=True)
+        except ValueError:
+            return [_refuse(request_id, NOT_FOUND, "the image's bytes are not base64")]
+        name = Path(str(params.get("filename") or "image")).name
+        if not data or len(data) > MAX_IMAGE_BYTES:
+            return [_refuse(request_id, NOT_FOUND, f"image too large or empty: {name}")]
+        mime = image_mime(data)
+        if mime is None:
+            return [_refuse(request_id, NOT_FOUND, f"unsupported image: {name} (PNG, JPEG, GIF or WebP)")]
+        image = LocalImage(Path(name), "", data, mime)
+        return [self._stage(request_id, params.get("session_id"), image, lambda staged: {"attached": True, **staged})]
 
     def _drop(self, request_id: object, params: dict[str, Any]) -> list[Action]:
         image = self.files.dropped_image(str(params.get("text") or ""), self._cwd(params))

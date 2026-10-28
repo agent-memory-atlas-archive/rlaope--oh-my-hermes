@@ -85,6 +85,9 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.history": frozenset({"session_id"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
     "image.attach": frozenset({"session_id", "path"}),
+    # The bytes the TUI keeps for an image token, staged for the one prompt that goes with it (Hermes writes its own
+    # file and answers its path, which `image.detach` then names).
+    "image.attach_bytes": frozenset({"session_id", "filename", "content_base64"}),
     "image.detach": frozenset({"session_id", "path"}),
     "clipboard.paste": frozenset({"session_id"}),
     "input.detect_drop": frozenset({"session_id", "text"}),

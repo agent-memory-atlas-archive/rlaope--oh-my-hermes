@@ -16,6 +16,8 @@ check the frames a terminal would show at every step.
 
 from __future__ import annotations
 
+from pathlib import Path
+import tempfile
 import time
 import unittest
 from unittest import mock
@@ -261,8 +263,11 @@ class HiddenComposerTests(unittest.TestCase):
         # A drop's answer, an image's remainder or a command's prefill is the person's draft, never an answer to Hermes.
         from omh.tui.slash import parse_slash
 
-        shot = {"attached": True, "path": "/h/images/shot.png", "name": "shot.png", "width": 4, "height": 3,
-                "remainder": "what is this?"}
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        Path(home.name, "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        shot = {"attached": True, "path": str(Path(home.name, "shot.png")), "name": "shot.png", "width": 4,
+                "height": 3, "remainder": "what is this?"}
         arrivals = {
             "drop": (lambda app: app._on_drop(app.sid, "/Users/me/notes.txt", {"matched": False}), "/Users/me/notes.txt"),
             "drop refused": (lambda app: app._on_drop_refused("/Users/me/notes.txt"), "/Users/me/notes.txt"),

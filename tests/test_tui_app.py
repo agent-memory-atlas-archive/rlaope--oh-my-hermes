@@ -2264,10 +2264,18 @@ def resumed_other(messages: list[dict] | None = None) -> dict:
     }
 
 
+# The bytes the TUI reads from the path Hermes staged an image at: the fixtures' paths name no real file.
+KEPT_IMAGE = b"\x89PNG\r\n\x1a\nfixture"
+DETACHED = ("image.detach", {"result": {"detached": True, "count": 0}})
+
+
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+@patch("omh.tui.app.read_image", lambda path: KEPT_IMAGE)
 class AttachmentTests(AppTestCase):
     def test_image_is_a_token_in_the_composer_and_the_echo_lists_it_under_the_prompt(self) -> None:
-        answers = (*startup_answers(), ("image.attach", {"result": SHOT}))
+        upload = "/fixture/hermes-home/images/upload_1.png"
+        answers = (*startup_answers(), ("image.attach", {"result": SHOT}), DETACHED,
+                   ("image.attach_bytes", {"result": {"attached": True, "path": upload, "count": 1}}))
         run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers))
         terminal = run.terminal
         terminal.script(
@@ -2281,6 +2289,13 @@ class AttachmentTests(AppTestCase):
         self.assert_clean_run(run)
         (attach,) = run.calls("image.attach")
         self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
+        # Hermes let go of it at once, and the prompt staged it again from the TUI's bytes, right before it went.
+        (detach,) = run.calls("image.detach")
+        self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
+        (stage,) = run.calls("image.attach_bytes")
+        self.assertEqual(base64.b64decode(stage["params"]["content_base64"]), KEPT_IMAGE)
+        methods = [frame.get("method") for frame in run.frames if frame.get("method")]
+        self.assertLess(methods.index("image.attach_bytes"), methods.index("prompt.submit"))
         before, token = terminal.captures["before"], terminal.captures["token"]
         # The token is in the input row itself: no row above it, and the composer stays where the launch put it.
         self.assertEqual(info_index(token), info_index(before))
@@ -2298,7 +2313,7 @@ class AttachmentTests(AppTestCase):
             *startup_answers(),
             ("clipboard.paste", {"result": {"attached": False, "message": "No image found in clipboard"}}),
             ("clipboard.paste", {"result": CLIP}),
-            ("image.detach", {"result": {"detached": True, "count": 0}}),
+            DETACHED,
         )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
@@ -2311,6 +2326,8 @@ class AttachmentTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual([frame["params"] for frame in run.calls("clipboard.paste")], [{"session_id": LIVE_ID}] * 2)
+        (detach,) = run.calls("image.detach")  # at once, as it was staged; Ctrl+C sends nothing more
+        self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": CLIP["path"]})
 
     def test_a_one_line_paste_is_offered_to_detect_drop_first(self) -> None:
         answers = (
@@ -2323,7 +2340,7 @@ class AttachmentTests(AppTestCase):
                 "matched": True, "is_image": False, "path": "/fixture/project/notes.txt", "name": "notes.txt",
                 "text": "[User attached file: /fixture/project/notes.txt]"}}),
             ("input.detect_drop", {"result": {"matched": False}}),
-            ("image.detach", {"result": {"detached": True, "count": 0}}),  # Ctrl+C took the token
+            DETACHED,
         )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
@@ -2349,12 +2366,8 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(composer_row(terminal.captures["image"]), "❯ [Image #1]")
         self.assertEqual(composer_row(terminal.captures["typed"]), f"❯ [Image #1] {file_ref} and hello")
 
-    def test_cmd_backspace_takes_the_text_and_detaches_the_image(self) -> None:
-        answers = (
-            *startup_answers(),
-            ("image.attach", {"result": SHOT}),
-            ("image.detach", {"result": {"detached": True, "count": 0}}),
-        )
+    def test_cmd_backspace_takes_the_text_and_the_image_and_nothing_stages_it_again(self) -> None:
+        answers = (*startup_answers(), ("image.attach", {"result": SHOT}), DETACHED)
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         terminal = run.terminal
         terminal.script(
@@ -2366,8 +2379,9 @@ class AttachmentTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        (detach,) = run.calls("image.detach")
+        (detach,) = run.calls("image.detach")  # when it was staged; the token's deletion needs no call
         self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
+        self.assertEqual(run.calls("image.attach_bytes"), [])
         self.assertTrue(composer_row(terminal.captures["gone"]).startswith("❯"))
 
 

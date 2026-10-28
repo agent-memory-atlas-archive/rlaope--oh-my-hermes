@@ -107,7 +107,7 @@ from .keys import (
     Paste,
 )
 from .style import DEFAULT_STYLE, Line, Span, Style
-from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control
+from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control, truncate
 
 PROMPT = "❯ "
 MASK = "•"
@@ -159,6 +159,23 @@ class _Row:
     start: int  # cluster index of the row's first cluster
     end: int  # cluster index after the row's last cluster (a newline is never inside a row)
     hard: bool  # the row ends its logical line, so the position at `end` belongs to it
+
+
+def _is_token(ch: str) -> bool:
+    return _TOKEN_FIRST <= ord(ch) <= _TOKEN_LAST
+
+
+def _fit_tokens(shape: _Shape, avail: int, images: Mapping[str, tuple[str, object]]) -> _Shape:
+    """`shape` as drawn at `avail` cells: a token whose label is wider than that is cut to it, so no row overflows."""
+    wide = [index for index, unit in enumerate(shape.units)
+            if unit[0] in images and (shape.widths[index] or 0) > avail]
+    if not wide:
+        return shape
+    shown, widths = list(shape.shown), list(shape.widths)
+    for index in wide:
+        shown[index] = truncate(shown[index], avail)
+        widths[index] = cell_width(shown[index])
+    return _Shape(shape.text, shape.masked, shape.units, shape.bounds, shown, widths)
 
 
 def _nfc(text: str) -> str:
@@ -213,7 +230,7 @@ def _clean(text: str, masked: bool) -> str:
         if ch == NEWLINE:
             if not masked:
                 kept.append(ch)
-        elif (ch == TAB_CHAR or not is_control(ch)) and not _TOKEN_FIRST <= ord(ch) <= _TOKEN_LAST:
+        elif (ch == TAB_CHAR or not is_control(ch)) and not _is_token(ch):
             kept.append(ch)
     return "".join(kept)
 
@@ -307,11 +324,13 @@ class Composer:
     _paste_count: int = field(default=0, init=False, repr=False, compare=False)
     _token_count: int = field(default=0, init=False, repr=False, compare=False)
     _draft: str = field(default="", init=False, repr=False, compare=False)
+    _draft_images: dict[str, tuple[str, object]] = field(default_factory=dict, init=False, repr=False, compare=False)
     _avail: int | None = field(default=None, init=False, repr=False, compare=False)
     _scroll: int = field(default=0, init=False, repr=False, compare=False)
     # The text measured, and its rows at one width: a caret move or a redraw reuses them until the text changes.
     _shaped: _Shape | None = field(default=None, init=False, repr=False, compare=False)
-    _laid: tuple[_Shape, int, list[_Row]] | None = field(default=None, init=False, repr=False, compare=False)
+    # (measured, cells, rows, the measured text as drawn at that width: a token wider than a row cut to it)
+    _laid: tuple[_Shape, int, list[_Row], _Shape] | None = field(default=None, init=False, repr=False, compare=False)
     # Undo and redo: (text, caret, paste chips, image tokens) before each step, newest last.
     _undo: list[_Snapshot] = field(default_factory=list, init=False, repr=False, compare=False)
     _redo: list[_Snapshot] = field(default_factory=list, init=False, repr=False, compare=False)
@@ -339,9 +358,10 @@ class Composer:
         shape = self._measured()
         laid = self._laid
         if laid is None or laid[0] is not shape or laid[1] != avail:
+            fitted = _fit_tokens(shape, avail, self.images)
             breaks = [] if shape.masked else [unit in WORD_BREAKS for unit in shape.units]
-            laid = self._laid = (shape, avail, _layout(shape.widths, avail, breaks))
-        return shape, laid[2]
+            laid = self._laid = (shape, avail, _layout(fitted.widths, avail, breaks), fitted)
+        return laid[3], laid[2]
 
     def _set(self, text: str, caret: int) -> None:
         """Store `text` as NFC with the caret moved to the matching cluster boundary."""
@@ -361,6 +381,17 @@ class Composer:
             self._caret_off_chip(forward=True)
         if self.images:
             self.images = {token: image for token, image in self.images.items() if token in self.text}
+            self._unjoin_tokens()
+
+    def _unjoin_tokens(self) -> None:
+        """Drop what joined a token's cluster (a combining mark typed after it), which would be neither drawn nor
+        fit to send: the token stays one cluster that is only its label."""
+        shape = self._measured()
+        if not any(len(unit) > 1 and unit[0] in self.images for unit in shape.units):
+            return
+        before = _cluster_index(shape.bounds, self.caret)
+        units = [unit[0] if unit[0] in self.images else unit for unit in shape.units]
+        self._set("".join(units), len("".join(units[:before])))
 
     def _chip_spans(self) -> list[tuple[int, int]]:
         """Every chip's (start, end) in the text, in order."""
@@ -395,10 +426,9 @@ class Composer:
         return self._labelled(text)
 
     def _labelled(self, text: str) -> str:
-        """`text` with every image token replaced by its label."""
-        for token, (label, _image) in self.images.items():
-            text = text.replace(token, label)
-        return text
+        """`text` with every image token replaced by its label, and a token character no image is mapped to dropped:
+        none leaves the composer."""
+        return "".join(self.images[ch][0] if ch in self.images else "" if _is_token(ch) else ch for ch in text)
 
     def _new_token(self) -> str:
         """A token character neither the text nor `images` holds."""
@@ -500,7 +530,7 @@ class Composer:
         self._set(text, caret)
         self._typing_at = None
         self.history_index = None  # the text is no history entry any more
-        self._draft = ""
+        self._draft, self._draft_images = "", {}
 
     def _units(self) -> tuple[list[str], list[int], int]:
         """Clusters, their boundaries, and the caret's cluster index."""
@@ -514,7 +544,7 @@ class Composer:
     def _clear(self) -> None:
         self._load("")
         self.history_index = None
-        self._draft = ""
+        self._draft, self._draft_images = "", {}
         self.pastes = {}
         self.images = {}
         self._paste_count = 0
@@ -669,7 +699,7 @@ class Composer:
         if self.masked or not self.history or self.history_index == 0:
             return
         if self.history_index is None:
-            self._draft = self.text
+            self._draft, self._draft_images = self.text, dict(self.images)  # its tokens come back with it
             self.history_index = len(self.history) - 1
         else:
             self.history_index -= 1
@@ -683,8 +713,9 @@ class Composer:
             self._load(self.history[self.history_index])
             return
         self.history_index = None
+        self.images = {**self.images, **self._draft_images}
         self._load(self._draft)
-        self._draft = ""
+        self._draft, self._draft_images = "", {}
 
     # -- drawing --------------------------------------------------------------
 

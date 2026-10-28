@@ -717,6 +717,41 @@ class ImageTokenTests(unittest.TestCase):
         self.assertFalse(composer.insert_image(IMAGE_LABEL.format(number=1), self.SHOT))
         self.assertEqual((composer.text, composer.images), ("", {}))
 
+    def test_a_row_narrower_than_the_label_cuts_it_and_never_overflows(self) -> None:
+        composer = self.with_image("a", "b", label="[Image #12]")
+        for width in range(4, 14):
+            with self.subTest(width=width):
+                lines, (_row, col) = composer.render(width, 10)
+                rows = lines_text(lines)
+                self.assertTrue(all(cell_width(row) <= width for row in rows), rows)
+                self.assertLessEqual(col, width)
+
+    def test_a_combining_mark_typed_after_a_token_is_neither_drawn_nor_sent(self) -> None:
+        composer = self.with_image()
+        press(composer, Key(LEFT))  # right after the token
+        typed(composer, "\u0301")
+        self.assertEqual(composer_shown(composer), "[Image #41] ")
+        self.assertEqual(press(composer, Key(ENTER)).text, "[Image #41] ")
+
+    def test_history_browsing_keeps_the_drafts_tokens_through_an_edit(self) -> None:
+        composer = Composer(history=["older"])
+        typed(composer, "look ")
+        composer.insert_image("[Image #1]", self.SHOT)
+        press(composer, Key(UP))
+        typed(composer, "!")
+        press(composer, Key(DOWN))
+        self.assertEqual((composer_shown(composer), self.images(composer)), ("look [Image #1] ", [self.SHOT]))
+        action = press(composer, Key(ENTER))
+        self.assertEqual((action.text, action.images), ("look [Image #1] ", (("[Image #1]", self.SHOT),)))
+
+    def test_a_token_character_no_image_is_mapped_to_never_leaves(self) -> None:
+        composer = self.with_image()
+        (token,) = composer.images
+        composer.images.clear()  # as a draft that lost its map would hold it
+        self.assertEqual(composer.expanded(), " ")
+        self.assertNotIn(token, press(composer, Key(ENTER)).text)
+        self.assertNotIn(token, "".join(composer.history))
+
     def test_the_token_is_drawn_in_the_chip_style(self) -> None:
         composer = self.with_image("a")
         chip = Style(fg="#00FF00")

@@ -993,16 +993,19 @@ run and approval decision stays Hermes'; the screen is OMH's.
     glyph.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one is a token at the caret,
-  `[Image #1]`, numbered through the session as Claude Code numbers them, in
-  the text you type around it (`[Image #1] like this`). The image belongs to
-  its token: whatever deletes the token (Backspace into it, Cmd+Backspace,
-  Ctrl+W, Ctrl+U, Ctrl+K, Ctrl+C, Esc Esc) removes the image, and an undo puts
-  both back. The prompt goes with the images of its tokens, keeps the
-  `[Image #N]` labels in its text so the model can name them, and the
-  transcript lists each one under it (`⎿  [Image #1]`). Typing `[Image #1]`
-  yourself attaches nothing, and a prompt recalled from history is plain text.
-  Hermes reads and queues the file; the OMH TUI keeps only its path and name.
-  Dropping a file that is not an image types Hermes' reference to it instead.
+  `[Image #1]`, in the text you type around it (`[Image #1] like this`).
+  Images are numbered upward through the TUI run, as Claude Code numbers
+  them, past any number a resumed session already holds. The OMH TUI keeps
+  the image's bytes in memory, and Hermes holds the image only while the
+  prompt it goes with is sent, so the image belongs to its token: whatever
+  deletes the token (Backspace into it, Cmd+Backspace, Ctrl+W, Ctrl+U,
+  Ctrl+K, Ctrl+C, Esc Esc) removes the image, and an undo puts both back.
+  The prompt keeps the `[Image #N]` labels in its text so the model can name
+  them, and the transcript lists each image Hermes took under it
+  (`⎿  [Image #1]`). A `!` line or a command that sends no prompt gives its
+  tokens back to the composer. Typing `[Image #1]` yourself attaches
+  nothing, and a prompt recalled from history is plain text. Dropping a file
+  that is not an image types Hermes' reference to it instead.
 - A line that starts with `!` is a shell command: while the composer holds
   one, its `❯` mark turns the shell family's amber and the info line says
   `! shell (not sent to the model)`. Sending it runs it through Hermes'

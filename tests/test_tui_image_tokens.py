@@ -1,113 +1,206 @@
-"""An attached image is an `[Image #N]` token in the draft, and Hermes holds it exactly while a token names it.
+"""An attached image is an `[Image #N]` token in the draft; Hermes holds it only while the prompt it goes with is sent.
 
 The app is driven as `test_tui_modes` drives it: keys go through
-`App._on_input` (or the decoder, for the bytes a terminal sends), the calls the
-app made are read from the recording client, and Hermes' answers are handed
-back with `App._on_response`. The composer's own rules for a token (atomic,
-never typed by hand, wrapped whole) are `test_tui_composer.ImageTokenTests`.
+`App._on_input` (or the decoder, for the bytes a terminal sends), and the
+calls it makes are answered by `FakeHermes`, which keeps a session's staged
+images as Hermes' gateway does: a staging appends one, `image.detach` takes
+one out by path, and a `prompt.submit` takes everything staged only when its
+turn is admitted (`admit`), later, as Hermes' turn thread takes it after the
+agent build (`_admit_prompt_turn`). So a test sees which images each turn
+really went with. The composer's own rules for a token are
+`test_tui_composer.ImageTokenTests`.
 """
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+import tempfile
 import unittest
 
 from _tui_lines import lines_text
-from test_tui_modes import SID, answer, make_app, notices, type_text
+from test_tui_modes import SID, RecordingClient, make_app, notices, type_text
 from omh.tui import gateway_contract as contract
-from omh.tui.app import App, Attachment, QueuedLine
-from omh.tui.keys import BACKSPACE, CHAR, ENTER, ESCAPE, LEFT, UP, Key, KeyDecoder, Paste
+from omh.tui.app import IMAGE_NOT_SENT_NOTICE, App, Attachment
+from omh.tui.gateway import Event, Response
+from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, KeyDecoder, Paste
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.transcript import NOTICE_WARN, UserBlock, block_rows
 
-SHOT = {"attached": True, "path": "/h/images/shot.png", "name": "shot.png", "width": 4, "height": 3}
-NOTES = {"attached": True, "path": "/h/images/notes.png", "name": "notes.png", "width": 8, "height": 6}
 CTRL_V = Key(CHAR, "v", ctrl=True)
+PNG = b"\x89PNG\r\n\x1a\n"
+# The last private-use plane, where the composer's token characters live: none may leave the TUI.
+TOKEN_RANGE = range(0x100000, 0x110000)
+ANSWERED = ("clipboard.paste", "image.attach", "image.attach_bytes", "image.detach", "input.detect_drop",
+            "prompt.submit")
 
 
 def ctrl(char: str) -> Key:
     return Key(CHAR, char, ctrl=True)
 
 
-def paste_image(app: App, client: object, result: dict) -> None:
-    """Ctrl+V, and Hermes answers `clipboard.paste` with `result`."""
-    app._on_input(CTRL_V)
-    answer(app, client, result)  # type: ignore[arg-type]
+class FakeHermes:
+    """Hermes' staging of images for one session, answering the app's image and prompt calls in order (`pump`)."""
+
+    def __init__(self, app: App, client: RecordingClient, home: Path) -> None:
+        self.app, self.client, self.home = app, client, home
+        self.held: list[str] = []
+        self.files: dict[str, bytes] = {}  # every image file Hermes wrote, by path, in order
+        self.waiting: list[str] = []  # submitted prompts whose turns are not admitted yet
+        self.turns: list[tuple[str, list[bytes]]] = []  # each admitted turn's text and the images it took
+        self.answered = 0
+        self.responded: set[int] = set()
+
+    def write(self, data: bytes) -> str:
+        path = str(self.home / f"image_{len(self.files) + 1}.png")
+        Path(path).write_bytes(data)
+        self.files[path] = data
+        return path
+
+    def stage(self, data: bytes, name: str = "") -> dict:
+        path = self.write(data)
+        self.held.append(path)
+        return {"attached": True, "path": path, "name": name or Path(path).name, "width": 4, "height": 3}
+
+    def pump(self, until: int | None = None) -> None:
+        """Answer the app's image and prompt calls made since the last pump, the first `until` calls at most; any
+        other call stays unanswered (a test answers it with `respond`)."""
+        while self.answered < len(self.client.calls) and (until is None or self.answered < until):
+            index = self.answered
+            self.answered += 1
+            method, params = self.client.calls[index]
+            if method in ANSWERED:
+                self.app._on_response(Response(index + 1, self.answer(method, params), None))
+
+    def answer(self, method: str, params: dict) -> dict:
+        if method == "clipboard.paste":
+            return self.stage(PNG + b"clip%d" % len(self.files))
+        if method == "image.attach":
+            return self.stage(PNG + params["path"].encode(), Path(params["path"]).name)
+        if method == "input.detect_drop":
+            return {"matched": True, "is_image": True, **self.stage(PNG + params["text"].encode())}
+        if method == "image.attach_bytes":
+            path = self.write(base64.b64decode(params["content_base64"]))
+            self.held.append(path)
+            return {"attached": True, "path": path}
+        if method == "image.detach":
+            before = len(self.held)
+            self.held = [path for path in self.held if path != params["path"]]
+            return {"detached": len(self.held) != before, "count": len(self.held)}
+        self.waiting.append(params["text"])  # prompt.submit: the turn takes the images when it is admitted
+        return {"status": "streaming"}
+
+    def admit(self) -> None:
+        """The oldest waiting turn is admitted: it takes every image staged now, and the app sees `message.start`."""
+        text = self.waiting.pop(0)
+        taken, self.held = self.held, []
+        self.turns.append((text, [self.files[path] for path in taken]))
+        self.app._on_event(Event("message.start", SID, {}))
+        self.pump()
+
+    def complete(self) -> None:
+        self.app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.pump()
+
+    def respond(self, method: str, result: dict | None = None, error: dict | None = None) -> None:
+        """Answer the oldest call of `method` no test answered yet."""
+        index = next(index for index, (name, _params) in enumerate(self.client.calls)
+                     if name == method and index not in self.responded)
+        self.responded.add(index)
+        self.app._on_response(Response(index + 1, result, error))
+        self.pump()
 
 
-def shown(app: App) -> str:
-    return app.composer.expanded()
+class ImageTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.app, self.client = make_app()
+        self.hermes = FakeHermes(self.app, self.client, Path(home.name))
+
+    def press(self, *keys: Key | Paste) -> None:
+        for key in keys:
+            self.app._on_input(key)
+        self.hermes.pump()
+
+    def type(self, text: str) -> None:
+        type_text(self.app, text)
+        self.hermes.pump()
+
+    def paste_image(self) -> bytes:
+        """Ctrl+V; the bytes of the clipboard image Hermes saved."""
+        self.press(CTRL_V)
+        return list(self.hermes.files.values())[-1]
+
+    def shown(self) -> str:
+        return self.app.composer.expanded()
+
+    def methods(self, prefix: str = "image.") -> list[str]:
+        return [method for method, _params in self.client.calls if method.startswith(prefix)]
+
+    def users(self) -> list[UserBlock]:
+        return [block for block in self.app.transcript.blocks if isinstance(block, UserBlock)]
 
 
-def image_calls(client: object) -> list[tuple[str, dict]]:
-    return [(method, params) for method, params in client.calls if method.startswith("image.")]  # type: ignore[attr-defined]
-
-
-def detach(path: str) -> tuple[str, dict]:
-    return ("image.detach", {"session_id": SID, "path": path})
-
-
-def attach(path: str) -> tuple[str, dict]:
-    return ("image.attach", {"session_id": SID, "path": path})
-
-
-def users(app: App) -> list[UserBlock]:
-    return [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
-
-
-class TokenTests(unittest.TestCase):
-    def test_a_pasted_image_is_a_token_at_the_caret_and_no_attachment_row(self) -> None:
-        app, client = make_app()
-        type_text(app, "이런느낌으로")
+class TokenTests(ImageTestCase):
+    def test_a_pasted_image_is_a_token_at_the_caret_its_bytes_kept_and_hermes_holding_nothing(self) -> None:
+        self.type("이런느낌으로")
         for _ in range(len("느낌으로")):
-            app._on_input(Key(LEFT))
-        paste_image(app, client, SHOT)
-        self.assertEqual(shown(app), "이런 [Image #1] 느낌으로")
-        self.assertEqual([image.path for image in app.attachments], ["/h/images/shot.png"])
-        app._render()
-        screen = "\n".join(app.terminal.screen.lines())  # type: ignore[attr-defined]
+            self.press(Key(LEFT))
+        data = self.paste_image()
+        self.assertEqual(self.shown(), "이런 [Image #1] 느낌으로")
+        ((_label, image),) = self.app.composer.images.values()
+        self.assertEqual(image.data, data)
+        self.assertEqual(self.hermes.held, [])  # let go of at once: only a prompt being sent stages an image
+        self.app._render()
+        screen = "\n".join(self.app.terminal.screen.lines())  # type: ignore[attr-defined]
         self.assertIn("❯ 이런 [Image #1] 느낌으로", screen)
         self.assertNotIn("📎", screen)
-        self.assertNotIn("shot.png", screen)
 
-    def test_images_are_numbered_through_the_session_like_claude_codes(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        paste_image(app, client, NOTES)
-        self.assertEqual(shown(app), "[Image #1] [Image #2] ")
-        app._on_input(Key(ENTER))
-        paste_image(app, client, SHOT)
-        self.assertEqual(shown(app), "[Image #3] ")  # a sent prompt does not start the count again
+    def test_images_are_numbered_upward_through_the_run_like_claude_codes(self) -> None:
+        self.paste_image()
+        self.paste_image()
+        self.assertEqual(self.shown(), "[Image #1] [Image #2] ")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.hermes.complete()
+        self.paste_image()
+        self.assertEqual(self.shown(), "[Image #3] ")
 
-    def test_every_drop_and_attach_path_makes_a_token(self) -> None:
-        for name, start, result in (
-            ("/image", lambda app: app._image("shot.png what is this?"), {**SHOT, "remainder": "what is this?"}),
-            ("Ctrl+V", lambda app: app._on_input(CTRL_V), SHOT),
-            ("a dropped path", lambda app: app._on_input(Paste("/h/images/shot.png")),
-             {**SHOT, "matched": True, "is_image": True}),
+    def test_a_resumed_sessions_labels_are_never_given_again(self) -> None:
+        self.app._draw_history([{"role": "user", "text": "[Image #7] this one, and [Image #2]"}])
+        self.paste_image()
+        self.assertEqual(self.shown(), "[Image #8] ")
+
+    def test_every_attach_path_makes_a_token_and_leaves_hermes_holding_nothing(self) -> None:
+        for name, start in (
+            ("/image", lambda app: app._image("shot.png what is this?")),
+            ("Ctrl+V", lambda app: app._on_input(CTRL_V)),
+            ("a dropped path", lambda app: app._on_input(Paste("/h/images/shot.png"))),
         ):
             with self.subTest(name):
-                app, client = make_app()
-                start(app)
-                answer(app, client, result)
-                self.assertTrue(shown(app).startswith("[Image #1] "), shown(app))
-                self.assertEqual(shown(app), "[Image #1] " + result.get("remainder", ""))
+                self.setUp()
+                start(self.app)
+                self.hermes.pump()
+                self.assertTrue(self.shown().startswith("[Image #1] "), self.shown())
+                self.assertEqual(self.hermes.held, [])
 
     def test_typing_the_label_by_hand_attaches_nothing(self) -> None:
-        app, client = make_app()
-        type_text(app, "[Image #1] what is it")
-        app._on_input(Key(ENTER))
-        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "[Image #1] what is it"})])
-        self.assertEqual(users(app)[-1].images, ())
+        self.type("[Image #1] what is it")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] what is it", [])])
+        self.assertEqual(self.methods(), [])
 
 
-class DeletionTests(unittest.TestCase):
-    """Whatever takes the token takes its image: Hermes is told to drop it, and no row is left behind."""
+class DeletionTests(ImageTestCase):
+    """Whatever takes the token takes its image: no prompt goes with it, since nothing else holds it."""
 
-    def test_each_deletion_detaches_the_image(self) -> None:
+    def test_a_deleted_image_never_rides_any_prompt(self) -> None:
         cmd_backspace = list(KeyDecoder().feed(b"\x15"))  # what iTerm2 and Ghostty send for Cmd+Backspace
         self.assertEqual(cmd_backspace, [ctrl("u")])
         cases = {
-            "Backspace into the token": [Key(BACKSPACE)] * 3,  # the x, the space, the token
+            "Backspace into the token": [Key(BACKSPACE)] * 3,
             "Cmd+Backspace (Ctrl+U)": cmd_backspace,
             "Ctrl+W": [ctrl("w"), ctrl("w")],
             "Ctrl+K from before it": [Key(LEFT), Key(LEFT), Key(LEFT), ctrl("k")],
@@ -116,176 +209,240 @@ class DeletionTests(unittest.TestCase):
         }
         for name, keys in cases.items():
             with self.subTest(name):
-                app, client = make_app()
-                type_text(app, "look")
-                paste_image(app, client, SHOT)
-                type_text(app, "x")
-                for key in keys:
-                    app._on_input(key)
-                self.assertNotIn("[Image", shown(app))
-                self.assertEqual(image_calls(client), [detach("/h/images/shot.png")])
-                self.assertEqual(app.attachments, [])
+                self.setUp()
+                self.type("look")
+                self.paste_image()
+                self.type("x")
+                self.press(*keys)
+                self.assertNotIn("[Image", self.shown())
+                self.type(" and send")
+                self.press(Key(ENTER))
+                self.hermes.admit()
+                ((_text, images),) = self.hermes.turns
+                self.assertEqual(images, [])
+                self.assertEqual(self.methods("image.attach_bytes"), [])
 
-    def test_the_decoded_bytes_of_cmd_backspace_take_the_text_and_the_image_together(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        type_text(app, "이런느낌으로")
-        app._take_input(b"\x15")
-        self.assertEqual((app.composer.text, app.attachments), ("", []))
-        self.assertEqual(image_calls(client), [detach("/h/images/shot.png")])
-
-    def test_undo_brings_the_token_back_and_hermes_holds_the_image_again(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        app._on_input(ctrl("u"))
-        app._on_input(ctrl("_"))
-        self.assertEqual(shown(app), "[Image #1] ")
-        self.assertEqual(image_calls(client), [detach("/h/images/shot.png"), attach("/h/images/shot.png")])
-        self.assertEqual([image.path for image in app.attachments], ["/h/images/shot.png"])
-
-    def test_an_image_hermes_will_not_attach_again_is_said_once_and_never_asked_again(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        app._on_input(ctrl("u"))
-        app._on_input(ctrl("_"))
-        answer(app, client, error={"code": 4016, "message": "image not found"})
-        type_text(app, "x")
-        self.assertEqual(image_calls(client), [detach("/h/images/shot.png"), attach("/h/images/shot.png")])
-        self.assertEqual(notices(app, NOTICE_WARN), ["[Image #1]: image not found (4016)."])
+    def test_undo_brings_the_token_back_and_the_prompt_goes_with_that_image(self) -> None:
+        data = self.paste_image()
+        self.press(ctrl("u"), ctrl("_"))
+        self.assertEqual(self.shown(), "[Image #1] ")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] ", [data])])
 
 
-class SendTests(unittest.TestCase):
-    def test_the_prompt_keeps_its_labels_and_the_echo_lists_each_image_under_it(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        type_text(app, "and ")
-        paste_image(app, client, NOTES)
-        type_text(app, "like this")
-        app._on_input(Key(ENTER))
-        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID,
-                                                              "text": "[Image #1] and [Image #2] like this"}))
-        self.assertEqual(image_calls(client), [])  # Hermes held both: the prompt goes with them
-        (user,) = users(app)
+class SendTests(ImageTestCase):
+    def test_the_prompt_keeps_its_labels_goes_with_its_images_and_the_echo_lists_them(self) -> None:
+        first = self.paste_image()
+        self.type("and ")
+        second = self.paste_image()
+        self.type("like this")
+        self.press(Key(ENTER))
+        self.assertEqual(self.hermes.waiting, ["[Image #1] and [Image #2] like this"])
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] and [Image #2] like this", [first, second])])
+        (user,) = self.users()
         self.assertEqual(user.images, ("[Image #1]", "[Image #2]"))
         rows = lines_text(block_rows(user, 60, DEFAULT_THEME))
         self.assertEqual([row.rstrip() for row in rows[-2:]], ["┃   ⎿  [Image #1]", "┃   ⎿  [Image #2]"])
-        self.assertEqual(app.attachments, [])
+        self.assertEqual(self.hermes.held, [])
+
+    def test_the_prompt_waits_for_hermes_to_answer_every_staging_before_it_goes(self) -> None:
+        self.paste_image()
+        self.app._on_input(Key(ENTER))  # nothing answered yet
+        self.assertEqual(self.client.calls[-1][0], "image.attach_bytes")
+        self.assertEqual(self.users(), [])  # the echo waits, to list only what Hermes took
+        self.hermes.pump()
+        self.assertEqual(self.hermes.waiting, ["[Image #1] "])
+
+    def test_an_image_hermes_does_not_take_is_said_and_not_listed_and_the_prompt_still_goes(self) -> None:
+        kept = self.paste_image()
+        self.paste_image()
+        self.app._on_input(Key(ENTER))
+        stagings = [index for index, (method, _params) in enumerate(self.client.calls) if method == "image.attach_bytes"]
+        self.hermes.answered = len(self.client.calls)  # this test answers the two stagings itself
+        path = self.hermes.write(kept)
+        self.hermes.held.append(path)
+        self.app._on_response(Response(stagings[0] + 1, {"attached": True, "path": path}, None))
+        self.app._on_response(Response(stagings[1] + 1, None, {"code": 4016, "message": "unsupported image"}))
+        self.hermes.pump()
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] [Image #2] ", [kept])])
+        self.assertEqual(self.users()[-1].images, ("[Image #1]",))
+        self.assertIn(IMAGE_NOT_SENT_NOTICE.format(label="[Image #2]", reason="unsupported image"),
+                      notices(self.app, NOTICE_WARN))
+
+    def test_a_prompt_sent_before_the_last_turn_was_admitted_never_lends_it_its_images(self) -> None:
+        # Hermes still builds the agent for A: B, sent into the running turn, stages nothing until A is admitted, and
+        # nor does a Ctrl+V meanwhile.
+        self.app.busy_mode = "steer"
+        first = self.paste_image()
+        self.type("A")
+        self.press(Key(ENTER))
+        self.press(CTRL_V)
+        self.assertEqual(self.shown(), "")  # its staging waits for A's admission
+        self.assertEqual(self.hermes.held, list(self.hermes.files)[-1:])  # A's image alone
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] A", [first])])
+        second = list(self.hermes.files.values())[-1]
+        self.assertEqual(self.shown(), "[Image #2] ")
+        self.type("B")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns[1], ("[Image #2] B", [second]))
 
     def test_a_queued_prompt_goes_with_its_images_and_never_with_the_drafts(self) -> None:
-        app, client = make_app(busy=True)
-        paste_image(app, client, SHOT)
-        type_text(app, "first")
-        app._on_input(Key(ENTER))  # queued behind the running turn
-        (line,) = app.queued
+        self.app.turn_pending = True  # a turn runs: Enter queues
+        first = self.paste_image()
+        self.type("first")
+        self.press(Key(ENTER))
+        (line,) = self.app.queued
         self.assertEqual([image.label for image in line.images], ["[Image #1]"])
-        paste_image(app, client, NOTES)  # the next draft's
-        before = len(client.calls)
-        app.turn_pending = False
-        app._turn_ended()
-        sent = client.calls[before:]
-        submit = next(index for index, (method, _params) in enumerate(sent) if method == "prompt.submit")
-        self.assertEqual(sent[:submit], [detach("/h/images/notes.png")])
-        self.assertEqual(sent[submit][1]["text"], "[Image #1] first")
-        self.assertEqual(sent[submit + 1 :], [attach("/h/images/notes.png")])
-        self.assertEqual(users(app)[-1].images, ("[Image #1]",))
-        self.assertEqual([image.path for image in app.attachments], ["/h/images/notes.png"])
+        self.paste_image()  # the next draft's
+        self.hermes.complete()  # the running turn ends: the queued prompt goes
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] first", [first])])
+        self.assertEqual(self.shown(), "[Image #2] ")
+        self.assertEqual(self.hermes.held, [])
 
     def test_up_takes_a_queued_prompt_back_with_its_tokens(self) -> None:
-        app, client = make_app(busy=True)
-        paste_image(app, client, SHOT)
-        type_text(app, "first")
-        app._on_input(Key(ENTER))
-        app._on_input(Key(UP))
-        self.assertEqual(shown(app), "[Image #1] first")
-        self.assertEqual(len(app.composer.images), 1)
-        self.assertEqual(image_calls(client), [])  # Hermes held it all along
+        self.app.turn_pending = True
+        data = self.paste_image()
+        self.type("first")
+        self.press(Key(ENTER), Key(UP))
+        self.assertEqual(self.shown(), "[Image #1] first")
+        self.app.turn_pending = False
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] first", [data])])
 
-    def test_a_recalled_prompt_from_history_is_plain_text_and_attaches_nothing(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        type_text(app, "x")
-        app._on_input(Key(ENTER))
-        app.turn_pending = False
-        app._on_input(Key(UP))
-        self.assertEqual((app.composer.text, app.composer.images), ("[Image #1] x", {}))
-        app._on_input(Key(ENTER))
-        self.assertEqual(image_calls(client), [])
-        self.assertEqual(users(app)[-1].images, ())
+    def test_a_refused_prompt_leaves_hermes_holding_nothing(self) -> None:
+        self.paste_image()
+        self.app._on_input(Key(ENTER))
+        self.hermes.pump(len(self.client.calls))  # the staging is answered, so the prompt goes
+        (submit,) = [index for index, (method, _params) in enumerate(self.client.calls) if method == "prompt.submit"]
+        self.hermes.answered = len(self.client.calls)
+        self.app._on_response(Response(submit + 1, None, {"code": 4009, "message": "busy"}))
+        self.hermes.pump()
+        self.assertEqual(self.hermes.held, [])
+        self.assertEqual(self.methods()[-1], "image.detach")
 
-    def test_a_shell_line_goes_without_its_image_and_hermes_drops_it(self) -> None:
-        app, client = make_app()
-        type_text(app, "!ls ")
-        paste_image(app, client, SHOT)
-        app._on_input(Key(ENTER))
-        self.assertEqual(image_calls(client), [detach("/h/images/shot.png")])
-        self.assertEqual(app.attachments, [])
+    def test_a_turn_that_ends_before_hermes_admits_it_leaves_hermes_holding_nothing(self) -> None:
+        self.paste_image()
+        self.press(Key(ENTER))
+        self.app._on_event(Event("error", SID, {"message": "the agent did not build"}))
+        self.hermes.pump()
+        self.assertEqual(self.hermes.held, [])
+
+    def test_a_new_session_holds_nothing_and_the_next_prompt_stages_from_the_tuis_bytes(self) -> None:
+        data = self.paste_image()
+        self.app._enter_session({"session_id": SID, "stored_session_id": "stored-2", "info": {}})
+        self.hermes.held = []  # whatever the old session staged went with it
+        self.assertEqual(self.shown(), "[Image #1] ")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("[Image #1] ", [data])])
+
+    def test_a_staging_answered_after_a_new_gateway_sends_nothing(self) -> None:
+        self.paste_image()
+        self.app._on_input(Key(ENTER))
+        self.app.image_epoch += 1  # what `_respawn_gateway` and `_enter_session` do
+        self.hermes.pump()
+        self.assertEqual(self.hermes.waiting, [])
+
+
+class KeptTokenTests(ImageTestCase):
+    """A line that sends no prompt takes no image: its tokens come back to the draft, and a notice says so."""
+
+    def test_a_shell_line_and_a_printing_command_give_their_tokens_back(self) -> None:
+        for name, text, answer in (("!", "!ls ", None), ("/usage", "/usage ", {"output": "12 calls"})):
+            with self.subTest(name):
+                self.setUp()
+                self.type(text)
+                data = self.paste_image()
+                self.press(Key(ENTER))
+                if answer is not None:
+                    self.hermes.respond("slash.exec", answer)
+                self.assertEqual(self.shown(), "[Image #1] ")
+                ((_label, image),) = self.app.composer.images.values()
+                self.assertEqual(image.data, data)
+                self.assertTrue(any("takes no image: [Image #1] stay in the composer" in said
+                                    for said in notices(self.app)), notices(self.app))
+                self.assertEqual(self.methods("image.attach_bytes"), [])
 
     def test_ctrl_enter_with_an_image_is_a_prompt_not_a_steer(self) -> None:
-        app, client = make_app(busy=True)
-        paste_image(app, client, SHOT)
-        type_text(app, "this one")
-        app._on_input(Key(ENTER, ctrl=True))
-        self.assertEqual([method for method, _params in client.calls if method == "session.steer"], [])
-        self.assertIsInstance(app.queued[-1], QueuedLine)
-        self.assertEqual([image.label for image in app.queued[-1].images], ["[Image #1]"])
-
-    def test_a_refused_prompt_leaves_no_image_held_without_a_token(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        type_text(app, "x")
-        app._on_input(Key(ENTER))
-        answer(app, client, error={"code": 4009, "message": "busy"})
-        self.assertEqual(image_calls(client), [detach("/h/images/shot.png")])
-        self.assertEqual(app.attachments, [])
+        self.app.turn_pending = True
+        self.paste_image()
+        self.type("this one")
+        self.press(Key(ENTER, ctrl=True))
+        self.assertEqual(self.methods("session.steer"), [])
+        self.assertEqual([image.label for image in self.app.queued[-1].images], ["[Image #1]"])
 
 
-class CommandTests(unittest.TestCase):
-    """A command that sends a prompt (plan mode's `/plan`, a skill) sends it with the images; one that does not drops them."""
-
+class CommandTests(ImageTestCase):
     def test_a_plan_mode_prompt_goes_with_its_images(self) -> None:
-        app, client = make_app()
-        app.plan_mode = True
-        paste_image(app, client, SHOT)
-        type_text(app, "plan this")
-        app._on_input(Key(ENTER))
-        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "plan [Image #1] plan this", "session_id": SID}))
-        answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
-        answer(app, client, {"type": "send", "message": "Task to plan:\n[Image #1] plan this"})
-        app._sync_images()
-        self.assertEqual(client.calls[-1][0], "prompt.submit")
-        self.assertEqual(image_calls(client), [])
-        self.assertEqual(users(app)[-1].images, ("[Image #1]",))
+        self.app.plan_mode = True
+        data = self.paste_image()
+        self.type("plan this")
+        self.press(Key(ENTER))
+        self.assertEqual(self.client.calls[-1], ("slash.exec", {"command": "plan [Image #1] plan this", "session_id": SID}))
+        self.hermes.respond("slash.exec", error={"code": contract.NOT_MINE, "message": "pending-input command"})
+        self.hermes.respond("command.dispatch", {"type": "send", "message": "Task to plan:\n[Image #1] plan this"})
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("Task to plan:\n[Image #1] plan this", [data])])
 
-    def test_a_command_that_only_prints_drops_the_images(self) -> None:
-        app, client = make_app()
-        type_text(app, "/usage ")
-        paste_image(app, client, SHOT)
-        app._on_input(Key(ENTER))
-        answer(app, client, {"output": "12 calls"})
-        app._sync_images()
-        self.assertEqual(image_calls(client), [detach("/h/images/shot.png")])
-
-    def test_a_prompt_held_for_the_default_check_keeps_its_images_held(self) -> None:
-        app, client = make_app()
-        app.default_route = ("m", "p")  # a read answered at launch: the next prompt waits for the check
-        paste_image(app, client, SHOT)
-        type_text(app, "x")
-        app._on_input(Key(ENTER))
-        self.assertIsNotNone(app.starting)
-        app._sync_images()
-        self.assertEqual(image_calls(client), [])
-        app._default_settled()
-        self.assertEqual(client.calls[-1][1]["text"], "[Image #1] x")
-        self.assertEqual(users(app)[-1].images, ("[Image #1]",))
+    def test_two_commands_in_flight_each_send_their_own_images(self) -> None:
+        self.type("/skill-a ")
+        first = self.paste_image()
+        self.press(Key(ENTER))
+        self.type("/skill-b ")
+        second = self.paste_image()
+        self.press(Key(ENTER))
+        for _ in range(2):
+            self.hermes.respond("slash.exec", error={"code": contract.NOT_MINE, "message": "skill"})
+        self.hermes.respond("command.dispatch", {"type": "skill", "message": "A: [Image #1]"})
+        self.hermes.admit()
+        self.hermes.complete()
+        self.hermes.respond("command.dispatch", {"type": "skill", "message": "B: [Image #2]"})
+        self.hermes.admit()
+        self.assertEqual(self.hermes.turns, [("A: [Image #1]", [first]), ("B: [Image #2]", [second])])
 
 
-class AttachmentShapeTests(unittest.TestCase):
-    def test_the_label_rides_on_the_attachment_the_composer_holds(self) -> None:
-        app, client = make_app()
-        paste_image(app, client, SHOT)
-        ((label, image),) = app.composer.images.values()
+class NoTokenCharacterLeavesTests(ImageTestCase):
+    def test_history_browsing_keeps_the_drafts_tokens_and_no_token_character_reaches_any_sink(self) -> None:
+        remembered: list[str] = []
+        self.app._remember = remembered.append  # type: ignore[method-assign]  # what goes to Hermes' history file
+        self.app.composer.on_record = remembered.append
+        self.type("old prompt")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.hermes.complete()
+        self.type("look ")
+        data = self.paste_image()
+        self.press(Key(UP))
+        self.type("!")
+        self.press(Key(DOWN))
+        self.assertEqual(self.shown(), "look [Image #1] ")
+        self.press(Key(ENTER))
+        self.hermes.admit()
+        self.hermes.complete()
+        self.assertEqual(self.hermes.turns[-1], ("look [Image #1] ", [data]))
+        self.type("/usage ")
+        self.paste_image()
+        self.press(Key(ENTER))
+        self.app._on_input(ctrl("c"))
+        sinks = [*map(repr, self.client.calls), *remembered, *self.app.composer.history]
+        for item in sinks:
+            self.assertFalse(any(ord(ch) in TOKEN_RANGE for ch in item), item)
+
+
+class AttachmentShapeTests(ImageTestCase):
+    def test_the_label_and_the_bytes_ride_on_the_attachment_the_composer_holds(self) -> None:
+        data = self.paste_image()
+        ((label, image),) = self.app.composer.images.values()
         self.assertEqual(label, "[Image #1]")
-        self.assertEqual(image, Attachment("/h/images/shot.png", "shot.png", "4×3", "[Image #1]"))
+        self.assertIsInstance(image, Attachment)
+        self.assertEqual((image.label, image.data), ("[Image #1]", data))
 
 
 if __name__ == "__main__":
