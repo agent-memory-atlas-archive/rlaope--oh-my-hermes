@@ -6,6 +6,21 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **Selecting the transcript no longer copies its left bar, and the pager
+  copies on drag.** Each block's rail was a `┃` glyph, so a terminal's own
+  selection pasted `┃` in front of every row. The rail is now one cell
+  painted in the block's colour (reverse video, so a reply's and a call's
+  still show under `NO_COLOR`, where your prompt's `❯` marks it alone) that
+  holds a space: a copy on the main screen carries two leading spaces and no
+  bar. In a pager (Ctrl+O, `/history`, `/logs`, `/dag`, an
+  agent's log, the bot board) the TUI now takes the mouse: the wheel scrolls three lines,
+  a drag selects and copies on release without the rails or a reply's
+  margin, a double click copies a word and a triple click a row, and the
+  footer says `✓ copied N chars to clipboard`. The copy is OSC 52 for kitty,
+  Ghostty, WezTerm and Alacritty, `pbcopy` on a local Mac otherwise, and
+  else OSC 52 the footer says was only sent. The main screen keeps the
+  terminal's own selection, since taking the mouse there would take the
+  wheel and the scrollback.
 - **Fourteen more models cost out at their vendors' list prices.** OMH
   already recognized Grok 4.7, 4.6, 4.5 and 4.3, DeepSeek V4 Pro, Gemini
   3.8 Flash, 3.6 Flash and 3.5 Flash-Lite, GLM-5.3-FlashX, Qwen3.8-Max and
@@ -274,6 +289,18 @@ All notable changes will be documented here.
   `session.list`, over the whole store, then among the listed sessions
   ignoring case. The one session with it opens; several (titles that
   differ only in case) or none open the picker filtered by the title.
+- **A prompt sent now is put back only when Hermes really dropped it.** The
+  OMH TUI counted a sent-now steer as read only after a tool finished and the
+  turn took a further step, so Esc in between could put back a steer Hermes
+  had already joined to the stopped tool batch, and resending it doubled it.
+  It now counts as read at the first tool that finishes after Hermes took
+  it, since Hermes finalizes even an interrupted batch. A sent-now steer
+  Hermes refuses after its turn ended and the next queued prompt started
+  goes back to the composer with a notice, instead of running after that
+  later prompt; this includes a refusal that arrives while that prompt
+  waits on the default-model check, which before took its place and lost
+  it. A prompt held for that check is never replaced: the queue waits
+  behind it.
 
 ## 4.0.3 - 2026-10-27
 

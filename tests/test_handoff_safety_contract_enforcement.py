@@ -300,6 +300,12 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "and import path Hermes' launcher handed the frontend, inside a foreground terminal the "
         "person launched; never reached from a prepared-handoff path."
     ),
+    "src/tui/clipboard.py": (
+        "the OMH TUI pager's copy on a Mac whose screen is local (no SSH): one fixed `pbcopy` with the text the "
+        "person selected with the mouse on stdin, a two-second timeout, and inside tmux first one fixed read-only "
+        "`tmux show-environment SSH_CONNECTION` with a one-second timeout; nothing else spawns from it, and it is "
+        "never reached from a prepared-handoff path."
+    ),
     "src/tui/git_status.py": (
         "the OMH TUI's branch row: one fixed `git -c core.fsmonitor=false --no-optional-locks status "
         "--porcelain=v2 --branch` in the session's own directory, on a thread of its own with a two-second "
