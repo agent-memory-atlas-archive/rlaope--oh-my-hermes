@@ -187,7 +187,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived for the plan-ambition lines: only plan and ralplan move.
         # Re-derived again on the tree merged with sprite-forge (both sides' bodies).
         # Then dag-ulw's delegation-backend guidance; only dag-ulw moves.
-        self.assertEqual(_digest(legacy_hashes), '25ee468b513127f7f58d11d93af4238bb6357d5d35cd92dd52c33e1a2d778f14')
+        # Then model-setup's chain sentence names the six routing-recipe
+        # categories (2026-10-28); only model-setup moves.
+        self.assertEqual(_digest(legacy_hashes), '48d98811b4a4c7ceea14d1b5995065c37420b6c46b1e16bb4b3081906cbc07d3')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
