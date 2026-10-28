@@ -132,8 +132,9 @@ All notable changes will be documented here.
   home is on `C:`. Registration no longer adds the pointer beside an entry
   that already names it another way (`C:\omh\current\skills` on Windows,
   `${VAR}`, `~`, or relative to the home), and `omh uninstall
-  --registration-only` removes every spelling setup retires. Nothing is
-  retired or removed that Hermes does not read through that home.
+  --registration-only` removes every spelling setup retires (`${VAR}`, `~`,
+  relative to the home, or through a symlink). Nothing is retired or
+  removed that Hermes does not read through that home.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child
