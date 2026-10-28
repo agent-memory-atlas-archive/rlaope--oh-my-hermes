@@ -31,7 +31,7 @@ its old ``ended_at`` as it was until a prompt reopens it
 never falls inside the child's lifetime.
 
 Once the session is known, ``exit_card_lines`` reads its one row, by id, to
-say what it was: its title, counts and model, never message content or the cwd.
+say what it was: its title, never message content or the cwd.
 
 Everything here is best effort and runs after the person's session has
 already ended. A line naming the wrong session is worse than no line, so
@@ -40,12 +40,9 @@ every ambiguity resolves to ``None``.
 
 from __future__ import annotations
 
-import json
 import re
-import shlex
 import sqlite3
 from pathlib import Path
-from typing import NamedTuple
 
 from ..plugin_bundle.omh.sqlite_readonly import connect_readonly
 
@@ -199,35 +196,15 @@ def resume_command_line(session_id: str, profile: str | None = None) -> str:
     return f"omh --resume {session_id}"
 
 
-# The one row the exit card reads, by the id already chosen, and the person's
-# own prompts in it (rows a rewind or a retired queue entry turned inactive are
-# not turns). No message content, no cwd.
-_CARD_SELECT = (
-    "SELECT title, model, message_count, input_tokens, output_tokens, cache_read_tokens, "
-    "cache_write_tokens, reasoning_tokens, model_config FROM sessions WHERE id = ?"
-)
-# A `/branch` child's copied history was billed on the sessions it was cut from (`model_config._branched_from`);
-# Hermes' summary sums the chain (`_branch_lineage` in `hermes_cli/main_tui_launch.py`), and so does the card.
-_LINEAGE_SELECT = (
-    "SELECT input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, model_config "
-    "FROM sessions WHERE id = ?"
-)
-_LINEAGE_LIMIT = 64
-# Hermes' `-c <title>` (`resolve_session_by_title` in `hermes_state_titles.py`) takes the newest `<title> #N` row
-# over the exact title, so the card offers `omh -c` only when no such row exists. "Bot Chat" is Hermes' one
-# exception: its exact title always wins.
-_NUMBERED_TITLE_SELECT = "SELECT 1 FROM sessions WHERE title LIKE ? ESCAPE '\\' LIMIT 1"
-_EXACT_TITLE_WINS = "Bot Chat"
-_TURNS_SELECT = "SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'user' AND active = 1"
+# The one row the exit card reads, by the id already chosen: its title, and
+# whether anything was said in it. No message content, no cwd.
+_CARD_SELECT = "SELECT title, message_count FROM sessions WHERE id = ?"
 
 # What a session nothing was said in leaves: Hermes stores a session's row
 # only once its first prompt is sent, and prints no epilogue for one without
 # messages, so there is nothing to resume.
 NOTHING_SAID_LINE = "omh: nothing was said in this session, so there is nothing to resume."
 UNTITLED = "untitled session"
-# Characters a double-quoted shell word does not keep as typed; a title with
-# one is quoted with `shlex.quote` instead.
-_DOUBLE_QUOTE_UNSAFE = frozenset('"$`\\!')
 
 
 def _count(value: object) -> int:
@@ -236,81 +213,14 @@ def _count(value: object) -> int:
     return max(value, 0)
 
 
-def _duration_text(seconds: float) -> str:
-    whole = max(int(seconds), 0)
-    hours, rest = divmod(whole, 3600)
-    minutes, secs = divmod(rest, 60)
-    if hours:
-        return f"{hours}h {minutes:02d}m"
-    if minutes:
-        return f"{minutes}m {secs:02d}s"
-    return f"{secs}s"
-
-
-def continue_command_line(title: str, profile: str | None = None) -> str:
-    """`omh -c "<title>"`: Hermes resolves `--continue NAME` by the session's title.
-
-    "" for a title a shell line cannot carry as typed (a control character),
-    and for one starting with `-`, which `omh`'s parser would read as options
-    (`-c "-p work"` is `-c` with no name, then `-p work`).
-    """
-    if not title or not title.isprintable() or title.startswith("-"):
-        return ""
-    quoted = shlex.quote(title) if _DOUBLE_QUOTE_UNSAFE & set(title) else f'"{title}"'
-    return f"omh -p {profile} -c {quoted}" if profile else f"omh -c {quoted}"
-
-
-def _escape_like(text: str) -> str:
-    """Hermes' `escape_like`: `%` and `_` in a title match literally under `ESCAPE '\\'`."""
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _branched_from(model_config: object) -> str:
-    try:
-        config = json.loads(model_config) if isinstance(model_config, str) and model_config else {}
-    except (ValueError, RecursionError):
-        return ""
-    parent = config.get("_branched_from") if isinstance(config, dict) else None
-    return parent if isinstance(parent, str) else ""
-
-
-class _CardRow(NamedTuple):
-    title: str
-    model: str
-    messages: int
-    tokens: tuple[int, int, int, int, int]  # in, out, cache read, cache write, reasoning: summed over the lineage
-    turns: int | None  # None when it cannot be read
-    continues_here: bool  # Hermes' `-c <title>` opens this session
-
-
-def _session_card_row(db_path: str | Path, session_id: str) -> _CardRow | None | bool:
-    """The session's card row; None when it has no row; False when the database cannot be read at all."""
+def _session_card_row(db_path: str | Path, session_id: str) -> tuple[str, int] | None | bool:
+    """The session's title and message count; None when it has no row; False when the database cannot be read."""
     try:
         connection = connect_readonly(db_path, timeout=_DB_BUSY_TIMEOUT_SECONDS)
     except (sqlite3.Error, ValueError, OSError):
         return False
     try:
         row = connection.execute(_CARD_SELECT, (session_id,)).fetchone()
-        if row is None:
-            return None
-        try:
-            turns_row = connection.execute(_TURNS_SELECT, (session_id,)).fetchone()
-        except sqlite3.Error:
-            turns_row = None
-        tokens = [_count(value) for value in row[3:8]]
-        seen, parent = {session_id}, _branched_from(row[8])
-        while parent and parent not in seen and len(seen) < _LINEAGE_LIMIT:
-            seen.add(parent)
-            ancestor = connection.execute(_LINEAGE_SELECT, (parent,)).fetchone()
-            if ancestor is None:
-                break
-            tokens = [total + _count(value) for total, value in zip(tokens, ancestor[:5])]
-            parent = _branched_from(ancestor[5])
-        title = " ".join(str(row[0] or "").split())
-        continues_here = bool(title) and str(row[0]) == title and (
-            title == _EXACT_TITLE_WINS
-            or connection.execute(_NUMBERED_TITLE_SELECT, (f"{_escape_like(title)} #%",)).fetchone() is None
-        )
     except (sqlite3.Error, ValueError):
         return False
     finally:
@@ -318,27 +228,18 @@ def _session_card_row(db_path: str | Path, session_id: str) -> _CardRow | None |
             connection.close()
         except sqlite3.Error:
             pass
-    return _CardRow(
-        title=title,
-        model=" ".join(str(row[1] or "").split()),
-        messages=_count(row[2]),
-        tokens=(tokens[0], tokens[1], tokens[2], tokens[3], tokens[4]),
-        turns=_count(turns_row[0]) if turns_row else None,
-        continues_here=continues_here,
-    )
+    if row is None:
+        return None
+    return " ".join(str(row[0] or "").split()), _count(row[1])
 
 
-def exit_card_lines(
-    db_path: str | Path | None, session_id: str, seconds: float, profile: str | None = None
-) -> list[str]:
+def exit_card_lines(db_path: str | Path | None, session_id: str, profile: str | None = None) -> list[str]:
     """What `omh` prints for `session_id` as the TUI closes: the card, `NOTHING_SAID_LINE`, or nothing.
 
-    The card says what Hermes' own exit summary says (the session id, its
-    title, its messages and its tokens, split as Hermes splits them and summed
-    over the `/branch` chain as Hermes sums them), plus
-    its turns, how long this launch ran (`seconds`) and its model, and then
-    only the `omh` way back: `omh --resume <id>` and, for a titled session
-    Hermes' `-c <title>` would open, `omh -c "<title>"`.
+    The card is the session's title and, after a blank line, the `omh` way
+    back: `resume: omh --resume <id>`, with the id whole so it can be copied,
+    then a blank line so the shell prompt does not sit right under it. The id
+    always resolves, where a title lookup can land on another session.
 
     A session with no row is one nothing was said in: Hermes stores the row
     with the first prompt. A database that cannot be read prints nothing,
@@ -349,27 +250,12 @@ def exit_card_lines(
     card = _session_card_row(db_path, session_id)
     if card is False:
         return []
-    if card is None or card.messages == 0:
+    if card is None or card[1] == 0:
         return [NOTHING_SAID_LINE]
-    tokens_in, tokens_out, cache_read, cache_write, reasoning = card.tokens
-    session = [f"session {session_id}"]
-    if card.turns is not None:
-        session.append(f"{card.turns} turn" if card.turns == 1 else f"{card.turns} turns")
-    session += [f"{card.messages} message" if card.messages == 1 else f"{card.messages} messages",
-                _duration_text(seconds)]
-    usage = [
-        f"{tokens_in + tokens_out + cache_read + cache_write + reasoning} tokens (in {tokens_in}, out {tokens_out}, "
-        f"cache {cache_read + cache_write}, reasoning {reasoning})"
+    title = card[0]
+    return [
+        f"omh · {title if title and title.isprintable() else UNTITLED}",
+        "",
+        "  resume: " + resume_command_line(session_id, profile),
+        "",
     ]
-    if card.model and card.model.isprintable():
-        usage.append(card.model)
-    lines = [
-        f"omh · {card.title if card.title and card.title.isprintable() else UNTITLED}",
-        "  " + " · ".join(session),
-        "  " + " · ".join(usage),
-        "  " + resume_command_line(session_id, profile),
-    ]
-    continued = continue_command_line(card.title, profile) if card.continues_here else ""
-    if continued:
-        lines.append("  " + continued)
-    return lines

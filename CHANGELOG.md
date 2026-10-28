@@ -152,6 +152,15 @@ All notable changes will be documented here.
   backfill, a reply pointer or an attachment note still makes it ask. A
   closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
+- **The exit card is the session's title and how to resume it.** Leaving
+  the OMH TUI printed five lines: the title, a line of id, turns, messages
+  and duration, a line of tokens and model, `omh --resume <id>` and
+  `omh -c "<title>"`. It now prints the title (`untitled session` when
+  there is none) and, after a blank line, `resume: omh --resume <id>` with
+  the whole id, plus `-p <profile>` for a profile launch, then a blank
+  line so the shell prompt does not sit right under it. The
+  `-c "<title>"` line is gone with the counts, since the id always opens
+  this session and a title can be shadowed by a newer `<title> #N`.
 
 ## 4.0.3 - 2026-10-27
 

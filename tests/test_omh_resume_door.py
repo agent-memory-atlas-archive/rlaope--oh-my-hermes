@@ -108,38 +108,33 @@ def write_card_session(
     session_id: str,
     *,
     title: str | None = "Fix the login bug",
-    model: str = "moonshotai/kimi-k3.1-pro",
     started_at: float = CHILD_STARTED_AT + 1,
     ended_at: float | None = CHILD_ENDED_AT - 0.2,
-    tokens: tuple[int, int, int, int, int] = (12_000, 3_000, 2_000, 1_000, 200),
     turns: int = 3,
-    inactive_turns: int = 0,
-    branched_from: str | None = None,
 ) -> None:
-    """Add one session to a state database (created when missing) with its card's fields and `turns` user prompts,
-    each followed by a reply, plus `inactive_turns` prompts a rewind turned inactive."""
+    """Add one session to a state database (created when missing) with `turns` user prompts, each followed by a reply.
+
+    The row carries Hermes' model and token columns too, which the card does not read."""
     fresh = not path.exists()
     connection = sqlite3.connect(path)
     try:
         if fresh:
             connection.execute(_SCHEMA)
             connection.execute(_MESSAGES_SCHEMA)
-        config = json.dumps({"_branched_from": branched_from}) if branched_from else None
         connection.execute(
             "INSERT INTO sessions (id, source, started_at, ended_at, message_count, title, cwd, model, input_tokens, "
-            "output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, model_config) "
-            "VALUES (?, 'tui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (session_id, started_at, ended_at, 2 * (turns + inactive_turns), title, SECRET_CWD, model, *tokens, config),
+            "output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens) "
+            "VALUES (?, 'tui', ?, ?, ?, ?, ?, 'moonshotai/kimi-k3.1-pro', 12000, 3000, 2000, 1000, 200)",
+            (session_id, started_at, ended_at, 2 * turns, title, SECRET_CWD),
         )
-        for index in range(turns + inactive_turns):
-            active = 1 if index < turns else 0
+        for index in range(turns):
             connection.execute(
-                "INSERT INTO messages (session_id, role, content, timestamp, active) VALUES (?, 'user', ?, ?, ?)",
-                (session_id, f"prompt {index}", started_at + index, active),
+                "INSERT INTO messages (session_id, role, content, timestamp, active) VALUES (?, 'user', ?, ?, 1)",
+                (session_id, f"prompt {index}", started_at + index),
             )
             connection.execute(
-                "INSERT INTO messages (session_id, role, content, timestamp, active) VALUES (?, 'assistant', ?, ?, ?)",
-                (session_id, f"reply {index}", started_at + index + 0.5, active),
+                "INSERT INTO messages (session_id, role, content, timestamp, active) VALUES (?, 'assistant', ?, ?, 1)",
+                (session_id, f"reply {index}", started_at + index + 0.5),
             )
         connection.commit()
     finally:
@@ -801,15 +796,9 @@ class FallbackTargetTests(unittest.TestCase):
         self.assertEqual(stderr, "")
 
 
-# What a launch that ran for `CHILD_ENDED_AT - CHILD_STARTED_AT` prints for
-# `write_card_session`'s defaults, after Hermes' own epilogue.
-CARD_ALPHA = (
-    "\nomh · Fix the login bug\n"
-    "  session sess-alpha · 3 turns · 6 messages · 1m 00s\n"
-    "  18200 tokens (in 12000, out 3000, cache 3000, reasoning 200) · moonshotai/kimi-k3.1-pro\n"
-    "  omh --resume sess-alpha\n"
-    '  omh -c "Fix the login bug"\n'
-)
+# What a launch prints for `write_card_session`'s defaults, after Hermes' own
+# epilogue: the title, and the one way back.
+CARD_ALPHA = "\nomh · Fix the login bug\n\n  resume: omh --resume sess-alpha\n\n"
 
 
 class LaunchExitTests(unittest.TestCase):
@@ -841,20 +830,13 @@ class LaunchExitTests(unittest.TestCase):
         self.assertEqual(status, 130)
         self.assertEqual(stdout, CARD_ALPHA)
 
-    def test_a_profile_launch_prints_the_profile_in_both_lines(self) -> None:
+    def test_a_profile_launch_prints_the_profile_in_the_resume_line(self) -> None:
         with TemporaryDirectory() as tmp:
             home = self._home_with_session(tmp, profile="work")
             with launched(home, ["-p", "work"]) as (_recorded, stdout, _status):
                 pass
 
-        self.assertEqual(
-            stdout,
-            "\nomh · Fix the login bug\n"
-            "  session sess-alpha · 3 turns · 6 messages · 1m 00s\n"
-            "  18200 tokens (in 12000, out 3000, cache 3000, reasoning 200) · moonshotai/kimi-k3.1-pro\n"
-            "  omh -p work --resume sess-alpha\n"
-            '  omh -p work -c "Fix the login bug"\n',
-        )
+        self.assertEqual(stdout, "\nomh · Fix the login bug\n\n  resume: omh -p work --resume sess-alpha\n\n")
 
     def test_a_failed_exit_prints_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -995,39 +977,27 @@ class ExitCardTests(unittest.TestCase):
             out = self._launch(home, {"session_id": "sess-alpha", "hermes_home": str(sticky)})
         self.assertEqual(out, CARD_ALPHA)
 
-    def test_an_untitled_session_says_so_and_offers_no_continue_line(self) -> None:
+    def test_an_untitled_session_says_so(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp)
-            write_card_session(home / "state.db", "sess-alpha", title=None, turns=1, inactive_turns=2,
-                               tokens=(500, 40, 0, 0, 0))
+            write_card_session(home / "state.db", "sess-alpha", title=None)
             out = self._launch(home, {"session_id": "sess-alpha", "hermes_home": str(home)})
-        # A prompt a rewind turned inactive is not a turn.
-        self.assertEqual(
-            out,
-            "\nomh · untitled session\n  session sess-alpha · 1 turn · 6 messages · 1m 00s\n"
-            "  540 tokens (in 500, out 40, cache 0, reasoning 0) · moonshotai/kimi-k3.1-pro\n"
-            "  omh --resume sess-alpha\n",
-        )
+        self.assertEqual(out, "\nomh · untitled session\n\n  resume: omh --resume sess-alpha\n\n")
 
-    def test_a_title_a_double_quoted_word_would_change_is_quoted_for_the_shell(self) -> None:
-        from omh.maintenance.hermes_resume import continue_command_line
-
-        self.assertEqual(continue_command_line('Say "hi" for $5'), "omh -c 'Say \"hi\" for $5'")
-        self.assertEqual(continue_command_line("it's done"), 'omh -c "it\'s done"')
-        self.assertEqual(continue_command_line("bad\x1btitle"), "")
-        self.assertEqual(continue_command_line("Plain", "work"), 'omh -p work -c "Plain"')
-
-    def test_the_counts_are_hermes_own(self) -> None:
+    def test_the_card_is_the_title_and_the_resume_line_only(self) -> None:
+        # No counts, tokens, model or `omh -c "<title>"`: a title a shell would read as options, or one another
+        # session's `<title> #N` would shadow under Hermes' title lookup, changes nothing but the title line.
         from omh.maintenance.hermes_resume import exit_card_lines
 
-        with TemporaryDirectory() as tmp:
-            db = Path(tmp) / "state.db"
-            write_card_session(db, "sess-big", tokens=(1_500_000, 900_000, 0, 0, 0))
-            lines = exit_card_lines(db, "sess-big", 3_725.0)
-        self.assertEqual(lines[1], "  session sess-big · 3 turns · 6 messages · 1h 02m")
-        self.assertEqual(lines[2], "  2400000 tokens (in 1500000, out 900000, cache 0, reasoning 0) · moonshotai/kimi-k3.1-pro")
+        for title, others in (("-p work", []), ("Reply with ok", ["Reply with ok #2"]), ('Say "hi" for $5', [])):
+            with self.subTest(title=title), TemporaryDirectory() as tmp:
+                db = Path(tmp) / "state.db"
+                write_card_session(db, "sess-alpha", title=title)
+                for index, other in enumerate(others):
+                    write_card_session(db, f"sess-other-{index}", title=other, started_at=CHILD_STARTED_AT + 5 + index)
+                self.assertEqual(exit_card_lines(db, "sess-alpha"), [f"omh · {title}", "", "  resume: omh --resume sess-alpha", ""])
 
-    def test_a_long_id_is_printed_whole_in_both_lines(self) -> None:
+    def test_a_long_id_is_printed_whole(self) -> None:
         # Hermes' newer stored ids are `local-<64 hex>`: the resume line is typed back, so it is never shortened,
         # whatever the terminal's width (the card is printed as lines; the terminal wraps them).
         from omh.maintenance.hermes_resume import exit_card_lines
@@ -1038,59 +1008,8 @@ class ExitCardTests(unittest.TestCase):
             db = Path(tmp) / "state.db"
             write_card_session(db, long_id)
             with patch.dict(os.environ, {"COLUMNS": "40"}):
-                lines = exit_card_lines(db, long_id, 60.0)
-        self.assertEqual(lines[3], f"  omh --resume {long_id}")
-        self.assertIn(f"session {long_id} · ", lines[1])
-        self.assertFalse(any("…" in line for line in lines[1:4]))
-
-    def test_continue_is_offered_only_when_hermes_title_rule_lands_on_this_session(self) -> None:
-        # Hermes' `-c <title>` takes the newest "<title> #N" row over the exact title (`resolve_session_by_title`).
-        from omh.maintenance.hermes_resume import exit_card_lines
-
-        cases = (
-            ("Reply with ok", ["Reply with ok #2"], False),  # an unrelated session the title generator numbered
-            ("Reply with ok #2", ["Reply with ok"], True),  # the numbered one itself: nothing numbers it again
-            ("a_b", ["aXb #2", "a%b #2"], True),  # `_` and `%` match literally, as Hermes escapes them
-            ("Bot Chat", ["Bot Chat #2"], True),  # Hermes' one exception: the exact title wins
-        )
-        for title, others, offered in cases:
-            with self.subTest(title=title), TemporaryDirectory() as tmp:
-                db = Path(tmp) / "state.db"
-                write_card_session(db, "sess-alpha", title=title)
-                for index, other in enumerate(others):
-                    write_card_session(db, f"sess-other-{index}", title=other, started_at=CHILD_STARTED_AT + 5 + index)
-                lines = exit_card_lines(db, "sess-alpha", 60.0)
-                self.assertEqual(any(line.startswith("  omh -c ") for line in lines), offered, lines)
-
-    def test_a_title_starting_with_a_dash_offers_no_continue_line(self) -> None:
-        # `omh -c "-p work"` would parse as `-c` with no name and then `-p work`.
-        from omh.maintenance.hermes_resume import continue_command_line, exit_card_lines
-
-        for title in ("-p work", "-r abc", "--resume x", "-"):
-            with self.subTest(title=title):
-                self.assertEqual(continue_command_line(title), "")
-        with TemporaryDirectory() as tmp:
-            db = Path(tmp) / "state.db"
-            write_card_session(db, "sess-alpha", title="-p work")
-            lines = exit_card_lines(db, "sess-alpha", 60.0)
-        self.assertEqual(lines[0], "omh · -p work")
-        self.assertFalse(any(line.startswith("  omh -c ") for line in lines), lines)
-
-    def test_tokens_sum_the_branch_chain_as_hermes_does(self) -> None:
-        from omh.maintenance.hermes_resume import exit_card_lines
-
-        with TemporaryDirectory() as tmp:
-            db = Path(tmp) / "state.db"
-            write_card_session(db, "sess-root", title="root", tokens=(100, 10, 1, 2, 3))
-            write_card_session(db, "sess-mid", title="mid", tokens=(200, 20, 0, 0, 0), branched_from="sess-root")
-            write_card_session(db, "sess-alpha", tokens=(12_000, 3_000, 2_000, 1_000, 200), branched_from="sess-mid")
-            lines = exit_card_lines(db, "sess-alpha", 60.0)
-            # A chain that loops back is summed once per session.
-            write_card_session(db, "sess-loop-a", title="loop a", tokens=(1, 0, 0, 0, 0), branched_from="sess-loop-b")
-            write_card_session(db, "sess-loop-b", title="loop b", tokens=(2, 0, 0, 0, 0), branched_from="sess-loop-a")
-            looped = exit_card_lines(db, "sess-loop-a", 60.0)
-        self.assertEqual(lines[2], "  18536 tokens (in 12300, out 3030, cache 3003, reasoning 203) · moonshotai/kimi-k3.1-pro")
-        self.assertTrue(looped[2].startswith("  3 tokens (in 3, out 0,"), looped)
+                lines = exit_card_lines(db, long_id)
+        self.assertEqual(lines, ["omh · Fix the login bug", "", f"  resume: omh --resume {long_id}", ""])
 
     def test_after_new_the_newest_earlier_session_with_messages_gets_the_card(self) -> None:
         # `/new` just before quitting: the open session is empty, the one before it is what this launch said.
