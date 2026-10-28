@@ -51,10 +51,11 @@ def run_skill(app: App, client: object, line: str = SKILL_LINE, turn: dict = SKI
 
 
 def prompt_rows(app: App) -> list[str]:
-    """The `┃ ❯` rows printed so far, scrollback included: each echo's (`┃ ❯ /name`) and each prompt's first row,
-    both on the prompt's rail; the composer's own `❯` row has none (#2223 review 7)."""
+    """The `  ❯` rows printed so far (the rail's two cells, then the mark), scrollback included: each echo's
+    (`  ❯ /name`) and each prompt's first row, both on the prompt's rail; the composer's own `❯` row has none
+    (#2223 review 7)."""
     app._render()
-    return [row.rstrip() for row in app.terminal.screen.history() if row.startswith("┃ ❯ ")]  # type: ignore[attr-defined]
+    return [row.rstrip() for row in app.terminal.screen.history() if row.startswith("  ❯ ")]  # type: ignore[attr-defined]
 
 
 def end_turn(app: App) -> None:
@@ -73,8 +74,8 @@ class CommandEchoTests(unittest.TestCase):
         answer(app, client, {"output": "Session cost: $0.01"})
         self.assertEqual((block.parts, block.done), ([("Session cost: $0.01", NOTICE_INFO)], True))
         screen = drawn(app)
-        self.assertIn("┃ ❯ /usage", screen)
-        self.assertIn("┃   ⎿  Session cost: $0.01", screen)
+        self.assertIn("  ❯ /usage", screen)
+        self.assertIn("    ⎿  Session cost: $0.01", screen)
 
     def test_long_output_stays_in_the_transcript_and_no_pager_opens(self) -> None:
         app, client = make_app(rows=24, cols=80)
@@ -84,9 +85,9 @@ class CommandEchoTests(unittest.TestCase):
         self.assertIsNone(app.pager)
         self.assertEqual(last(app).parts, [(long, NOTICE_INFO)])  # all of it held, for /history
         screen = drawn(app)
-        self.assertIn(f"┃      context row {OUTPUT_PREVIEW_ROWS - 1}", screen)
-        self.assertNotIn(f"┃      context row {OUTPUT_PREVIEW_ROWS}", screen)
-        self.assertIn(f"┃      … +{40 - OUTPUT_PREVIEW_ROWS} rows · ctrl+o shows all", screen)
+        self.assertIn(f"       context row {OUTPUT_PREVIEW_ROWS - 1}", screen)
+        self.assertNotIn(f"       context row {OUTPUT_PREVIEW_ROWS}", screen)
+        self.assertIn(f"       … +{40 - OUTPUT_PREVIEW_ROWS} rows · ctrl+o shows all", screen)
 
     def test_a_command_dispatch_owns_answers_under_the_same_echo_and_closes_it_only_then(self) -> None:
         app, client = make_app()
@@ -245,7 +246,7 @@ class SkillCommandRowTests(unittest.TestCase):
         methods = [method for method, _params in client.calls]
         self.assertEqual(methods, ["slash.exec", "command.dispatch", "prompt.submit"])
         self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": SKILL_TURN["message"]}])
-        self.assertEqual(prompt_rows(app), [f"┃ ❯ {SKILL_LINE}"])
+        self.assertEqual(prompt_rows(app), [f"  ❯ {SKILL_LINE}"])
         self.assertEqual([type(block) for block in app.transcript.blocks], [UserBlock])
 
     def test_the_same_skill_command_sent_twice_is_two_rows_and_two_prompts(self) -> None:
@@ -256,7 +257,7 @@ class SkillCommandRowTests(unittest.TestCase):
         run_skill(app, client)
         self.assertEqual(len(client.named("command.dispatch")), 2)
         self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": SKILL_TURN["message"]}] * 2)
-        self.assertEqual(prompt_rows(app), [f"┃ ❯ {SKILL_LINE}"] * 2)
+        self.assertEqual(prompt_rows(app), [f"  ❯ {SKILL_LINE}"] * 2)
 
     def test_the_same_skill_command_sent_during_its_own_turn_waits_and_then_shows_once(self) -> None:
         app, client = make_app(rows=40)
@@ -269,15 +270,15 @@ class SkillCommandRowTests(unittest.TestCase):
         self.assertEqual(len(client.named("command.dispatch")), 2)
         self.assertEqual(len(client.named("prompt.submit")), 2)
         first, drained = prompt_rows(app)
-        self.assertEqual(first, f"┃ ❯ {SKILL_LINE}")
-        self.assertTrue(drained.startswith(f"┃ ❯ {SKILL_LINE}") and drained.endswith("from queue"), drained)
+        self.assertEqual(first, f"  ❯ {SKILL_LINE}")
+        self.assertTrue(drained.startswith(f"  ❯ {SKILL_LINE}") and drained.endswith("from queue"), drained)
 
     def test_what_the_dispatch_says_goes_under_the_prompt_row_and_repeats_no_echo(self) -> None:
         notice = "⚡ Loading 2 stacked skills: dag-ulw, review"
         stacked = {**SKILL_TURN, "notice": notice, "display": "/dag-ulw /review fix it"}
         app, client = make_app(rows=40)
         run_skill(app, client, "/dag-ulw /review fix it", stacked)
-        self.assertEqual(prompt_rows(app), ["┃ ❯ /dag-ulw /review fix it"])
+        self.assertEqual(prompt_rows(app), ["  ❯ /dag-ulw /review fix it"])
         self.assertEqual([type(block) for block in app.transcript.blocks], [UserBlock, NoticeBlock])
         self.assertEqual(notices(app), [notice])
 
@@ -304,7 +305,7 @@ class SkillCommandRowTests(unittest.TestCase):
         self.assertEqual((type(row), row.text, row.from_queue), (UserBlock, "/dag-ulw /review fix it", True))
         self.assertEqual((type(notice_block), notice_block.text), (NoticeBlock, notice))
         (shown,) = prompt_rows(app)
-        self.assertTrue(shown.startswith("┃ ❯ /dag-ulw /review fix it") and shown.endswith("from queue"), shown)
+        self.assertTrue(shown.startswith("  ❯ /dag-ulw /review fix it") and shown.endswith("from queue"), shown)
 
     def test_two_skill_commands_of_one_line_answered_out_of_order_are_two_rows(self) -> None:
         # Hermes runs slash.exec and command.dispatch on its RPC pool, so the second dispatch can answer first.
@@ -331,7 +332,7 @@ class SkillCommandRowTests(unittest.TestCase):
         app, client = make_app(rows=40)
         run_skill(app, client)
         answer(app, client, error={"code": 4090, "message": "another process owns this session"})
-        self.assertEqual(prompt_rows(app), [f"┃ ❯ {SKILL_LINE}"])
+        self.assertEqual(prompt_rows(app), [f"  ❯ {SKILL_LINE}"])
         self.assertEqual(notices(app), ["Hermes did not take the prompt: another process owns this session."])
         self.assertFalse([block for block in app.transcript.blocks if isinstance(block, CommandBlock)])
 
@@ -351,7 +352,7 @@ class SkillCommandRowTests(unittest.TestCase):
         app, client = make_app(rows=40)
         send(app, "fix the flaky test")
         self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "fix the flaky test"})])
-        self.assertEqual(prompt_rows(app), ["┃ ❯ fix the flaky test"])
+        self.assertEqual(prompt_rows(app), ["  ❯ fix the flaky test"])
 
     def test_a_command_that_prints_keeps_its_echo(self) -> None:
         for line in ("/help", "/usage"):
@@ -360,13 +361,13 @@ class SkillCommandRowTests(unittest.TestCase):
                 send(app, line)
                 if client.calls:
                     answer(app, client, {"output": "Session cost: $0.01"})
-                self.assertEqual(prompt_rows(app), [f"┃ ❯ {line}"])  # an echo, on the prompt's rail
+                self.assertEqual(prompt_rows(app), [f"  ❯ {line}"])  # an echo, on the prompt's rail
                 self.assertEqual(client.named("prompt.submit"), [])
 
     def test_a_skill_hermes_names_no_display_for_shows_as_typed(self) -> None:
         app, client = make_app(rows=40)
         run_skill(app, client, turn={key: value for key, value in SKILL_TURN.items() if key != "display"})
-        self.assertEqual(prompt_rows(app), [f"┃ ❯ {SKILL_LINE}"])
+        self.assertEqual(prompt_rows(app), [f"  ❯ {SKILL_LINE}"])
         self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": SKILL_TURN["message"]}])
 
     def test_a_built_in_send_with_no_display_keeps_its_echo_above_what_it_sends(self) -> None:
@@ -381,7 +382,7 @@ class SkillCommandRowTests(unittest.TestCase):
                 send(app, line)
                 for reply in answers:
                     answer(app, client, reply.get("result"), reply.get("error"))
-                self.assertEqual(prompt_rows(app), [f"┃ ❯ {line}", f"┃ ❯ {sent.splitlines()[0]}"])  # the echo, the prompt
+                self.assertEqual(prompt_rows(app), [f"  ❯ {line}", f"  ❯ {sent.splitlines()[0]}"])  # the echo, the prompt
                 self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": sent}])
 
 
