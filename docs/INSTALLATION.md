@@ -365,21 +365,15 @@ back:
 
 ```text
 omh · Fix the login bug
-  session 20261025_101530_ab12cd · 3 turns · 6 messages · 4m 12s
-  18200 tokens (in 12000, out 3000, cache 3000, reasoning 200) · moonshotai/kimi-k3.1-pro
-  omh --resume 20261025_101530_ab12cd
-  omh -c "Fix the login bug"
+
+  resume: omh --resume 20261025_101530_ab12cd
 ```
 
 The first line is the session's title (`untitled session` when Hermes has
-not named it). Then come its id, prompts, messages and how long this `omh`
-ran, and its tokens, split and summed over a `/branch` chain as Hermes does
-it, and its model. The last two lines reopen it by id, and by title when
-`-c <title>` would open this session: Hermes takes the newest `<title> #N`
-session over the exact title, so the line is left out when another session
-carries that name with a number, and for a title starting with `-`, which
-would read as options. With a profile both carry `-p <profile>`, since a profile has its own
-`state.db`. A session in which nothing was said gets one line instead, `omh:
+not named it). After a blank line, `resume:` reopens it by its whole id,
+which always resolves to this session, and a blank line closes the card so
+your shell prompt does not sit right under the command. With a profile it carries `-p <profile>`, since a profile
+has its own `state.db`. A session in which nothing was said gets one line instead, `omh:
 nothing was said in this session, so there is nothing to resume.`, unless
 an earlier session of the same launch (before a `/new` or a switch) has
 messages: then the card names the newest such one.

@@ -186,7 +186,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # removing that line alone restores main's digest (db2c9bd4...).
         # Re-derived for the plan-ambition lines: only plan and ralplan move.
         # Re-derived again on the tree merged with sprite-forge (both sides' bodies).
-        self.assertEqual(_digest(legacy_hashes), '4e07603b4354da5ac93dc6bcff0cb8a224ef6f93a4b030a4eade406d3f217e73')
+        # Then dag-ulw's delegation-backend guidance; only dag-ulw moves.
+        self.assertEqual(_digest(legacy_hashes), '25ee468b513127f7f58d11d93af4238bb6357d5d35cd92dd52c33e1a2d778f14')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
@@ -214,9 +215,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         from omh.maintenance.drift import budget_metrics
         expected = {
             'skill_index_line_max_chars': 100,
-            'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
-            'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
-            'pre_llm_call_context_fallback_chars_max': 7338,  # The same rename (+6), then the human-voice primer sentence (+116).
+            'plugin_tool_schema_chars': 69431,  # Parked DAG waits (+429), then delegation backends (+245).
+            'pre_llm_call_context_chars_max': 5632,  # The pi-family runtime rename (+6), then the route-hint dedup (-154).
+            'pre_llm_call_context_fallback_chars_max': 7184,  # The same rename (+6), the human-voice primer sentence (+116), then the route-hint dedup (-154).
             'awareness_primer_markdown_chars': 3630,  # Human-voice reply sentence (+110).
             'awareness_primer_context_chars': 1560,  # The same sentence (+120).
             'awareness_workflow_context_chars_max': 1500,

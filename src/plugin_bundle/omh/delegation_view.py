@@ -379,7 +379,12 @@ def _title(node: Mapping[str, Any]) -> str:
 
 
 def _category(node: Mapping[str, Any]) -> str:
-    return clean_text(node.get("category")) or UNKNOWN_FIELD
+    category = clean_text(node.get("category"))
+    if category and category != UNKNOWN_FIELD:
+        return category
+    # A child Hermes' delegation backend routed has the user's option (or profile) where OMH has no lane.
+    label = clean_text(node.get("route_label"))
+    return f"@{label}" if label else UNKNOWN_FIELD
 
 
 STATE_ORDER: Final = ("running", "stuck", "failed", "dispatched", "waiting", "interrupted", "unknown", "done")

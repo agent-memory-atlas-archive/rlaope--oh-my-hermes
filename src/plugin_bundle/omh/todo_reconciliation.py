@@ -857,6 +857,19 @@ def plan_continuation_reading(
 ) -> tuple[str, str]:
     """The turn-end message for a session whose plan still has open work, and its stamp.
 
+    `plan_continuation_parts` without the open-item count.
+    """
+    message, stamp, _open_items = plan_continuation_parts(
+        omh_home=omh_home, hermes_home=hermes_home, session_ref=session_ref
+    )
+    return message, stamp
+
+
+def plan_continuation_parts(
+    *, omh_home: str = "", hermes_home: str = "", session_ref: str = ""
+) -> tuple[str, str, int]:
+    """The turn-end message, its stamp, and the open items its plan line names.
+
     ``TODO_CONTINUATION_RULE`` is already the right sentence delivered at the
     wrong moment: ``_open_plan_line`` renders it into the context of a turn
     that is already happening, so a turn that ends with open items ends
@@ -873,6 +886,11 @@ def plan_continuation_reading(
     different plan than the message does. It is returned even when the message
     is empty: a turn continued by something else still needs a baseline for the
     next attempt to measure against.
+
+    The third value is ``total - done`` from the plan line's own position, 0
+    when the message carries no plan line (no open plan, a blocked or deferred
+    next item, or only dispatch-outcome lines). It is the number the OMH TUI
+    words its catch row with, read from the same position the line printed.
     """
     # Dropping the dispatch lines with the plan is not a second F3:
     # `unacknowledged_outcomes` opens with this same `read_omh_todo` call and
@@ -883,9 +901,9 @@ def plan_continuation_reading(
     try:
         todo = read_omh_todo(omh_home or None, hermes_home or None, session_ref=session_ref)
     except _READ_FAILURES:
-        return "", ""
+        return "", "", 0
     if not isinstance(todo, dict):
-        return "", ""
+        return "", "", 0
     # Every write through `todo_store` restamps this, so it moves on any plan
     # edit rather than only on a completed item -- which is the notion of
     # progress the caller wants. Marking the next item active, re-scoping the
@@ -897,6 +915,7 @@ def plan_continuation_reading(
     position = open_plan_position(todo, unverified)
     item = next_open_item(todo, unverified) if position is not None else {}
     lines: list[str] = []
+    open_items = 0
     # The blocked item stops the PLAN line and nothing else. A finished
     # dispatch nobody wrote down is a separate obligation -- it is frequently
     # the thing that unblocks the item -- so gating both on one item's state
@@ -915,6 +934,7 @@ def plan_continuation_reading(
     # posture, attempt, final response and changed paths, and no message.
     if position is not None and not recorded_blocked_reason(item) and not plan_deferral_reason(todo):
         done, total = position
+        open_items = total - done
         head = f"[OMH plan todo] {done}/{total} done"
         text = item_display_text(item)
         if text:
@@ -937,9 +957,9 @@ def plan_continuation_reading(
         outcomes = []
     lines.extend(_dispatch_outcome_lines(outcomes))
     if not lines:
-        return "", stamp
+        return "", stamp, 0
     lines.append(PLAN_CONTINUATION_BOUNDARY)
-    return "\n".join(lines), stamp
+    return "\n".join(lines), stamp, open_items
 
 
 def _open_plan_line(

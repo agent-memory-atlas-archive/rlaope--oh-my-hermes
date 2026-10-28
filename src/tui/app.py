@@ -179,8 +179,10 @@ from .model_picker import ModelPicker, model_rows, typed_switch_value
 from . import dag_block
 from .dag_tree import TreeState
 from .panels import (
+    CATCH_MARK,
     HudPoller,
     HudSnapshot,
+    catch_lines,
     dag_page_lines,
     hud_chips,
     panel_lines,
@@ -254,6 +256,7 @@ from .theme import (
     Theme,
     aura_moves,
     build_theme,
+    with_catch_colours,
     with_prompt_band,
     is_light,
     launch_palette,
@@ -1533,6 +1536,8 @@ class App(ModesMixin, AgentViewMixin):
         self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
         self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
         self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
+        # The session and the highest catch `seq` this transcript has accounted for (`_print_catches`).
+        self.catch_seen: tuple[str, int] | None = None
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
@@ -1923,9 +1928,11 @@ class App(ModesMixin, AgentViewMixin):
         return without_colour(theme) if self.color_depth == NO_COLOR else theme
 
     def _themed(self) -> Theme:
-        """The skin's theme against the background, with the shown launch look's band behind a sent prompt, painted."""
-        skin, surface = self._skin(), self._surface()
-        return self._painted(with_prompt_band(build_theme(skin, surface), skin, surface, self._shown_look()))
+        """The skin's theme against the background, with the shown launch look's band behind a sent prompt and its
+        catch-row colours, painted."""
+        skin, surface, look = self._skin(), self._surface(), self._shown_look()
+        banded = with_prompt_band(build_theme(skin, surface), skin, surface, look)
+        return self._painted(with_catch_colours(banded, skin, surface, look))
 
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
@@ -5183,6 +5190,32 @@ class App(ModesMixin, AgentViewMixin):
             self.roster.ingest_tokens(snapshot.output_tokens)
             self.dirty = True
             self._retire_finished_plan()
+            self._print_catches()
+
+    def _print_catches(self) -> None:
+        """One row per catch OMH made in this session since the last payload (`catch_lines`), as it happens.
+
+        The first payload of a session only sets the mark: a resumed or
+        attached session does not replay the catches it made before it was
+        opened here. The empty snapshot a switch delivers is no payload, and an
+        error payload says nothing about which catches exist, so the mark is set
+        by the first readable read of the session. A `seq` below the mark means
+        the ledger started over (deleted or unreadable): the mark moves down to
+        it, so new catches print again instead of waiting for the old count.
+        """
+        hud = self.hud
+        catches = catch_lines(hud.payload) if hud is not None else None
+        if hud is None or catches is None:
+            return
+        newest = max((seq for seq, _ in catches), default=-1)
+        if self.catch_seen is None or self.catch_seen[0] != hud.session_id or newest < self.catch_seen[1]:
+            self.catch_seen = (hud.session_id, newest)
+            return
+        seen = self.catch_seen[1]
+        for seq, line in catches:
+            if seq > seen and line:
+                self.transcript.add_aside(NoticeBlock(line, one_line=True, mark=CATCH_MARK))
+        self.catch_seen = (hud.session_id, max(seen, newest))
 
     def _retire_finished_plan(self) -> None:
         """Stop drawing a plan whose every item is done, once no turn runs, as Claude Code's list goes once done.

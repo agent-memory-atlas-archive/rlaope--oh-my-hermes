@@ -6,6 +6,16 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **The route hint stops saying the same thing twice.** Route hint text is
+  about 18% of the OMH text a model reads per session, and part of it repeated
+  other text in the same block: a hint's `adjacent_workflows=` line that equals
+  the block's top-level one, and a `fallback_action_label=` or
+  `next_action_label=` that only respells its action's underscores. Each one
+  now renders only when it differs from the text it would repeat. Rendered
+  before and after on the same 68 routing-intervention hints, the block went
+  from 106,957 to 98,121 characters (8.3%), and no hint grew. Selection, the payload, `first_response_shape=` and
+  `not_evidence_yet=` do not change, and the per-turn ratchets drop with the
+  render (`pre_llm_call` 5786 -> 5632, fallback 7338 -> 7184).
 - **The answer-first plan line stops repeating its whole rule.** While a
   plan is open, every turn a person opens carried the 445-character
   `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history
@@ -51,6 +61,21 @@ All notable changes will be documented here.
   archived only with its hash, version and catalog row read back, published
   only when the destination's own URL resolves to the same hash, and the
   final file is the one the person approved, never the newest mtime. (#2335)
+- **The OMH TUI says when OMH caught a model mistake.** OMH's catches
+  reached only the model, so an install looked like it did nothing. Now the
+  moment one happens the transcript gets one row, `✦ OMH` stepped through
+  the launch look's logo colours and the words in its label colour, so it
+  follows `/theme`: `✦ OMH 🔁 stopped a loop of N identical calls` (the
+  repeat guard's first refusal of a streak), `✦ OMH 📖 pointed the re-read
+  at line 1667` (the first note on a truncated read's refused re-read),
+  `✦ OMH 📋 kept going, plan has 2 open items` (a turn continued over an
+  open plan), and `✦ OMH ⏰ flagged a wait with nothing armed to wake it`
+  (the turn's unarmed remote-wait directive). Nothing prints otherwise, and a resumed
+  session does not replay earlier catches. The hooks record each catch
+  beside their unchanged decision in `<omh_home>/runtime/catches.json`
+  (`omh_catch_log/v1`): a kind from a closed set and small integers, never
+  model text, arguments or paths; the HUD payload carries the reading
+  session's newest few as `catches`.
 - **A generation's own skills pack is never registered, and a home left on
   one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
   the running generation's pack (`generations/<id>/skills`) beside the shared
@@ -174,6 +199,15 @@ All notable changes will be documented here.
   first frame; the push is undone on every exit. A steer or a second
   `/compress` that waited behind a compression and went unanswered now says
   how long it really waited, not 120 s or 660 s.
+- **The exit card is the session's title and how to resume it.** Leaving
+  the OMH TUI printed five lines: the title, a line of id, turns, messages
+  and duration, a line of tokens and model, `omh --resume <id>` and
+  `omh -c "<title>"`. It now prints the title (`untitled session` when
+  there is none) and, after a blank line, `resume: omh --resume <id>` with
+  the whole id, plus `-p <profile>` for a profile launch, then a blank
+  line so the shell prompt does not sit right under it. The
+  `-c "<title>"` line is gone with the counts, since the id always opens
+  this session and a title can be shadowed by a newer `<title> #N`.
 
 ## 4.0.3 - 2026-10-27
 

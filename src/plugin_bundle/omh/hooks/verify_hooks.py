@@ -5,8 +5,9 @@ from pathlib import PurePosixPath
 from typing import Final, TypeGuard
 
 from .. import runtime_paths
+from ..catch_log import PLAN_CONTINUED, record_catch
 from ..host_observation import observe_plugin_hook_call
-from ..todo_reconciliation import plan_continuation_reading
+from ..todo_reconciliation import plan_continuation_parts
 from .nudge_budget import plan_nudge_allowed
 
 _UI_SUFFIXES: Final = frozenset({".css", ".html", ".jsx", ".less", ".sass", ".scss", ".svelte", ".tsx", ".vue"})
@@ -58,7 +59,7 @@ def pre_verify(
     _ = observe_plugin_hook_call("pre_verify", observation)
     if not valid_coding or attempt_value is None or not paths:
         return None
-    plan_message, stamp = _session_plan_reading(_kwargs, session_id)
+    plan_message, stamp, open_items = _session_plan_reading(_kwargs, session_id)
     # The host offers `agent.max_verify_nudges` nudges per turn and enforces
     # that bound itself, so the plan line may spend more than the first -- but
     # only while the plan keeps being written. A nudge that produced no movement
@@ -78,11 +79,17 @@ def pre_verify(
     messages = [text for text in (surface_message, plan_message) if text]
     if not messages:
         return None
+    # Recorded for the person once per turn. `attempt` is the only turn
+    # boundary this hook is given (no turn id), and attempt 0 always passes
+    # `plan_nudge_allowed`, so a plan line there is the turn's first; a later
+    # attempt re-issuing it is the same catch with the plan still moving.
+    if attempt_value == 0 and plan_message and open_items:
+        record_catch(str(_kwargs.get("omh_home") or ""), session_id, PLAN_CONTINUED, open_items=open_items)
     return {"action": "continue", "message": "\n".join(messages)}
 
 
-def _session_plan_reading(kwargs: dict[str, object], session_id: str) -> tuple[str, str]:
-    """The open-plan directive for the session whose turn is ending, and its stamp.
+def _session_plan_reading(kwargs: dict[str, object], session_id: str) -> tuple[str, str, int]:
+    """The open-plan directive for the session whose turn is ending, its stamp, and its open items.
 
     Homes bind the way ``pre_llm_call`` binds them. A binding failure is
     silence: a plugin that cannot read the plan has nothing to say about it
@@ -93,8 +100,8 @@ def _session_plan_reading(kwargs: dict[str, object], session_id: str) -> tuple[s
         omh_home = str(runtime_paths.plugin_home(kwargs.get("omh_home")))
         hermes_home = str(runtime_paths.plugin_home(kwargs.get("hermes_home"), hermes=True))
     except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
-        return "", ""
-    return plan_continuation_reading(
+        return "", "", 0
+    return plan_continuation_parts(
         omh_home=omh_home, hermes_home=hermes_home, session_ref=session_id
     )
 
